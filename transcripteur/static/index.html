@@ -305,6 +305,20 @@ button{cursor:pointer;border:none;background:none}
   *{transition:none!important;animation:none!important}
 }
 :focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+  .panneau{
+    border-top:1px solid var(--rule);padding:14px clamp(16px,3vw,28px);
+    max-height:46vh;overflow-y:auto;background:var(--paper);font-size:13px;
+  }
+  .panneau h4{font-size:12px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-faint);margin:0 0 10px}
+  .panneau .row{display:flex;gap:10px;align-items:flex-start;padding:7px 0;
+    border-bottom:1px solid var(--rule)}
+  .panneau .row:last-child{border-bottom:0}
+  .panneau .av{color:var(--ink-faint);text-decoration:line-through}
+  .panneau .ap{color:var(--ink)}
+  .panneau label{display:flex;gap:7px;align-items:center;cursor:pointer}
+  .panneau .opts{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+  .panneau pre{white-space:pre-wrap;font:inherit;margin:0}
 </style>
 </head>
 <body>
@@ -334,7 +348,25 @@ button{cursor:pointer;border:none;background:none}
           <option value="it">Italien</option>
           <option value="pt">Portugais</option>
           <option value="nl">Néerlandais</option>
+          <option value="zh">Chinois (mandarin)</option>
+          <option value="ja">Japonais</option>
+          <option value="ko">Coréen</option>
+          <option value="ru">Russe</option>
+          <option value="uk">Ukrainien</option>
+          <option value="pl">Polonais</option>
+          <option value="cs">Tchèque</option>
+          <option value="ro">Roumain</option>
+          <option value="el">Grec</option>
+          <option value="tr">Turc</option>
           <option value="ar">Arabe</option>
+          <option value="he">Hébreu</option>
+          <option value="hi">Hindi</option>
+          <option value="id">Indonésien</option>
+          <option value="vi">Vietnamien</option>
+          <option value="sv">Suédois</option>
+          <option value="da">Danois</option>
+          <option value="no">Norvégien</option>
+          <option value="fi">Finnois</option>
           <option value="">Détection automatique</option>
         </select>
       </div>
@@ -354,11 +386,13 @@ button{cursor:pointer;border:none;background:none}
       </div>
       <div class="field">
         <label for="emb">Modèle de voix</label>
-        <select id="emb">
-          <option value="standard" selected>Standard (27 Mo)</option>
-          <option value="renforce">Renforcé (69 Mo)</option>
-          <option value="anglais">Anglophone (97 Mo)</option>
-        </select>
+        <select id="emb"></select>
+        <p class="hint" id="embnote" style="margin-top:6px"></p>
+      </div>
+      <div class="field">
+        <label for="clean">Nettoyage du son</label>
+        <select id="clean"></select>
+        <p class="hint" id="cleannote" style="margin-top:6px"></p>
       </div>
       <p class="hint">Si tu connais le nombre de personnes présentes, indique-le : la séparation est nettement plus fiable qu'en détection automatique.</p>
       <button class="go" id="go" disabled>Transcrire</button>
@@ -396,8 +430,12 @@ button{cursor:pointer;border:none;background:none}
       <button data-x="txt">Enregistrer .txt</button>
       <button data-x="srt">Sous-titres .srt</button>
       <button data-x="json">Données .json</button>
+      <button id="reread">Relire</button>
+      <button id="sum">Résumer</button>
+      <button id="asread" hidden>Voir la version relue</button>
       <span class="said" id="said"></span>
 </div>
+<div class="panneau" id="panneau" hidden></div>
 <div class="deck" id="deck" hidden>
   <div class="line">
     <button class="skip" id="prev" aria-label="Réplique précédente">◀◀</button>
@@ -444,6 +482,243 @@ api('/api/health').then(h => {
   if (!ready) askForKey();
   else if (!h.key_from_env) $('#changekey').hidden = false;
 }).catch(() => {});
+
+/* ---------- modèles de voix ----------
+
+   Le catalogue vient du serveur et se réordonne selon la langue choisie :
+   un modèle entraîné sur du mandarin n'a rien à faire en tête de liste
+   pour du français. Le classement traduit la langue d'entraînement, pas
+   une précision mesurée — l'intitulé le dit, pour ne pas laisser croire
+   à un palmarès.
+
+   Rien n'est téléchargé ici. Le poids s'affiche à côté des modèles
+   absents, et le fichier ne part qu'au lancement d'une transcription. */
+let catalogue = [];
+let nettoyeurs = [];
+
+async function loadModels() {
+  const sel = $('#emb'), note = $('#embnote');
+  const wanted = sel.value;
+  try {
+    const data = await api('/api/models?langue=' + encodeURIComponent($('#lang').value));
+    catalogue = data.modeles;
+    nettoyeurs = data.nettoyeurs || [];
+    const vieux = $('#clean').value;
+    $('#clean').innerHTML = nettoyeurs.map(n => {
+      const poids = n.telecharge ? 'sur cet ordinateur' : `${Math.round(n.mo)} Mo à télécharger`;
+      return `<option value="${n.cle}">${escapeHtml(n.nom)} — ${poids}</option>`;
+    }).join('') + '<option value="">Aucun — garder le son tel quel</option>';
+    $('#clean').value = vieux || data.nettoyeur_defaut || '';
+    describeClean();
+    sel.innerHTML = '<option value="auto">Choisir pour moi, selon la langue</option>'
+      + catalogue.map(m => {
+        const poids = m.telecharge ? 'sur cet ordinateur' : `${Math.round(m.mo)} Mo à télécharger`;
+        return `<option value="${m.cle}">${escapeHtml(m.nom)} — ${poids}</option>`;
+      }).join('');
+    sel.value = (wanted && (wanted === 'auto' || catalogue.some(m => m.cle === wanted)))
+      ? wanted : 'auto';
+    describeModel();
+  } catch {
+    note.textContent = '';
+  }
+}
+
+function describeModel() {
+  const note = $('#embnote');
+  if ($('#emb').value === 'auto') {
+    note.textContent = $('#lang').value
+      ? "Le modèle sera choisi d'après la langue indiquée."
+      : "La langue sera reconnue sur une minute d'enregistrement, puis le "
+        + "modèle choisi en conséquence. Si l'enregistrement mêle plusieurs "
+        + "langues, indiquer la langue principale donne un meilleur résultat.";
+    return;
+  }
+  const m = catalogue.find(x => x.cle === $('#emb').value);
+  if (!m) { note.textContent = ''; return; }
+  const lent = m.poids >= 1.8 ? ` Environ ${m.poids.toFixed(1)}× le temps de calcul du plus rapide.` : '';
+  note.textContent = m.note + lent +
+    (m.telecharge ? '' : ' Le téléchargement se fera au lancement, une seule fois.');
+}
+
+function describeClean() {
+  const n = nettoyeurs.find(x => x.cle === $('#clean').value);
+  const note = $('#cleannote');
+  if (!n) {
+    note.textContent = "Le son part tel quel. À essayer si l'enregistrement est "
+      + "déjà propre, ou si le nettoyage dégrade le résultat.";
+    return;
+  }
+  note.textContent = n.note + ` Compter environ une minute de calcul par `
+    + `${Math.round(n.vitesse)} minutes d'enregistrement.`;
+}
+
+$('#clean').onchange = describeClean;
+$('#emb').onchange = describeModel;
+$('#lang').addEventListener('change', loadModels);
+loadModels();
+
+/* ---------- relecture et résumé ---------- */
+let relOpts = null, relTimer = null, corrections = [];
+
+/* Ces deux boutons vivent dans le socle, affiché dès l'écran de la clé.
+   Sans ce garde-fou, les cliquer avant d'avoir un transcript lèverait une
+   erreur sur `job.id`. */
+function pret() {
+  if (job && job.status === 'done' && job.blocks && job.blocks.length) return true;
+  flash('Il faut un transcript terminé.');
+  return false;
+}
+
+async function ensureRelOpts() {
+  if (!relOpts) relOpts = await api('/api/relecture');
+  return relOpts;
+}
+
+function closePanel() { $('#panneau').hidden = true; $('#panneau').innerHTML = ''; }
+
+$('#reread').onclick = async () => {
+  if (!pret()) return;
+  const o = await ensureRelOpts();
+  const p = $('#panneau');
+  p.hidden = false;
+  p.innerHTML = `<h4>Relecture</h4>
+    <div class="opts">
+      <label><input type="checkbox" id="ratt" checked> Corriger l'attribution</label>
+      <label><input type="checkbox" id="rtxt" checked> Corriger le texte</label>
+      <select id="rmod">${o.modeles.map(m =>
+        `<option value="${m.cle}"${m.cle === o.defaut ? ' selected' : ''}>${escapeHtml(m.nom)}</option>`).join('')}</select>
+      <button id="rgo">Lancer</button>
+      <button id="rno">Fermer</button>
+    </div>
+    <p class="hint">L'original n'est pas modifié : les corrections s'affichent
+    ici une par une et se décochent. L'attribution se juge sur la syntaxe, ce
+    qui répare les phrases coupées en deux — mais une personne qui termine la
+    phrase d'une autre reste indétectable par ce moyen.</p>`;
+  $('#rno').onclick = closePanel;
+  $('#rgo').onclick = async () => {
+    const body = { attribution: $('#ratt').checked, texte: $('#rtxt').checked,
+                   modele: $('#rmod').value };
+    if (!body.attribution && !body.texte) { flash('Rien à relire'); return; }
+    $('#rgo').disabled = true;
+    try {
+      await api(`/api/jobs/${job.id}/relire`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      pollRelecture();
+    } catch (e) { p.innerHTML = `<h4>Relecture</h4><p>${escapeHtml(String(e))}</p>`; }
+  };
+};
+
+function pollRelecture() {
+  clearInterval(relTimer);
+  relTimer = setInterval(async () => {
+    const fresh = await api(`/api/jobs/${job.id}?light=1`).catch(() => null);
+    const r = fresh && fresh.relecture;
+    if (!r) return;
+    if (r.status === 'running') {
+      $('#panneau').innerHTML = `<h4>Relecture en cours</h4><pre>${
+        escapeHtml((r.notes || []).join('\n') || 'lecture des premiers blocs…')}</pre>`;
+      return;
+    }
+    clearInterval(relTimer);
+    job.relecture = r;
+    if (r.status === 'error') {
+      $('#panneau').innerHTML = `<h4>Relecture</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
+      return;
+    }
+    corrections = r.corrections || [];
+    showCorrections();
+  }, 1500);
+}
+
+function describeCorrection(c, i) {
+  if (c.type === 'locuteur')
+    return `<span class="av">${escapeHtml(c.avant)}</span> → <span class="ap">${escapeHtml(c.apres)}</span>
+            <span class="hint">bloc ${c.bloc}</span>`;
+  if (c.type === 'frontiere') {
+    const n = c.mots;
+    return `<span class="ap">frontière</span> <span class="hint">bloc ${c.bloc} :
+      ${n > 0 ? `${n} mot(s) rendus au bloc précédent` : `${-n} mot(s) passés au bloc suivant`}</span>`;
+  }
+  return `<span class="av">${escapeHtml(c.avant)}</span><br><span class="ap">${escapeHtml(c.apres)}</span>`;
+}
+
+function showCorrections() {
+  const p = $('#panneau');
+  if (!corrections.length) {
+    p.innerHTML = `<h4>Relecture</h4><p>Aucune correction proposée.</p>
+      <div class="opts"><button id="rno">Fermer</button></div>`;
+    $('#rno').onclick = closePanel;
+    return;
+  }
+  p.innerHTML = `<h4>${corrections.length} correction(s) proposée(s)</h4>
+    ${corrections.map((c, i) => `<div class="row">
+      <label><input type="checkbox" class="ck" data-i="${i}" checked></label>
+      <div>${describeCorrection(c, i)}</div></div>`).join('')}
+    <div class="opts" style="margin-top:12px">
+      <button id="rapp">Appliquer la sélection</button>
+      <button id="rno">Fermer</button>
+    </div>`;
+  $('#rno').onclick = closePanel;
+  $('#rapp').onclick = async () => {
+    const gardees = [...p.querySelectorAll('.ck')].filter(c => c.checked)
+      .map(c => corrections[+c.dataset.i]);
+    const out = await api(`/api/jobs/${job.id}/appliquer`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ corrections: gardees }) });
+    job.relecture.blocks = out.blocks;
+    relu = true;
+    $('#asread').hidden = false;
+    $('#asread').textContent = "Voir l'original";
+    render();
+    flash(`${gardees.length} correction(s) appliquée(s)`);
+  };
+  $('#asread').hidden = false;
+}
+
+$('#asread').onclick = () => {
+  relu = !relu;
+  $('#asread').textContent = relu ? "Voir l'original" : 'Voir la version relue';
+  render();
+};
+
+$('#sum').onclick = async () => {
+  if (!pret()) return;
+  const o = await ensureRelOpts();
+  const p = $('#panneau');
+  p.hidden = false;
+  p.innerHTML = `<h4>Résumé</h4>
+    <div class="opts">
+      <select id="sform">${o.resumes.map(r =>
+        `<option value="${r.cle}">${escapeHtml(r.nom)}</option>`).join('')}</select>
+      <select id="smod">${o.modeles.map(m =>
+        `<option value="${m.cle}"${m.cle === o.defaut ? ' selected' : ''}>${escapeHtml(m.nom)}</option>`).join('')}</select>
+      <button id="sgo">Rédiger</button>
+      <button id="rno">Fermer</button>
+    </div>`;
+  $('#rno').onclick = closePanel;
+  $('#sgo').onclick = async () => {
+    $('#sgo').disabled = true;
+    $('#sgo').textContent = 'Rédaction…';
+    try {
+      const out = await api(`/api/jobs/${job.id}/resume`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forme: $('#sform').value, modele: $('#smod').value }) });
+      p.innerHTML = `<h4>Résumé</h4><pre id="stexte">${escapeHtml(out.texte)}</pre>
+        <div class="opts" style="margin-top:12px">
+          <button id="scopy">Copier</button>
+          <button id="ssave">Enregistrer .txt</button>
+          <button id="rno">Fermer</button>
+        </div>`;
+      $('#rno').onclick = closePanel;
+      $('#scopy').onclick = () => {
+        navigator.clipboard.writeText(out.texte); flash('Résumé copié');
+      };
+      $('#ssave').onclick = () => download(out.texte, 'resume.txt');
+    } catch (e) {
+      p.innerHTML = `<h4>Résumé</h4><p>${escapeHtml(String(e))}</p>`;
+    }
+  };
+};
 
 $('#changekey').onclick = askForKey;
 document.querySelectorAll('.exportbar button').forEach(
@@ -537,6 +812,7 @@ $('#go').onclick = async () => {
   form.append('language', $('#lang').value);
   form.append('diarize', count === '1' ? 'false' : 'true');
   form.append('embedding', $('#emb').value);
+  form.append('denoise', $('#clean').value);
   if (count !== 'auto' && count !== '1') form.append('speakers', count);
 
   $('#go').disabled = true;
@@ -545,6 +821,7 @@ $('#go').onclick = async () => {
   $('#journal').innerHTML = '';
   $('#alerts').innerHTML = '';
   startedAt = 0;
+  marks = [];
   setStage('Envoi du fichier', 0.01);
 
   try {
@@ -575,12 +852,39 @@ function idle(label) {
 }
 
 let startedAt = 0;
+let marks = [];
+
+/* Estimation du temps restant.
+
+   La progression n'avance pas au même rythme selon l'étape : la
+   séparation des voix occupe l'essentiel du temps, la conversion et
+   l'envoi sont rapides. Extrapoler depuis le début donnerait donc un
+   chiffre faux à chaque changement d'étape. On mesure plutôt la vitesse
+   sur la dernière minute, ce qui reflète l'étape en cours.
+
+   Rien n'est affiché tant que la mesure n'est pas assez large pour être
+   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste. */
+function eta(ratio) {
+  const now = Date.now();
+  marks.push([now, ratio]);
+  while (marks.length > 2 && now - marks[0][0] > 60000) marks.shift();
+  if (ratio >= 1) return '';
+  const [t0, r0] = marks[0];
+  const span = (now - t0) / 1000, gained = ratio - r0;
+  if (span < 15 || gained <= 0.002) return '';
+  const left = (1 - ratio) / (gained / span);
+  if (!isFinite(left) || left < 5) return '';
+  if (left > 5400) return ' — plus d\'une heure restante';
+  const mins = Math.round(left / 60);
+  if (mins < 1) return ' — moins d\'une minute restante';
+  return ` — encore ${mins} min environ`;
+}
 
 function setStage(text, ratio) {
   if (!startedAt) startedAt = Date.now();
   const secs = Math.round((Date.now() - startedAt) / 1000);
   const el = $('#elapsed');
-  if (el) el.textContent = secs > 4 ? `${clock(secs)} écoulées` : '';
+  if (el) el.textContent = secs > 4 ? `${clock(secs)} écoulées${eta(ratio)}` : '';
   $('#stage').textContent = text;
   $('#pct').textContent = Math.round(ratio * 100) + ' %';
   $('#fill').style.width = (ratio * 100) + '%';
@@ -653,9 +957,19 @@ function colorOf(id) {
   return first ? first.color : '#5F636B';
 }
 
+/* La relecture ne remplace jamais l'original : elle vit à côté, et ce
+   bouton bascule de l'un à l'autre. Tout ce qui lit le transcript passe
+   par ici, donc l'export suit ce qui est affiché. */
+let relu = false;
+
+function sourceBlocks() {
+  const r = job.relecture;
+  return (relu && r && r.blocks && r.blocks.length) ? r.blocks : job.blocks;
+}
+
 function mergedBlocks() {
   const out = [];
-  for (const b of job.blocks) {
+  for (const b of sourceBlocks()) {
     const previous = out[out.length - 1];
     if (previous && keyOf(previous.speaker) === keyOf(b.speaker)) {
       previous.end = b.end;

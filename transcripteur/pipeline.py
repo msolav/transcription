@@ -9,6 +9,7 @@ chez Groq pour la reconnaissance de la parole.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import time
 import wave
@@ -37,6 +38,19 @@ MAX_AUTO_SPEAKERS = 10    # au-delà, la détection automatique a déraillé
 AUTO_RETRIES = 3
 AUTO_THRESHOLD_STEP = 0.08
 TRANSCRIBE_WORKERS = 3
+# Cœurs utilisés pour la séparation des voix. sherpa-onnx n'en utilise
+# qu'un par défaut. Mesuré sur 5 minutes de vraie conversation (i7 à 8
+# cœurs physiques, 16 fils) : 37,0 s sur un fil, 23,3 s sur deux, 19,0 s
+# sur quatre, 19,3 s sur huit, 27,1 s sur seize. Le gain plafonne à quatre
+# fils et l'hyperthreading fait perdre du temps au-delà. On plafonne donc
+# à quatre plutôt que de prendre tous les cœurs : le reste de la machine
+# respire, et la transcription ne va pas plus vite pour autant.
+DIARIZE_THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
+# Le nettoyeur, lui, va plus vite sur un seul fil : mesuré sur 5 minutes,
+# 26,2 s sur un fil, 28,3 s sur quatre, 41,0 s sur huit. Le découpage du
+# signal en trames ne se partage pas, et la synchronisation coûte plus
+# qu'elle ne rapporte.
+DENOISE_THREADS = 1
 MP3_BYTES_PER_SECOND = 8000  # mono, 64 kbit/s constants
 
 CHANNEL_COLORS = [
@@ -234,6 +248,104 @@ def split_audio(src: Path, duration: float, max_mb: int, work_dir: Path,
 
 
 # --------------------------------------------------------------------------
+# Nettoyage du signal
+# --------------------------------------------------------------------------
+
+def denoise(audio, cle: str, progress: Progress, span: tuple[float, float]):
+    """Enlève bruit de fond et réverbération avant la séparation des voix.
+
+    L'ordre importe : on nettoie avant de séparer, parce que c'est la
+    séparation qui souffre du bruit. La transcription, elle, part de
+    l'audio d'origine — Whisper se débrouille très bien avec du souffle,
+    et un signal débruité perd des attaques de consonnes qui l'aideraient."""
+    try:
+        import sherpa_onnx
+    except ImportError as exc:
+        raise PipelineError("sherpa-onnx n'est pas installé.") from exc
+
+    fichier, famille = assets.ensure_denoiser(cle, note=log)
+    modele = sherpa_onnx.OfflineSpeechDenoiserModelConfig(num_threads=DENOISE_THREADS)
+    if famille == "gtcrn":
+        modele.gtcrn = sherpa_onnx.OfflineSpeechDenoiserGtcrnModelConfig(model=str(fichier))
+    else:
+        modele.dpdfnet = sherpa_onnx.OfflineSpeechDenoiserDpdfNetModelConfig(model=str(fichier))
+    config = sherpa_onnx.OfflineSpeechDenoiserConfig(model=modele)
+    if not config.validate():
+        raise PipelineError("Modèle de nettoyage illisible. Supprime models/ et relance.")
+
+    low, high = span
+    progress("Nettoyage du son", low)
+    checkpoint()
+    debut = time.time()
+    propre = sherpa_onnx.OfflineSpeechDenoiser(config).run(audio, 16000)
+    import numpy as np
+    sortie = np.array(propre.samples, dtype=np.float32)
+    log(f"son nettoyé en {time.time() - debut:.0f}s")
+    progress("Nettoyage du son", high)
+    return sortie
+
+
+# --------------------------------------------------------------------------
+# Détection de la langue
+# --------------------------------------------------------------------------
+
+def detect_language(audio, api_key: str) -> str | None:
+    """La langue parlée, devinée sur une minute prélevée au milieu.
+
+    Le choix du modèle d'empreintes dépend de la langue, mais la séparation
+    des voix passe avant la transcription : à ce moment-là, personne ne sait
+    encore ce qui est parlé. On envoie donc une minute à Whisper, qui rend
+    la langue en même temps que le texte. Le prélèvement est fait au milieu,
+    le début d'un enregistrement étant souvent occupé par des bruits de
+    salle plutôt que par de la parole.
+
+    En cas d'échec, on renvoie None : l'appelant retombera sur un modèle
+    multilingue, qui est le choix raisonnable quand on ne sait pas."""
+    from io import BytesIO
+    try:
+        from groq import Groq
+    except ImportError:
+        return None
+
+    milieu = max(0, len(audio) // 2 - 30 * 16000)
+    extrait = audio[milieu:milieu + 60 * 16000]
+    if len(extrait) < 16000:
+        extrait = audio
+
+    buffer = BytesIO()
+    with wave.open(buffer, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes((extrait * 32767).astype("<i2").tobytes())
+    buffer.seek(0)
+
+    try:
+        reponse = Groq(api_key=api_key).audio.transcriptions.create(
+            file=("extrait.wav", buffer.read()),
+            model=GROQ_MODEL,
+            response_format="verbose_json",
+        )
+        langue = getattr(reponse, "language", None)
+        return NOMS_LANGUES.get((langue or "").lower(), (langue or "").lower()[:2]) or None
+    except Exception as exc:  # noqa: BLE001
+        log(f"langue non détectée ({exc}), modèle multilingue par défaut")
+        return None
+
+
+# Whisper rend parfois le nom anglais complet plutôt que le code ISO.
+NOMS_LANGUES = {
+    "french": "fr", "english": "en", "spanish": "es", "german": "de",
+    "italian": "it", "portuguese": "pt", "dutch": "nl", "chinese": "zh",
+    "mandarin": "zh", "japanese": "ja", "korean": "ko", "russian": "ru",
+    "ukrainian": "uk", "polish": "pl", "czech": "cs", "romanian": "ro",
+    "greek": "el", "turkish": "tr", "arabic": "ar", "hebrew": "he",
+    "hindi": "hi", "indonesian": "id", "vietnamese": "vi", "swedish": "sv",
+    "danish": "da", "norwegian": "no", "finnish": "fi",
+}
+
+
+# --------------------------------------------------------------------------
 # Séparation des voix
 # --------------------------------------------------------------------------
 
@@ -246,13 +358,15 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     except ImportError as exc:
         raise PipelineError("sherpa-onnx n'est pas installé.") from exc
 
-    seg_model, emb_model = assets.ensure_models(embedding)
+    seg_model, emb_model = assets.ensure_models(embedding, note=log)
 
     config = sherpa_onnx.OfflineSpeakerDiarizationConfig(
         segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
             pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(
-                model=str(seg_model))),
-        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(emb_model)),
+                model=str(seg_model)),
+            num_threads=DIARIZE_THREADS),
+        embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=str(emb_model), num_threads=DIARIZE_THREADS),
         clustering=sherpa_onnx.FastClusteringConfig(
             num_clusters=num_speakers or -1, threshold=threshold),
         min_duration_on=0.3,
@@ -265,7 +379,8 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
 
     engine = sherpa_onnx.OfflineSpeakerDiarization(config)
     low, high = span
-    log("modèles chargés, analyse du signal")
+    log(f"modèle « {assets.PAR_CLE[assets.resoudre(embedding)].nom} » chargé "
+        f"sur {DIARIZE_THREADS} cœurs, analyse du signal")
 
     def report(done: int, total: int) -> int:
         checkpoint()
@@ -725,6 +840,7 @@ class Options:
     max_mb: int = DEFAULT_MAX_MB
     diarize: bool = True
     embedding: str = "standard"
+    denoise: str = ""     # "" = pas de nettoyage
     api_key: str = ""
 
 
@@ -755,18 +871,33 @@ def process(src: Path, work_dir: Path, options: Options,
     log(f"durée : {duration / 60:.1f} min — conversion faite")
 
     checkpoint()
+    if options.denoise and options.diarize:
+        audio = denoise(audio, options.denoise, progress, (0.03, 0.06))
+
+    checkpoint()
+    embedding = options.embedding
+    if embedding == "auto":
+        langue = options.language
+        if not langue:
+            progress("Reconnaissance de la langue", 0.05)
+            langue = detect_language(audio, options.api_key)
+            log(f"langue détectée : {langue or 'indéterminée'}")
+        embedding = assets.resoudre_pour_langue(langue)
+        log(f"modèle choisi pour cette langue : "
+            f"{assets.PAR_CLE[embedding].nom}")
+
     turns = []
     if options.diarize:
         progress("Séparation des voix", 0.06)
         if options.num_speakers:
             log(f"séparation des voix, {options.num_speakers} demandées "
-                f"(modèle « {options.embedding} »)")
+                f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
             turns = diarize(audio, options.num_speakers, progress, (0.06, 0.52),
-                            CLUSTER_THRESHOLD, options.embedding)
+                            CLUSTER_THRESHOLD, embedding)
         else:
             log("séparation des voix, nombre à déterminer")
             turns = diarize_auto(audio, progress, (0.06, 0.52),
-                                 CLUSTER_THRESHOLD, options.embedding)
+                                 CLUSTER_THRESHOLD, embedding)
     del audio
     wav.unlink(missing_ok=True)
 

@@ -24,7 +24,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import assets, config, pipeline
+from . import assets, config, relecture, pipeline
 from .pipeline import Cancelled, Options, PipelineError
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -63,6 +63,7 @@ def _public(job: dict) -> dict:
         "blocks": job["blocks"],
         "names": job["names"],
         "notes": job["notes"][-12:],
+        "relecture": job.get("relecture"),
         "created_at": job["created_at"],
     }
 
@@ -146,13 +147,27 @@ def forget_key() -> dict:
     return {"has_key": bool(config.get_key())}
 
 
+@app.get("/api/models")
+def list_models(langue: str = "") -> dict:
+    """Le catalogue des modèles de voix, le plus adapté à la langue en tête.
+
+    L'ordre suit la langue d'entraînement de chaque modèle. Ce n'est pas un
+    classement de précision : départager deux modèles d'une même famille
+    demanderait un enregistrement annoté que nous n'avons pas."""
+    return {"modeles": assets.inventaire(langue or None),
+            "defaut": assets.DEFAULT_EMBEDDING,
+            "nettoyeurs": assets.inventaire_debruiteurs(),
+            "nettoyeur_defaut": assets.DEBRUITEUR_DEFAUT}
+
+
 @app.post("/api/jobs")
 async def create_job(
     file: UploadFile = File(...),
     language: str = Form("fr"),
     speakers: str = Form(""),
     diarize: str = Form("true"),
-    embedding: str = Form("standard"),
+    embedding: str = Form(""),
+    denoise: str = Form(""),
 ) -> JSONResponse:
     def as_int(value: str) -> int | None:
         value = (value or "").strip()
@@ -194,6 +209,7 @@ async def create_job(
         "blocks": [],
         "names": {},
         "notes": [],
+        "relecture": None,
         "cancel": False,
         "created_at": _now(),
     }
@@ -204,12 +220,115 @@ async def create_job(
         language=(language or "").strip() or None,
         num_speakers=as_int(speakers),
         diarize=diarize.lower() != "false",
-        embedding=embedding if embedding in assets.EMBEDDINGS else "standard",
+        embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
+        denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
         api_key=config.get_key(),
     )
 
     threading.Thread(target=_run_job, args=(job_id, options), daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
+
+
+def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str) -> None:
+    """Relit un transcript déjà produit, dans un fil à part.
+
+    Rien n'est appliqué ici : on range des propositions que l'interface
+    affiche côte à côte avec l'original. C'est l'utilisateur qui tranche."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        return
+
+    def note(message: str) -> None:
+        with _lock:
+            job["relecture"]["notes"] = (job["relecture"]["notes"] + [message])[-8:]
+
+    try:
+        blocs, noms = job["blocks"], job["names"]
+        corrections = []
+        if attribution:
+            corrections += relecture.corriger_attribution(
+                blocs, noms, config.get_key(), modele, note=note)
+        if texte:
+            corrections += relecture.corriger_texte(
+                blocs, config.get_key(), modele, note=note)
+        apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
+        with _lock:
+            job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
+    except Exception as exc:  # noqa: BLE001
+        with _lock:
+            job["relecture"].update(status="error", error=str(exc))
+
+
+@app.get("/api/relecture")
+def relecture_options() -> dict:
+    return {
+        "modeles": [{"cle": k, "nom": v["nom"], "note": v["note"]}
+                    for k, v in relecture.MODELES.items()],
+        "defaut": relecture.MODELE_DEFAUT,
+        "resumes": [{"cle": k, "nom": v[0]} for k, v in relecture.RESUMES.items()],
+    }
+
+
+@app.post("/api/jobs/{job_id}/relire")
+def relire(job_id: str, payload: dict) -> dict:
+    with _lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Tâche inconnue.")
+        if job["status"] != "done":
+            raise HTTPException(400, "La transcription n'est pas terminée.")
+        if job.get("relecture", {}) and job["relecture"].get("status") == "running":
+            raise HTTPException(409, "Une relecture est déjà en cours.")
+        job["relecture"] = {"status": "running", "notes": [], "corrections": [],
+                            "blocks": [], "error": None}
+    threading.Thread(
+        target=_run_relecture,
+        args=(job_id, bool(payload.get("attribution", True)),
+              bool(payload.get("texte", True)),
+              str(payload.get("modele") or relecture.MODELE_DEFAUT)),
+        daemon=True).start()
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/resume")
+def resume(job_id: str, payload: dict) -> dict:
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche inconnue.")
+    if job["status"] != "done":
+        raise HTTPException(400, "La transcription n'est pas terminée.")
+    blocs = job["relecture"]["blocks"] if (job.get("relecture") or {}).get("blocks") \
+        else job["blocks"]
+    try:
+        texte = relecture.resumer(blocs, job["names"], config.get_key(),
+                                  str(payload.get("forme") or "compte_rendu"),
+                                  str(payload.get("modele") or relecture.MODELE_DEFAUT))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(502, f"Résumé impossible : {exc}") from exc
+    return {"texte": texte}
+
+
+@app.post("/api/jobs/{job_id}/appliquer")
+def appliquer(job_id: str, payload: dict) -> dict:
+    """Ré-applique un sous-ensemble de corrections.
+
+    L'utilisateur décoche ce qu'il refuse ; on recalcule à partir de
+    l'original, jamais à partir de la version déjà corrigée, sinon les
+    refus successifs s'empileraient sur un texte déjà modifié."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job or not job.get("relecture"):
+        raise HTTPException(404, "Aucune relecture pour cette tâche.")
+    gardees = payload.get("corrections") or []
+    try:
+        apercu = relecture.appliquer(job["blocks"], gardees, job["names"])
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, f"Corrections inapplicables : {exc}") from exc
+    with _lock:
+        job["relecture"]["blocks"] = apercu
+    return {"blocks": apercu}
 
 
 @app.get("/api/jobs/{job_id}")
