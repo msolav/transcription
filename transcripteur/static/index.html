@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcripteur</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=DM+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --graphite:#1E2127;
+  --graphite-deep:#15171C;
+  --graphite-lift:#262A32;
+  --line:#31363F;
+  --paper:#EFEEE9;
+  --paper-lift:#F7F6F2;
+  --ink:#14161A;
+  --ink-soft:#5F636B;
+  --ink-faint:#9A9DA3;
+  --on-dark:#E6E7E9;
+  --on-dark-soft:#8E939C;
+  --signal:#3F8EFC;
+  --warn:#E4572E;
+  --rail:380px;
+  --sans:'Archivo',system-ui,sans-serif;
+  --serif:'Newsreader',Georgia,serif;
+  --mono:'DM Mono',ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:var(--sans);
+  background:var(--paper);
+  color:var(--ink);
+  -webkit-font-smoothing:antialiased;
+}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer;border:none;background:none}
+
+/* ---------- ossature ---------- */
+.shell{display:grid;grid-template-columns:var(--rail) 1fr;min-height:100vh}
+
+.console{
+  background:var(--graphite);
+  color:var(--on-dark);
+  padding:26px 24px 32px;
+  display:flex;flex-direction:column;gap:26px;
+  position:sticky;top:0;height:100vh;overflow-y:auto;
+  border-right:1px solid var(--graphite-deep);
+}
+.stage{padding:0;min-width:0}
+
+/* ---------- entête ---------- */
+.wordmark{display:flex;align-items:baseline;gap:9px}
+.wordmark b{
+  font-weight:700;font-size:17px;letter-spacing:-.02em;
+}
+.wordmark span{
+  font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--on-dark-soft);
+}
+
+/* ---------- dépôt du fichier ---------- */
+.drop{
+  border:1px dashed var(--line);
+  border-radius:3px;
+  padding:34px 18px;
+  text-align:center;
+  transition:border-color .18s,background .18s;
+  background:var(--graphite-deep);
+}
+.drop.hot{border-color:var(--signal);background:#1A2230}
+.drop h2{margin:0 0 6px;font-size:14px;font-weight:600;letter-spacing:-.01em}
+.drop p{margin:0;font-size:12.5px;line-height:1.5;color:var(--on-dark-soft)}
+.drop button{
+  margin-top:14px;padding:8px 16px;
+  background:var(--signal);color:#fff;border-radius:2px;
+  font-size:12.5px;font-weight:600;
+}
+.drop button:hover{filter:brightness(1.08)}
+.filetag{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  background:var(--graphite-deep);border:1px solid var(--line);
+  border-radius:3px;padding:12px 14px;
+}
+.filetag .name{font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.filetag .meta{font-family:var(--mono);font-size:10.5px;color:var(--on-dark-soft);margin-top:3px}
+.filetag button{color:var(--on-dark-soft);font-size:11px;text-decoration:underline;white-space:nowrap}
+.filetag button:hover{color:var(--on-dark)}
+
+/* ---------- réglages ---------- */
+.group{display:flex;flex-direction:column;gap:12px}
+.grouplabel{
+  font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--on-dark-soft);display:flex;align-items:center;gap:10px;
+}
+.grouplabel::after{content:"";flex:1;height:1px;background:var(--line)}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:12px;color:var(--on-dark-soft)}
+.field select,.field input{
+  background:var(--graphite-deep);border:1px solid var(--line);
+  border-radius:2px;padding:8px 10px;font-size:13px;color:var(--on-dark);
+}
+.field select:focus,.field input:focus{outline:2px solid var(--signal);outline-offset:1px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.hint{font-size:11.5px;line-height:1.5;color:var(--ink-faint);margin:0}
+
+.go{
+  width:100%;padding:12px;border-radius:2px;background:var(--signal);color:#fff;
+  font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+}
+.go:disabled{background:var(--graphite-lift);color:var(--on-dark-soft);cursor:not-allowed}
+.go:not(:disabled):hover{filter:brightness(1.08)}
+
+/* ---------- état ---------- */
+.status{border-top:1px solid var(--line);padding-top:18px;margin-top:auto}
+.status .stagetext{font-size:12.5px;display:flex;justify-content:space-between;gap:10px}
+.status .stagetext em{font-style:normal;font-family:var(--mono);color:var(--on-dark-soft)}
+.bar{height:2px;background:var(--line);margin-top:10px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--signal);width:0;transition:width .4s ease}
+.stop{
+  width:100%;padding:9px;border-radius:2px;border:1px solid var(--line);
+  background:var(--graphite-deep);color:var(--on-dark-soft);
+  font-size:12.5px;font-weight:500;margin-top:8px;
+}
+.stop:hover{border-color:var(--warn);color:#F0C9BE}
+.journal{
+  margin-top:12px;border-top:1px solid var(--line);padding-top:10px;
+  font-family:var(--mono);font-size:10.5px;line-height:1.7;
+  color:var(--on-dark-soft);max-height:180px;overflow-y:auto;
+}
+.journal div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.journal div:last-child{color:var(--on-dark)}
+.alert{
+  border-left:2px solid var(--warn);padding:10px 12px;background:#2A1E1B;
+  font-size:12.5px;line-height:1.5;color:#F0C9BE;border-radius:0 2px 2px 0;
+}
+.alert a{color:#fff}
+
+/* ---------- écran vide ---------- */
+.blank{
+  min-height:100vh;display:flex;flex-direction:column;justify-content:center;
+  padding:60px clamp(24px,5vw,80px);max-width:720px;
+}
+.blank h1{
+  font-family:var(--serif);font-weight:400;font-size:clamp(34px,4.4vw,52px);
+  line-height:1.08;letter-spacing:-.02em;margin:0 0 20px;
+}
+.blank h1 em{font-style:italic;color:var(--signal)}
+.blank p{font-size:15px;line-height:1.65;color:var(--ink-soft);margin:0 0 26px;max-width:52ch}
+.steps{display:flex;flex-direction:column;gap:0;border-top:1px solid #DAD8D1}
+.steps div{
+  display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:baseline;
+  padding:14px 0;border-bottom:1px solid #DAD8D1;
+}
+.steps b{font-family:var(--mono);font-size:11px;color:var(--ink-faint);font-weight:500}
+.steps span{font-size:13.5px;color:var(--ink-soft);line-height:1.5}
+
+/* ---------- première ouverture : la clé ---------- */
+.setup{max-width:560px;padding:60px clamp(24px,5vw,80px);min-height:100vh;
+  display:flex;flex-direction:column;justify-content:center}
+.setup h1{font-family:var(--serif);font-weight:400;font-size:clamp(30px,3.8vw,44px);
+  line-height:1.1;letter-spacing:-.02em;margin:0 0 16px}
+.setup h1 em{font-style:italic;color:var(--signal)}
+.setup p{font-size:15px;line-height:1.65;color:var(--ink-soft);margin:0 0 8px}
+.setup ol{font-size:14.5px;line-height:1.75;color:var(--ink-soft);padding-left:20px;margin:14px 0 26px}
+.setup a{color:var(--signal)}
+.keyrow{display:flex;gap:8px;flex-wrap:wrap}
+.keyrow input{flex:1;min-width:240px;font-family:var(--mono);font-size:13px;
+  padding:11px 12px;border:1px solid #D6D4CD;border-radius:2px;background:#fff}
+.keyrow input:focus{outline:2px solid var(--signal);outline-offset:1px}
+.keyrow button{background:var(--signal);color:#fff;padding:11px 20px;border-radius:2px;
+  font-size:13.5px;font-weight:600}
+.keyrow button:disabled{background:#C9C7C0;cursor:not-allowed}
+.keynote{font-size:12.5px;color:var(--ink-faint);margin-top:12px;line-height:1.55}
+.keyerr{color:var(--warn);font-size:13px;margin-top:12px;font-weight:500}
+
+/* ---------- bandeau des voix ---------- */
+.channels{
+  background:var(--paper-lift);border-bottom:1px solid #DAD8D1;
+  padding:22px clamp(20px,4vw,44px);position:sticky;top:0;z-index:5;
+  backdrop-filter:saturate(1.2);
+}
+.channels header{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.channels h2{
+  font-size:13px;font-weight:600;margin:0;letter-spacing:-.01em;
+}
+.channels h2 span{color:var(--ink-faint);font-weight:400}
+.strips{display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:12px}
+.strip{
+  background:#fff;border:1px solid #E2E0D9;border-radius:3px;
+  padding:12px 13px 13px;display:flex;flex-direction:column;gap:10px;
+  border-top:2px solid var(--c);
+}
+.strip .top{display:flex;align-items:center;gap:9px}
+.play{
+  width:30px;height:30px;flex:none;border-radius:50%;
+  background:var(--c);color:#fff;display:grid;place-items:center;
+}
+.play:disabled{opacity:.35;cursor:not-allowed}
+.play svg{width:11px;height:11px;fill:currentColor;margin-left:1px}
+.play.on svg{margin-left:0}
+.strip .who{min-width:0;flex:1}
+.strip .tag{
+  font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-faint);
+}
+.strip input{
+  width:100%;border:none;border-bottom:1px solid #DDDBD4;background:none;
+  padding:3px 0;font-size:14px;font-weight:500;letter-spacing:-.01em;
+}
+.strip input::placeholder{color:var(--ink-faint);font-weight:400}
+.strip input:focus{outline:none;border-bottom-color:var(--c)}
+.share{height:3px;background:#EAE8E1;border-radius:2px;overflow:hidden}
+.share i{display:block;height:100%;background:var(--c);width:var(--w)}
+.strip .stat{font-family:var(--mono);font-size:10.5px;color:var(--ink-faint);display:flex;justify-content:space-between}
+
+/* ---------- transcription ---------- */
+.doc{padding:34px clamp(20px,4vw,44px) 120px;max-width:860px}
+.turn{display:grid;grid-template-columns:82px 1fr;gap:18px;padding:9px 0}
+.turn+.turn{border-top:1px solid transparent}
+.turn .tc{
+  font-family:var(--mono);font-size:11px;color:var(--ink-faint);
+  padding-top:6px;text-align:right;
+}
+.turn .tc:hover{color:var(--signal);text-decoration:underline}
+.turn .said{min-width:0}
+.turn .who{
+  font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--c);margin-bottom:3px;
+}
+.turn p{
+  font-family:var(--serif);font-size:17.5px;line-height:1.62;margin:0;
+  letter-spacing:-.005em;
+}
+.turn.same .who{visibility:hidden;height:0;margin:0}
+
+/* ---------- lecteur ---------- */
+.turn.live{background:#E7E4DA;border-radius:3px}
+.turn.live p{color:var(--ink)}
+.doc{padding-bottom:190px}
+
+.deck{
+  background:var(--graphite);color:var(--on-dark);
+  border-top:1px solid var(--graphite-deep);
+  padding:12px clamp(20px,4vw,44px) 14px;
+  display:flex;flex-direction:column;gap:9px;
+}
+.deck[hidden]{display:none}
+.deck .line{display:flex;align-items:center;gap:14px}
+.deck button{color:var(--on-dark-soft)}
+.deck button:hover{color:var(--on-dark)}
+.deck .main{
+  width:38px;height:38px;flex:none;border-radius:50%;
+  background:var(--signal);color:#fff;display:grid;place-items:center;
+}
+.deck .main:hover{filter:brightness(1.1);color:#fff}
+.deck .main svg{width:13px;height:13px;fill:currentColor}
+.deck .skip{font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;white-space:nowrap}
+.deck .clock{font-family:var(--mono);font-size:11.5px;color:var(--on-dark-soft);white-space:nowrap}
+.deck .who{font-size:12px;color:var(--on-dark-soft);overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;flex:1;text-align:right}
+.deck .who b{color:var(--c,var(--on-dark));font-weight:600}
+.scrub{
+  position:relative;height:16px;flex:1;cursor:pointer;display:flex;align-items:center;
+}
+.scrub .track{height:3px;width:100%;background:var(--line);border-radius:2px;overflow:hidden}
+.scrub .track i{display:block;height:100%;background:var(--signal);width:0}
+.scrub .head{
+  position:absolute;top:50%;width:10px;height:10px;border-radius:50%;
+  background:#fff;transform:translate(-50%,-50%);left:0;pointer-events:none;
+}
+.deck .follow{font-size:11.5px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.deck .follow i{width:7px;height:7px;border-radius:50%;background:var(--line);display:block}
+.deck .follow.on i{background:var(--signal)}
+.deck .rate{font-family:var(--mono);font-size:11px;min-width:34px;text-align:center}
+@media (max-width:720px){
+  .deck .skip,.deck .who{display:none}
+}
+
+.dock{position:fixed;bottom:0;left:0;right:0;z-index:9}
+.dock[hidden]{display:none}
+@media (min-width:901px){ .dock{left:var(--rail)} }
+.exportbar{
+  background:var(--paper-lift);border-top:1px solid #DFDDD6;
+  padding:11px clamp(20px,4vw,44px);display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+}
+.exportbar button{
+  border:1px solid #D6D4CD;background:#fff;padding:8px 14px;border-radius:2px;
+  font-size:12.5px;font-weight:500;
+}
+.exportbar button:hover{border-color:var(--ink);}
+.exportbar .said{font-size:12px;color:var(--ink-faint);align-self:center}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr}
+  .console{position:static;height:auto;border-right:none;border-bottom:1px solid var(--graphite-deep)}
+  .channels{position:static}
+  .turn{grid-template-columns:1fr;gap:2px}
+  .turn .tc{text-align:left;padding-top:0}
+}
+@media (prefers-reduced-motion:reduce){
+  *{transition:none!important;animation:none!important}
+}
+:focus-visible{outline:2px solid var(--signal);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <aside class="console">
+    <div class="wordmark"><b>Transcripteur</b><span>local</span></div>
+
+    <div id="alerts"></div>
+
+    <div id="dropzone" class="drop">
+      <h2>Dépose un fichier audio</h2>
+      <p>m4a, mp3, wav, flac, ogg, mp4&nbsp;— jusqu'à 2 Go</p>
+      <button type="button" id="pick">Choisir un fichier</button>
+      <input type="file" id="file" accept="audio/*,video/mp4,video/quicktime" hidden>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">Réglages</div>
+      <div class="field">
+        <label for="lang">Langue parlée</label>
+        <select id="lang">
+          <option value="fr" selected>Français</option>
+          <option value="en">Anglais</option>
+          <option value="es">Espagnol</option>
+          <option value="de">Allemand</option>
+          <option value="it">Italien</option>
+          <option value="pt">Portugais</option>
+          <option value="nl">Néerlandais</option>
+          <option value="ar">Arabe</option>
+          <option value="">Détection automatique</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="count">Nombre de voix</label>
+        <select id="count">
+          <option value="auto" selected>Laisser détecter</option>
+          <option value="1">1 (pas de séparation)</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="emb">Modèle de voix</label>
+        <select id="emb">
+          <option value="standard" selected>Standard (27 Mo)</option>
+          <option value="renforce">Renforcé (69 Mo)</option>
+          <option value="anglais">Anglophone (97 Mo)</option>
+        </select>
+      </div>
+      <p class="hint">Si tu connais le nombre de personnes présentes, indique-le : la séparation est nettement plus fiable qu'en détection automatique.</p>
+      <button class="go" id="go" disabled>Transcrire</button>
+    </div>
+
+    <button id="changekey" style="font-size:11.5px;color:var(--on-dark-soft);text-decoration:underline;text-align:left" hidden>Changer la clé Groq</button>
+
+    <div class="status" id="status" hidden>
+      <div class="stagetext"><span id="stage">En attente</span><em id="pct">0 %</em></div>
+      <div class="stagetext" style="margin-top:4px"><span style="color:var(--ink-faint);font-size:11.5px" id="elapsed"></span></div>
+      <div class="bar"><i id="fill"></i></div>
+      <button class="stop" id="stop" hidden>Arrêter le traitement</button>
+      <div class="journal" id="journal"></div>
+    </div>
+  </aside>
+
+  <main class="stage" id="stage-area">
+    <div class="blank">
+      <h1>Qui a dit quoi,<br><em>et à quelle minute.</em></h1>
+      <p>Whisper écrit le texte, pyannote sépare les voix, et les deux sont recollés sur la ligne de temps. Tout reste sur cette machine, sauf l'audio envoyé à Groq pour la reconnaissance.</p>
+      <div class="steps">
+        <div><b>01</b><span>Dépose l'enregistrement dans le panneau de gauche.</span></div>
+        <div><b>02</b><span>Les voix sont détectées et comptées automatiquement.</span></div>
+        <div><b>03</b><span>Écoute un extrait de chacune, donne-lui un nom.</span></div>
+        <div><b>04</b><span>Copie le texte ou exporte en .txt, .srt, .json.</span></div>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<div class="dock" id="dock" hidden>
+<div class="exportbar">
+      <button data-x="copy">Copier le texte</button>
+      <button data-x="txt">Enregistrer .txt</button>
+      <button data-x="srt">Sous-titres .srt</button>
+      <button data-x="json">Données .json</button>
+      <span class="said" id="said"></span>
+</div>
+<div class="deck" id="deck" hidden>
+  <div class="line">
+    <button class="skip" id="prev" aria-label="Réplique précédente">◀◀</button>
+    <button class="main" id="pp" aria-label="Lecture">
+      <svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>
+    </button>
+    <button class="skip" id="next" aria-label="Réplique suivante">▶▶</button>
+    <button class="skip" id="back" aria-label="Reculer de 10 secondes">−10 s</button>
+    <div class="scrub" id="scrub" role="slider" aria-label="Position de lecture" tabindex="0">
+      <div class="track"><i id="played"></i></div>
+      <div class="head" id="head"></div>
+    </div>
+    <button class="skip" id="fwd" aria-label="Avancer de 10 secondes">+10 s</button>
+    <button class="rate" id="rate" aria-label="Vitesse de lecture">1×</button>
+  </div>
+  <div class="line">
+    <span class="clock" id="clock">0:00 / 0:00</span>
+    <button class="follow on" id="follow" aria-pressed="true"><i></i>Suivre le texte</button>
+    <span class="who" id="nowwho"></span>
+  </div>
+</div>
+</div>
+
+
+<audio id="player" hidden></audio>
+<audio id="sampler" hidden></audio>
+
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, o) => fetch(p, o).then(async r => {
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || `Erreur ${r.status}`);
+  return body;
+});
+
+let picked = null, jobId = null, job = null, objectUrl = null, poll = null;
+let names = {};
+
+/* ---------- première ouverture : la clé ---------- */
+let ready = false;
+
+api('/api/health').then(h => {
+  ready = h.has_key;
+  if (!ready) askForKey();
+  else if (!h.key_from_env) $('#changekey').hidden = false;
+}).catch(() => {});
+
+$('#changekey').onclick = askForKey;
+document.querySelectorAll('.exportbar button').forEach(
+  b => b.onclick = () => exportAs(b.dataset.x));
+
+function askForKey() {
+  $('#dock').hidden = false;
+  $('#stage-area').innerHTML = `<div class="setup">
+    <h1>Une clé, <em>et c'est tout.</em></h1>
+    <p>La reconnaissance de la parole passe par Groq. Il te faut une clé
+    gratuite, à coller une seule fois.</p>
+    <ol>
+      <li>Ouvre <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a></li>
+      <li>Connecte-toi (Google ou e-mail, sans carte bancaire)</li>
+      <li>Clique sur <b>Create API Key</b> et copie ce qui s'affiche</li>
+    </ol>
+    <div class="keyrow">
+      <input type="password" id="keyinput" placeholder="gsk_…" spellcheck="false" autocomplete="off">
+      <button id="keysave">Enregistrer</button>
+    </div>
+    <div class="keyerr" id="keyerr"></div>
+    <p class="keynote">La clé est rangée dans ton dossier personnel, sur cette machine.
+    Elle n'est envoyée qu'à Groq.</p>
+  </div>`;
+
+  const input = $('#keyinput'), save = $('#keysave');
+  input.focus();
+  input.onkeydown = e => { if (e.key === 'Enter') save.click(); };
+  save.onclick = async () => {
+    $('#keyerr').textContent = '';
+    save.disabled = true; save.textContent = 'Vérification…';
+    try {
+      await api('/api/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: input.value }),
+      });
+      ready = true;
+      $('#changekey').hidden = false;
+      location.reload();
+    } catch (err) {
+      $('#keyerr').textContent = err.message;
+      save.disabled = false; save.textContent = 'Enregistrer';
+    }
+  };
+}
+
+/* ---------- dépôt du fichier ---------- */
+const zone = $('#dropzone');
+$('#pick').onclick = () => $('#file').click();
+$('#file').onchange = e => e.target.files[0] && accept(e.target.files[0]);
+
+['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {
+  e.preventDefault(); zone.classList.add('hot');
+}));
+['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {
+  e.preventDefault(); zone.classList.remove('hot');
+}));
+zone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) accept(f);
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => e.preventDefault());
+
+function accept(file) {
+  picked = file;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  $('#player').src = objectUrl;
+
+  const mb = (file.size / 1048576).toFixed(1);
+  zone.outerHTML = `<div class="filetag" id="dropzone">
+      <div style="min-width:0">
+        <div class="name">${escapeHtml(file.name)}</div>
+        <div class="meta">${mb} Mo</div>
+      </div>
+      <button type="button" id="clear">Changer</button>
+    </div>`;
+  $('#clear').onclick = () => location.reload();
+  $('#go').disabled = false;
+}
+
+/* ---------- lancement ---------- */
+$('#go').onclick = async () => {
+  if (!picked) return;
+  if (!ready) { askForKey(); return; }
+  const count = $('#count').value;
+  const form = new FormData();
+  form.append('file', picked);
+  form.append('language', $('#lang').value);
+  form.append('diarize', count === '1' ? 'false' : 'true');
+  form.append('embedding', $('#emb').value);
+  if (count !== 'auto' && count !== '1') form.append('speakers', count);
+
+  $('#go').disabled = true;
+  $('#go').textContent = 'Envoi…';
+  $('#status').hidden = false;
+  $('#journal').innerHTML = '';
+  $('#alerts').innerHTML = '';
+  startedAt = 0;
+  setStage('Envoi du fichier', 0.01);
+
+  try {
+    const created = await api('/api/jobs', { method: 'POST', body: form });
+    jobId = created.id;
+    $('#go').textContent = 'Traitement en cours';
+    $('#stop').hidden = false;
+    poll = setInterval(tick, 1000);
+    tick();
+  } catch (err) {
+    fail(err.message);
+  }
+};
+
+$('#stop').onclick = async () => {
+  $('#stop').textContent = 'Arrêt…';
+  $('#stop').disabled = true;
+  try { await api(`/api/jobs/${jobId}/cancel`, { method: 'POST' }); } catch (e) {}
+};
+
+function idle(label) {
+  clearInterval(poll);
+  $('#stop').hidden = true;
+  $('#stop').disabled = false;
+  $('#stop').textContent = 'Arrêter le traitement';
+  $('#go').disabled = false;
+  $('#go').textContent = label;
+}
+
+let startedAt = 0;
+
+function setStage(text, ratio) {
+  if (!startedAt) startedAt = Date.now();
+  const secs = Math.round((Date.now() - startedAt) / 1000);
+  const el = $('#elapsed');
+  if (el) el.textContent = secs > 4 ? `${clock(secs)} écoulées` : '';
+  $('#stage').textContent = text;
+  $('#pct').textContent = Math.round(ratio * 100) + ' %';
+  $('#fill').style.width = (ratio * 100) + '%';
+}
+
+function fail(message) {
+  setStage('Arrêt', 0);
+  $('#alerts').innerHTML = `<div class="alert">${escapeHtml(message)}</div>`;
+  idle('Réessayer');
+}
+
+function paintJournal(notes) {
+  const box = $('#journal');
+  if (!box || !notes) return;
+  const text = notes.join('\n');
+  if (box.dataset.text === text) return;
+  box.dataset.text = text;
+  box.innerHTML = notes.map(n => `<div>${escapeHtml(n)}</div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function tick() {
+  try {
+    const light = job && job.status === 'done' ? 0 : 1;
+    const data = await api(`/api/jobs/${jobId}?light=${light}`);
+    setStage(data.stage, data.progress);
+    paintJournal(data.notes);
+    if (data.status === 'error') return fail(data.error);
+    if (data.status === 'cancelled') {
+      idle('Relancer');
+      setStage('Arrêté — change les réglages et relance', 0);
+      return;
+    }
+    if (data.status === 'done') {
+      job = await api(`/api/jobs/${jobId}`);
+      names = { ...job.names };
+      idle('Terminé');
+      render();
+    }
+  } catch (err) {
+    fail(err.message);
+  }
+}
+
+/* ---------- rendu ---------- */
+const CARD_LIMIT = 8;
+let expanded = false;
+
+const PLAY_ICON = '<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 12 12"><path d="M2 1h3v10H2zM7 1h3v10H7z"/></svg>';
+
+function labelOf(id) {
+  const named = (names[id] || '').trim();
+  if (named) return named;
+  const s = job.speakers.find(s => s.id === id);
+  return `Voix ${s ? s.index + 1 : '?'}`;
+}
+
+// Deux cartes portant le même nom désignent la même personne : la
+// détection sur-découpe souvent une voix en plusieurs, et les renommer
+// à l'identique est la façon la plus simple de recoller les morceaux.
+function keyOf(id) {
+  const named = (names[id] || '').trim().toLowerCase();
+  return named || `#${id}`;
+}
+
+function colorOf(id) {
+  const key = keyOf(id);
+  const first = job.speakers.find(s => keyOf(s.id) === key);
+  return first ? first.color : '#5F636B';
+}
+
+function mergedBlocks() {
+  const out = [];
+  for (const b of job.blocks) {
+    const previous = out[out.length - 1];
+    if (previous && keyOf(previous.speaker) === keyOf(b.speaker)) {
+      previous.end = b.end;
+      previous.text += ' ' + b.text;
+      previous.words = previous.words.concat(b.words || []);
+    } else {
+      out.push({ ...b, words: (b.words || []).slice() });
+    }
+  }
+  return out;
+}
+
+function mergeCount() {
+  const keys = new Set(job.speakers.map(s => keyOf(s.id)));
+  return keys.size;
+}
+
+function render() {
+  const multi = job.speakers.length > 1 || job.speakers[0].has_sample;
+  // Les voix les plus bavardes d'abord : sur un découpage qui a déraillé,
+  // les trois vraies personnes se retrouvent en tête et le reste est du
+  // résidu qu'on peut nommer comme elles pour le recoller.
+  const ranked = [...job.speakers].sort((a, b) => b.speaking_seconds - a.speaking_seconds);
+  const strips = (expanded ? ranked : ranked.slice(0, CARD_LIMIT)).map(s => `
+    <div class="strip" style="--c:${s.color}">
+      <div class="top">
+        <button class="play" data-i="${s.index}" ${s.has_sample ? '' : 'disabled'}
+                aria-label="Écouter la voix ${s.index + 1}">${PLAY_ICON}</button>
+        <div class="who">
+          <div class="tag">Voix ${s.index + 1}</div>
+          <input type="text" data-id="${s.id}" value="${escapeHtml(names[s.id] || '')}"
+                 placeholder="Nommer" maxlength="60" spellcheck="false">
+        </div>
+      </div>
+      <div class="share"><i style="--w:${(s.share * 100).toFixed(1)}%"></i></div>
+      <div class="stat"><span>${clock(s.speaking_seconds)} de parole</span><span>${s.turns} prises</span></div>
+    </div>`).join('');
+
+  $('#dock').hidden = false;
+  $('#stage-area').innerHTML = `
+    ${multi ? `<section class="channels">
+      <header>
+        <h2>${job.speakers.length} voix détectée${job.speakers.length > 1 ? 's' : ''}
+          <span id="mergenote">· écoute puis nomme, le texte se met à jour</span></h2>
+        ${ranked.length > CARD_LIMIT ? `<button id="expand" style="font-size:12px;
+          text-decoration:underline;color:var(--ink-soft)">${expanded
+            ? 'Ne montrer que les ' + CARD_LIMIT + ' principales'
+            : 'Afficher les ' + ranked.length + ' voix'}</button>` : ''}
+      </header>
+      <div class="strips">${strips}</div>
+    </section>` : ''}
+    <div class="doc" id="doc"></div>
+    </div>
+
+    </div>`;
+
+  document.querySelectorAll('.strip input').forEach(input => {
+    input.oninput = e => {
+      names[e.target.dataset.id] = e.target.value;
+      paintDoc();
+      queueSave();
+    };
+  });
+  document.querySelectorAll('.play').forEach(b => b.onclick = () => playExcerpt(b));
+  const expandButton = $('#expand');
+  if (expandButton) expandButton.onclick = () => { expanded = !expanded; render(); };
+
+  paintDoc();
+  setupDeck();
+}
+
+let shown = [];
+
+function paintDoc() {
+  shown = mergedBlocks();
+  let previous = null;
+  $('#doc').innerHTML = shown.map((b, i) => {
+    const same = b.speaker === previous;
+    previous = b.speaker;
+    return `<div class="turn ${same ? 'same' : ''}" data-i="${i}" style="--c:${colorOf(b.speaker)}">
+        <button class="tc" data-t="${b.start}">${clock(b.start)}</button>
+        <div class="said">
+          <div class="who">${escapeHtml(labelOf(b.speaker))}</div>
+          <p>${escapeHtml(b.text)}</p>
+        </div>
+      </div>`;
+  }).join('');
+
+  const merged = job.speakers.length - mergeCount();
+  const note = $('#mergenote');
+  if (note) note.textContent = merged > 0
+    ? `${merged} carte${merged > 1 ? 's' : ''} fusionnée${merged > 1 ? 's' : ''} par le nom`
+    : 'Donne le même nom à deux cartes pour les fusionner';
+
+  document.querySelectorAll('.tc').forEach(b => b.onclick = () => {
+    seek(parseFloat(b.dataset.t));
+    play();
+  });
+  paintLive();
+}
+
+/* ---------- lecteur ---------- */
+const player = $('#player');
+let follow = true, limit = null, liveIndex = -1, scrubbing = false;
+const RATES = [1, 1.25, 1.5, 0.75];
+let rateIndex = 0;
+
+function setupDeck() {
+  if (!objectUrl) return;          // sans le fichier d'origine, pas de lecture
+  $('#deck').hidden = false;
+
+  $('#pp').onclick = () => player.paused ? play() : player.pause();
+  $('#prev').onclick = () => jumpReply(-1);
+  $('#next').onclick = () => jumpReply(1);
+  $('#back').onclick = () => seek(player.currentTime - 10);
+  $('#fwd').onclick = () => seek(player.currentTime + 10);
+  $('#rate').onclick = () => {
+    rateIndex = (rateIndex + 1) % RATES.length;
+    player.playbackRate = RATES[rateIndex];
+    $('#rate').textContent = `${RATES[rateIndex]}×`.replace('.', ',');
+  };
+  $('#follow').onclick = () => setFollow(!follow);
+
+  const scrub = $('#scrub');
+  const positionFrom = e => {
+    const box = scrub.getBoundingClientRect();
+    const x = ((e.touches ? e.touches[0].clientX : e.clientX) - box.left) / box.width;
+    return Math.max(0, Math.min(1, x)) * (player.duration || job.duration || 0);
+  };
+  scrub.onpointerdown = e => { scrubbing = true; scrub.setPointerCapture(e.pointerId); seek(positionFrom(e)); };
+  scrub.onpointermove = e => { if (scrubbing) seek(positionFrom(e)); };
+  scrub.onpointerup = () => { scrubbing = false; };
+  scrub.onkeydown = e => {
+    if (e.key === 'ArrowLeft') { seek(player.currentTime - 5); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { seek(player.currentTime + 5); e.preventDefault(); }
+  };
+
+  player.ontimeupdate = tickPlayer;
+  player.onplay = () => paintPlayButton();
+  player.onpause = () => { paintPlayButton(); stopExcerptButton(); };
+  player.onloadedmetadata = tickPlayer;
+  tickPlayer();
+
+  // La barre d'espace met en pause, sauf si on est en train de saisir un nom.
+  document.addEventListener('keydown', e => {
+    if ($('#deck').hidden) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      player.paused ? play() : player.pause();
+    } else if (e.code === 'ArrowDown') {
+      e.preventDefault(); jumpReply(1);
+    } else if (e.code === 'ArrowUp') {
+      e.preventDefault(); jumpReply(-1);
+    }
+  });
+}
+
+function play() {
+  if (!objectUrl) return;
+  player.play().catch(() => {});
+}
+
+function seek(seconds) {
+  if (!objectUrl) return;
+  const span = player.duration || job.duration || 0;
+  player.currentTime = Math.max(0, Math.min(seconds, span ? span - 0.05 : seconds));
+  limit = null;                    // toute navigation manuelle libère la borne
+  stopExcerptButton();
+  tickPlayer();
+}
+
+function jumpReply(direction) {
+  const now = player.currentTime;
+  let target = null;
+
+  if (direction > 0) {
+    target = shown.find(b => b.start > now + 0.15);
+  } else {
+    // Comme sur un lecteur de disques : en arrière, on revient d'abord au
+    // début de la réplique en cours, et seulement ensuite à la précédente.
+    const current = shown[liveIndex];
+    if (current && now - current.start > 1.5) target = current;
+    else target = shown[Math.max(0, liveIndex - 1)] || shown[0];
+  }
+
+  if (!target) return;
+  seek(target.start);
+  setFollow(true);
+  const el = document.querySelector(`.turn[data-i="${shown.indexOf(target)}"]`);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!player.paused) play();
+}
+
+function paintPlayButton() {
+  const svg = player.paused
+    ? '<path d="M2 1l9 5-9 5z"/>'
+    : '<path d="M2 1h3v10H2zM7 1h3v10H7z"/>';
+  $('#pp').innerHTML = `<svg viewBox="0 0 12 12">${svg}</svg>`;
+  $('#pp').setAttribute('aria-label', player.paused ? 'Lecture' : 'Pause');
+}
+
+function tickPlayer() {
+  const now = player.currentTime;
+
+  // Fin d'extrait : on s'arrête pile, au lieu de continuer sur toute la suite.
+  if (limit !== null && now >= limit) {
+    player.pause();
+    limit = null;
+    stopExcerptButton();
+  }
+
+  const span = player.duration || job.duration || 0;
+  const ratio = span ? Math.min(now / span, 1) : 0;
+  $('#played').style.width = `${ratio * 100}%`;
+  $('#head').style.left = `${ratio * 100}%`;
+  $('#clock').textContent = `${clock(now)} / ${clock(span)}`;
+  paintPlayButton();
+  paintLive();
+}
+
+function paintLive() {
+  const now = player.currentTime;
+  let low = 0, high = shown.length - 1, found = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (shown[mid].start <= now) { found = mid; low = mid + 1; }
+    else high = mid - 1;
+  }
+
+  if (found !== liveIndex) {
+    document.querySelectorAll('.turn.live').forEach(el => el.classList.remove('live'));
+    liveIndex = found;
+    const el = found >= 0 ? document.querySelector(`.turn[data-i="${found}"]`) : null;
+    if (el) {
+      el.classList.add('live');
+      if (follow && !player.paused) {
+        const box = el.getBoundingClientRect();
+        const comfortable = box.top > 90 && box.bottom < window.innerHeight - 170;
+        if (!comfortable) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  const who = $('#nowwho');
+  if (who) {
+    const block = found >= 0 ? shown[found] : null;
+    who.innerHTML = block
+      ? `<b style="--c:${colorOf(block.speaker)}">${escapeHtml(labelOf(block.speaker))}</b>`
+      : '';
+  }
+}
+
+function setFollow(value) {
+  follow = value;
+  const b = $('#follow');
+  b.classList.toggle('on', follow);
+  b.setAttribute('aria-pressed', String(follow));
+}
+
+// Faire défiler à la main coupe le suivi automatique, sinon on se bat avec la page.
+let selfScroll = 0;
+window.addEventListener('scroll', () => {
+  if (Date.now() - selfScroll < 900) return;
+  if (follow && !player.paused) setFollow(false);
+}, { passive: true });
+const realScrollInto = Element.prototype.scrollIntoView;
+Element.prototype.scrollIntoView = function (...args) {
+  selfScroll = Date.now();
+  return realScrollInto.apply(this, args);
+};
+
+/* ---------- extraits d'écoute ---------- */
+let excerptButton = null;
+
+function playExcerpt(button) {
+  const speaker = job.speakers.find(s => s.index === Number(button.dataset.i));
+  if (!speaker) return;
+  if (excerptButton === button && !player.paused) { player.pause(); return; }
+  stopExcerptButton();
+  excerptButton = button;
+  button.classList.add('on');
+  button.innerHTML = PAUSE_ICON;
+  button.setAttribute('aria-label', 'Arrêter l\'écoute');
+
+  if (objectUrl && speaker.sample_seconds > 0) {
+    player.currentTime = speaker.sample_start;
+    limit = speaker.sample_start + speaker.sample_seconds;
+    play();
+  } else {
+    sampler.src = `/api/jobs/${jobId}/sample/${speaker.index}`;
+    sampler.play().catch(stopExcerptButton);
+  }
+}
+
+function stopExcerptButton() {
+  if (excerptButton) {
+    excerptButton.classList.remove('on');
+    excerptButton.innerHTML = PLAY_ICON;
+    excerptButton.setAttribute('aria-label', 'Écouter cette voix');
+  }
+  excerptButton = null;
+}
+
+const sampler = $('#sampler');
+sampler.onended = stopExcerptButton;
+sampler.onpause = stopExcerptButton;
+
+/* ---------- enregistrement des noms ---------- */
+let saveTimer = null;
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fetch(`/api/jobs/${jobId}/names`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(names),
+    }).catch(() => {});
+  }, 600);
+}
+
+/* ---------- exports ---------- */
+function asText() {
+  let previous = null;
+  return mergedBlocks().map(b => {
+    const head = b.speaker === previous ? '' : `${labelOf(b.speaker)}\n`;
+    previous = b.speaker;
+    return `[${clock(b.start)}] ${head}${b.text}`;
+  }).join('\n\n');
+}
+
+function joinWords(words) {
+  let out = '';
+  for (const w of words) {
+    const t = (w.text || '').trim();
+    if (!t) continue;
+    if (out && !',.;:!?…%)]}'.includes(t[0]) && !'\u2019\'([{'.includes(out.slice(-1))) out += ' ';
+    out += t;
+  }
+  return out.trim();
+}
+
+function asSrt() {
+  const cues = [];
+  for (const block of mergedBlocks()) {
+    let current = null;
+    for (const word of block.words) {
+      const t = (word.text || '').trim();
+      if (!t) continue;
+      if (!current || (current.words.length && joinWords([...current.words, word]).length > 84)) {
+        current = { start: word.start, end: word.end, words: [word], speaker: block.speaker };
+        cues.push(current);
+      } else {
+        current.words.push(word);
+        current.end = word.end;
+      }
+    }
+  }
+  return cues.map((c, i) =>
+    `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${labelOf(c.speaker)}: ${joinWords(c.words)}\n`
+  ).join('\n');
+}
+
+function exportAs(kind) {
+  const base = job.filename.replace(/\.[^.]+$/, '');
+  if (kind === 'copy') {
+    navigator.clipboard.writeText(asText())
+      .then(() => flash('Texte copié.'))
+      .catch(() => flash('Copie refusée par le navigateur.'));
+    return;
+  }
+  const payload = kind === 'txt' ? asText()
+    : kind === 'srt' ? asSrt()
+    : JSON.stringify({ file: job.filename, duration: job.duration, names,
+        speakers: job.speakers, blocks: mergedBlocks() }, null, 2);
+  const ext = kind === 'json' ? 'json' : kind;
+  download(payload, `${base}.${ext}`);
+  flash(`${base}.${ext} enregistré.`);
+}
+
+function download(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+let flashTimer = null;
+function flash(message) {
+  const el = $('#said');
+  if (!el) return;
+  el.textContent = message;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+/* ---------- utilitaires ---------- */
+function clock(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
+}
+function srtTime(seconds) {
+  const ms = Math.floor((seconds % 1) * 1000);
+  const s = Math.floor(seconds);
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)},${pad(ms, 3)}`;
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+</script>
+</body>
+</html>

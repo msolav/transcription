@@ -1,0 +1,16 @@
+# Environnement Python, recréé par Demarrer.command / Demarrer.bat
+.venv/
+
+# Modèles ONNX (~34 Mo), téléchargés au premier lancement par assets.py
+models/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Clé Groq : elle vit dans ~/.transcripteur.json, jamais ici.
+# Cette ligne est un garde-fou si quelqu'un la déplace un jour.
+.transcripteur.json
