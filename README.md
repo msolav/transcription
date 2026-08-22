@@ -78,28 +78,42 @@ une nouvelle passe.
 Rien n'est téléchargé tant qu'un modèle n'est pas réellement utilisé. La
 liste indique, pour chacun, s'il est déjà sur la machine ou ce qu'il pèse.
 
-**Nettoyage du son.** Le réglage qui change le plus de choses sur un
-enregistrement fait en salle avec un seul micro.
+**Nettoyage du son.** Utile, mais à dose légère : un débruiteur enlève le
+souffle et la réverbération, et si on le pousse, il enlève aussi ce qui
+distingue deux voix.
 
-Mesuré sur dix minutes de réunion réelle : trois modèles de voix
-entraînés séparément s'accordaient sur 49,9 % de l'enregistrement brut, et
-sur 70,9 % une fois le son nettoyé, deux d'entre eux montant à 99,4 %.
-Quand des modèles indépendants convergent à ce point, c'est qu'ils ont
-trouvé une vraie structure et non du bruit. C'est une mesure d'accord, pas
-de justesse : elle ne prouve pas que le découpage est correct, seulement
-qu'il n'est plus arbitraire.
+Mesuré sur dix minutes de réunion réelle, trois voix imposées, en
+regardant comment le temps de parole se répartit entre les trois groupes :
 
-Trois nettoyeurs sont proposés. Le premier, « Recommandé », donne le
-meilleur rapport résultat / temps : compter une minute de calcul par
-onze minutes d'enregistrement. Contre-intuitif mais mesuré : le plus gros
-modèle de la famille fait moins bien que le plus petit, pour trois fois le
-temps de calcul.
+| son | répartition |
+|---|---|
+| brut | 41,2 / 31,3 / 27,5 |
+| nettoyage léger | 36,0 / 32,1 / 32,0 |
+| nettoyage fort | 71,0 / 29,0 — une voix a disparu |
 
-Ces chiffres viennent d'un seul enregistrement. Sur une prise déjà propre,
-le nettoyage pourrait n'apporter rien, d'où le réglage plutôt qu'un passage
-forcé. Le nettoyage ne sert qu'à la séparation des voix : la transcription
-part toujours du son d'origine, Whisper se débrouillant mieux avec du
-souffle qu'avec des consonnes rabotées.
+Le réglage léger est celui qui sépare le mieux, et il ne coûte presque
+rien : une minute de calcul par dix-huit minutes d'enregistrement. C'est
+le réglage par défaut.
+
+Les réglages « Fort » et « Très fort » restent proposés pour un son
+vraiment dégradé, mais dans notre essai ils faisaient fondre une personne
+dans une autre. Après les avoir utilisés, écouter les extraits de chaque
+voix avant de faire confiance au découpage.
+
+Le nettoyage ne sert qu'à la séparation des voix : la transcription part
+toujours du son d'origine, Whisper se débrouillant mieux avec du souffle
+qu'avec des consonnes rabotées.
+
+*Sur la manière dont ces chiffres ont été obtenus, et une erreur qu'ils
+ont corrigée :* le nettoyage a d'abord été jugé à l'accord entre trois
+modèles de voix entraînés séparément, qui montait de 49,9 % sur le son
+brut à 70,9 % après nettoyage fort. Cet accord était réel et ne prouvait
+rien : les modèles s'accordaient sur un découpage effondré. Deux modèles
+d'accord à 99 % pour dire qu'une réunion à trois personnes n'en compte
+que deux sont d'accord et ont tort. La répartition du temps de parole
+rend cet effondrement visible, l'accord le masque. Toute mesure de
+consensus a ce défaut : elle ne distingue pas la convergence vers le vrai
+de la convergence vers la même erreur.
 
 ## Relire et résumer
 

@@ -140,19 +140,27 @@ def inventaire(langue: str | None = None) -> list[dict]:
 
 # Nettoyage du signal.
 #
-# Un débruiteur enlève le souffle, la ventilation, la réverbération de la
-# pièce. Mesuré sur dix minutes de la vraie réunion : trois modèles de
-# voix indépendants s'accordaient sur 49,9 % de l'enregistrement brut, et
-# sur 70,9 % après nettoyage par `dpdfnet_baseline`, deux d'entre eux
-# atteignant 99,4 %. C'est le signe que les empreintes deviennent nettes.
+# Un débruiteur enlève le souffle, la ventilation, la réverbération. Il
+# enlève aussi, si on le laisse faire, ce qui distingue deux voix.
 #
-# Contre-intuitif et pourtant mesuré : le plus gros modèle de la famille
-# (dpdfnet8, 13,9 Mo) fait moins bien que le plus petit (8,4 Mo), pour
-# trois fois le temps de calcul. Inutile de prendre le plus lourd.
+# Mesuré sur dix minutes de la vraie réunion, trois voix imposées, en
+# regardant la répartition du temps de parole entre les trois groupes :
 #
-# Ces chiffres viennent d'un seul enregistrement, en salle et à un seul
-# micro. Sur une prise déjà propre, le nettoyage pourrait n'apporter
-# rien : d'où le réglage, plutôt qu'un passage forcé.
+#   son brut        ResNet34   41,2 / 31,3 / 27,5
+#   nettoyage léger ResNet34   36,0 / 32,1 / 32,0   <- le plus équilibré
+#   nettoyage fort  ResNet34   71,0 / 29,0          <- une voix a disparu
+#
+# Le nettoyage léger améliore. Le nettoyage fort efface une personne : le
+# regroupement ne trouve plus que deux voix là où il y en a trois, et
+# c'est reproductible sur les trois modèles d'empreintes essayés.
+#
+# Avertissement sur la méthode, parce que l'erreur a été commise ici :
+# nous avons d'abord jugé le nettoyage à l'accord entre modèles
+# indépendants, qui montait de 49,9 % à 70,9 %. Cet accord était réel et
+# ne voulait rien dire — les modèles s'accordaient sur un découpage
+# effondré. Deux modèles d'accord à 99 % pour dire qu'une réunion à trois
+# n'a que deux voix sont d'accord et ont tort. La répartition du temps de
+# parole, elle, rend l'effondrement visible.
 
 DEB_BASE = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/"
             "speech-enhancement-models/")
@@ -170,16 +178,20 @@ class Debruiteur:
 
 
 DEBRUITEURS = (
-    Debruiteur("recommande", "dpdfnet_baseline.onnx", 8.4, "Recommandé",
-               "dpdfnet", 11.5,
-               "Le meilleur rapport résultat / temps dans nos mesures."),
-    Debruiteur("maximum", "dpdfnet2.onnx", 9.8, "Poussé", "dpdfnet", 5.8,
-               "Très légèrement meilleur, à peu près deux fois plus lent."),
     Debruiteur("leger", "gtcrn_simple.onnx", 0.5, "Léger", "gtcrn", 18.3,
-               "Presque instantané, mais n'apporte qu'un tiers du gain."),
+               "Enlève le souffle sans toucher au timbre. C'est ce qui a donné "
+               "la meilleure séparation dans nos mesures, et c'est presque "
+               "instantané."),
+    Debruiteur("recommande", "dpdfnet_baseline.onnx", 8.4, "Fort", "dpdfnet", 11.5,
+               "Nettoie beaucoup plus, mais a fait disparaître une voix sur trois "
+               "dans notre enregistrement d'essai. À réserver à un son très "
+               "dégradé, et à vérifier en écoutant les extraits."),
+    Debruiteur("maximum", "dpdfnet2.onnx", 9.8, "Très fort", "dpdfnet", 5.8,
+               "Encore plus agressif, avec le même risque de confondre deux "
+               "personnes. Deux fois plus lent que le précédent."),
 )
 DEB_PAR_CLE = {d.cle: d for d in DEBRUITEURS}
-DEBRUITEUR_DEFAUT = "recommande"
+DEBRUITEUR_DEFAUT = "leger"
 
 
 def inventaire_debruiteurs() -> list[dict]:
