@@ -127,10 +127,16 @@ forment une seule proposition, qu'une question appelle une réponse, qu'un
 coupées en deux, qui représentaient un bloc sur cinq dans nos essais. Le
 texte ensuite : coquilles, mots tronqués, ponctuation.
 
-Chaque correction s'affiche avec l'avant et l'après, et se décoche. Un
-bouton bascule entre l'original et la version relue ; les exports suivent
-ce qui est affiché. Refuser toutes les corrections redonne exactement
-l'original.
+Chaque correction s'affiche en deux colonnes, actuel à gauche et proposé
+à droite, sur la même portion de texte et à la même hauteur. Ce qui n'a
+pas bougé est identique des deux côtés et sert de repère ; seuls les mots
+retirés et ajoutés sont marqués. Pour un déplacement de frontière, la
+comparaison porte sur la paire de blocs et non sur un seul, puisque c'est
+la limite entre les deux qui se déplace.
+
+Chaque correction se décoche. Un bouton bascule entre l'original et la
+version relue ; les exports suivent ce qui est affiché. Refuser toutes les
+corrections redonne exactement l'original.
 
 Deux garde-fous. Une correction de texte qui s'éloigne trop de l'original
 est refusée avant même d'être montrée : c'est le compte rendu d'une

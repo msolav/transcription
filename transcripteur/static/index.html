@@ -319,6 +319,15 @@ button{cursor:pointer;border:none;background:none}
   .panneau label{display:flex;gap:7px;align-items:center;cursor:pointer}
   .panneau .opts{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
   .panneau pre{white-space:pre-wrap;font:inherit;margin:0}
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:6px}
+  .cmp p{margin:2px 0 0;line-height:1.5}
+  .cmph{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-faint)}
+  .cmp mark{background:none;padding:0}
+  .cmp mark.ote{background:rgba(228,87,46,.16);text-decoration:line-through;
+    text-decoration-color:rgba(228,87,46,.6)}
+  .cmp mark.mis{background:rgba(125,175,58,.20)}
+  .panneau .extrait{margin:4px 0 0;color:var(--ink-faint);line-height:1.45}
+  @media (max-width:720px){ .cmp{grid-template-columns:1fr} }
   .panneau textarea{
     width:100%;margin-top:10px;padding:9px 11px;border:1px solid var(--rule);
     border-radius:7px;background:var(--paper);color:var(--ink);
@@ -661,16 +670,94 @@ function pollRelecture() {
   }, 1500);
 }
 
-function describeCorrection(c, i) {
-  if (c.type === 'locuteur')
-    return `<span class="av">${escapeHtml(c.avant)}</span> → <span class="ap">${escapeHtml(c.apres)}</span>
-            <span class="hint">bloc ${c.bloc}</span>`;
-  if (c.type === 'frontiere') {
-    const n = c.mots;
-    return `<span class="ap">frontière</span> <span class="hint">bloc ${c.bloc} :
-      ${n > 0 ? `${n} mot(s) rendus au bloc précédent` : `${-n} mot(s) passés au bloc suivant`}</span>`;
+/* Comparaison alignée.
+
+   Les deux versions se lisent côte à côte, à la même hauteur et sur la
+   même portion de texte, sinon l'œil doit chercher ce qui a changé. Les
+   mots retirés sont marqués à gauche, les mots ajoutés à droite ; le
+   reste est identique de part et d'autre et sert de repère. */
+
+const DIFF_MAX_MOTS = 1200;   // au-delà, la table LCS coûte trop cher
+
+function diffMots(a, b) {
+  const A = a.split(/\s+/).filter(Boolean), B = b.split(/\s+/).filter(Boolean);
+  // Un bloc démesuré ferait une table de plusieurs millions de cases et
+  // figerait la page. On renonce alors au mot à mot et on montre les deux
+  // versions entières, ce qui reste comparable puisqu'elles sont alignées.
+  if (A.length > DIFF_MAX_MOTS || B.length > DIFF_MAX_MOTS)
+    return [{ t: '-', mots: A }, { t: '+', mots: B }];
+  // plus longue sous-suite commune, en table
+  const n = A.length, m = B.length;
+  const T = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      T[i][j] = A[i] === B[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  const pousse = (t, mot) => {
+    const dernier = out[out.length - 1];
+    if (dernier && dernier.t === t) dernier.mots.push(mot);
+    else out.push({ t, mots: [mot] });
+  };
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { pousse('=', A[i]); i++; j++; }
+    else if (T[i + 1][j] >= T[i][j + 1]) { pousse('-', A[i]); i++; }
+    else { pousse('+', B[j]); j++; }
   }
-  return `<span class="av">${escapeHtml(c.avant)}</span><br><span class="ap">${escapeHtml(c.apres)}</span>`;
+  while (i < n) pousse('-', A[i++]);
+  while (j < m) pousse('+', B[j++]);
+  return out;
+}
+
+function peindre(parts, garde) {
+  return parts.filter(p => p.t === '=' || p.t === garde)
+    .map(p => p.t === '='
+      ? escapeHtml(p.mots.join(' '))
+      : `<mark class="${garde === '-' ? 'ote' : 'mis'}">${escapeHtml(p.mots.join(' '))}</mark>`)
+    .join(' ');
+}
+
+function comparer(avant, apres) {
+  const d = diffMots(avant, apres);
+  return `<div class="cmp">
+    <div><span class="cmph">Actuel</span><p>${peindre(d, '-')}</p></div>
+    <div><span class="cmph">Proposé</span><p>${peindre(d, '+')}</p></div>
+  </div>`;
+}
+
+/* Pour une frontière, la comparaison ne porte pas sur un bloc mais sur la
+   paire : ce sont les mots qui traversent la limite qu'il faut voir. */
+function pairFrontiere(c) {
+  const b = job.blocks, i = c.bloc, n = c.mots;
+  const voisin = n > 0 ? i - 1 : i + 1;
+  if (!b[i] || !b[voisin]) return null;
+  const mots = (x) => (b[x].words || []).map(w => (w.text || '').trim());
+  const gauche = n > 0 ? voisin : i, droite = n > 0 ? i : voisin;
+  const mg = mots(gauche), md = mots(droite);
+  const bouge = n > 0 ? md.slice(0, n) : mg.slice(n);
+  const avant = `${mg.join(' ')} ⁄ ${md.join(' ')}`;
+  const apres = n > 0
+    ? `${mg.concat(bouge).join(' ')} ⁄ ${md.slice(n).join(' ')}`
+    : `${mg.slice(0, n).join(' ')} ⁄ ${bouge.concat(md).join(' ')}`;
+  return { avant, apres, bouge: bouge.join(' ') };
+}
+
+function describeCorrection(c, i) {
+  if (c.type === 'locuteur') {
+    const b = job.blocks[c.bloc];
+    return `<div><b>${escapeHtml(c.avant)}</b> → <b class="ap">${escapeHtml(c.apres)}</b>
+      <span class="hint">bloc ${c.bloc}</span></div>
+      <p class="extrait">${escapeHtml((b ? b.text : '').slice(0, 300))}</p>`;
+  }
+  if (c.type === 'frontiere') {
+    const p = pairFrontiere(c);
+    const n = c.mots;
+    const sens = n > 0 ? 'rendus au bloc précédent' : 'passés au bloc suivant';
+    const tete = `<div><span class="hint">bloc ${c.bloc} — « ${escapeHtml(p ? p.bouge : '')} »
+      ${sens}</span></div>`;
+    return p ? tete + comparer(p.avant, p.apres) : tete;
+  }
+  return comparer(c.avant, c.apres);
 }
 
 function showCorrections() {
