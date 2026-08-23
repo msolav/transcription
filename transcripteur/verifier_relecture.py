@@ -54,7 +54,27 @@ correcte = "Ils vont être réévalués avant d'être accordés."
 verifie("correction acceptee", SequenceMatcher(None, origine, correcte).ratio() >= relecture.FIDELITE_MIN,
         f"{SequenceMatcher(None, origine, correcte).ratio():.2f}")
 
-# 6. fenetres couvrantes
+# 6. voix non nommees : le tour aller-retour du locuteur
+#    C'est le cas qui a produit 48 blocs « Voix ? » dans un vrai transcript.
+vides = {"SPEAKER_00": "", "SPEAKER_01": ""}
+b = [bloc("SPEAKER_00", "ils vont etre reevalues", 0), bloc("SPEAKER_01", "avant d etre accordes", 10)]
+affiche = relecture._nom(b[1], vides)
+r = relecture.appliquer(b, [{"type":"locuteur","bloc":1,"avant":affiche,
+                             "apres":relecture._nom(b[0], vides),
+                             "apres_id":"SPEAKER_00"}], vides)
+verifie("voix non nommees : identifiant conserve", r[1]["speaker"] == "SPEAKER_00", r[1]["speaker"])
+
+# meme chose sans apres_id, comme le ferait une correction plus ancienne
+r = relecture.appliquer(b, [{"type":"locuteur","bloc":1,"avant":affiche,
+                             "apres":relecture._nom(b[0], vides)}], vides)
+verifie("repli par le nom affiche", r[1]["speaker"] == "SPEAKER_00", r[1]["speaker"])
+
+# un nom intraduisible ne doit rien casser
+r = relecture.appliquer(b, [{"type":"locuteur","bloc":1,"avant":affiche,
+                             "apres":"Quelqu un d autre"}], vides)
+verifie("nom inconnu : bloc laisse tel quel", r[1]["speaker"] == "SPEAKER_01", r[1]["speaker"])
+
+# 7. fenetres couvrantes
 vues = set()
 for _, d, f in relecture._fenetres(40):
     vues.update(range(d, f))

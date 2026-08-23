@@ -184,6 +184,7 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                          modele: str = MODELE_DEFAUT, note=None) -> list[dict]:
     """Corrections d'attribution proposées, sans rien appliquer."""
     connus = sorted({_nom(b, noms) for b in blocs})
+    vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
 
     for contexte, debut, fin in _fenetres(len(blocs)):
@@ -218,9 +219,16 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                 # Un nom inventé ne vaut rien : on n'accepte que les personnes
                 # déjà identifiées dans l'enregistrement.
                 if cible in connus and cible != _nom(blocs[index], noms):
+                    # On range aussi l'identifiant technique. Se contenter du
+                    # nom affiché obligeait à le retraduire au moment
+                    # d'appliquer, et cette traduction échouait quand les voix
+                    # n'étaient pas nommées : le bloc héritait alors du libellé
+                    # « Voix 01 » en guise d'identifiant, que l'interface ne
+                    # reconnaissait plus et affichait « Voix ? ».
                     corrections.append({"type": "locuteur", "bloc": index,
                                         "avant": _nom(blocs[index], noms),
-                                        "apres": cible})
+                                        "apres": cible,
+                                        "apres_id": vers_id.get(cible, "")})
             elif "deplacer" in c:
                 try:
                     n = int(c["deplacer"])
@@ -335,10 +343,17 @@ def appliquer(blocs: list[dict], corrections: list[dict], noms: dict) -> list[di
             sortie[i]["words"] = sortie[i]["words"][:n]
             sortie[i + 1]["words"] = deplaces + sortie[i + 1]["words"]
 
-    inverse = {v: k for k, v in noms.items()}
+    # Tout ce qui permet de retrouver un identifiant de voix à partir d'un
+    # nom affiché : le nom donné par l'utilisateur, et le libellé par défaut.
+    vers_id = {v: k for k, v in noms.items() if v}
+    vers_id.update({_nom(b, noms): b["speaker"] for b in blocs})
+
     for c in corrections:
         if c["type"] == "locuteur":
-            sortie[c["bloc"]]["speaker"] = inverse.get(c["apres"], c["apres"])
+            cible = c.get("apres_id") or vers_id.get(c["apres"])
+            if not cible:
+                continue      # nom intraduisible : on préfère ne rien changer
+            sortie[c["bloc"]]["speaker"] = cible
         elif c["type"] == "texte":
             sortie[c["bloc"]]["texte_corrige"] = c["apres"]
 
