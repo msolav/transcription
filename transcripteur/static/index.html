@@ -590,10 +590,24 @@ $('#reread').onclick = async () => {
       <button id="rgo">Lancer</button>
       <button id="rno">Fermer</button>
     </div>
+    <p class="hint" id="rcout">…</p>
     <p class="hint">L'original n'est pas modifié : les corrections s'affichent
     ici une par une et se décochent. L'attribution se juge sur la syntaxe, ce
     qui répare les phrases coupées en deux — mais une personne qui termine la
     phrase d'une autre reste indétectable par ce moyen.</p>`;
+  const majCout = async () => {
+    const q = `attribution=${$('#ratt').checked ? 1 : 0}&texte=${$('#rtxt').checked ? 1 : 0}`;
+    try {
+      const c = await api(`/api/jobs/${job.id}/cout?${q}`);
+      const milliers = Math.round(c.jetons / 1000);
+      $('#rcout').textContent = `Environ ${milliers} 000 jetons pour ${c.blocs} blocs. `
+        + `Le forfait gratuit de Groq en donne 200 000 par jour et par modèle : `
+        + `si l'un est épuisé, en choisir un autre dans la liste.`;
+    } catch { $('#rcout').textContent = ''; }
+  };
+  $('#ratt').onchange = majCout;
+  $('#rtxt').onchange = majCout;
+  majCout();
   $('#rno').onclick = closePanel;
   $('#rgo').onclick = async () => {
     const body = { attribution: $('#ratt').checked, texte: $('#rtxt').checked,

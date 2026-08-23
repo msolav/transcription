@@ -270,6 +270,18 @@ def relecture_options() -> dict:
     }
 
 
+@app.get("/api/jobs/{job_id}/cout")
+def cout_relecture(job_id: str, attribution: int = 1, texte: int = 1) -> dict:
+    """Estimation avant de lancer, pour ne pas épuiser un quota sans le voir."""
+    with _lock:
+        job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Tâche inconnue.")
+    return {"jetons": relecture.estimer_jetons(
+        job["blocks"], bool(attribution), bool(texte)),
+        "blocs": len(job["blocks"])}
+
+
 @app.post("/api/jobs/{job_id}/relire")
 def relire(job_id: str, payload: dict) -> dict:
     with _lock:

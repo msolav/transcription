@@ -144,6 +144,17 @@ rupture, et la relecture peut réunir sous un seul nom ce que deux
 personnes ont dit. Seul le son porte cette information. C'est la raison
 d'être du bouton de comparaison.
 
+**Ce que ça consomme.** Le forfait gratuit de Groq donne 200 000 jetons
+par jour et par modèle. Une relecture complète d'une réunion de 80 minutes
+en demande environ 120 000 : l'attribution seule 57 000, le texte seul
+65 000. La fenêtre de dialogue annonce le montant avant de lancer, et il
+se recalcule quand on décoche une des deux passes.
+
+Le quota étant compté par modèle, en épuiser un ne bloque pas les autres :
+changer de modèle dans la liste suffit à continuer le même jour. Si le
+quota tombe en cours de route, la passe s'arrête net et le dit, plutôt que
+de rendre une relecture à moitié faite qui aurait l'air terminée.
+
 **Résumer** rédige un compte rendu, une liste de décisions et de suites à
 donner, un résumé bref ou une synthèse par thème. La consigne interdit
 d'inventer une décision qui ne figure pas dans l'échange, et demande de

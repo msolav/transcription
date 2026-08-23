@@ -40,8 +40,14 @@ MODELES = {
 }
 MODELE_DEFAUT = "gpt-oss-120b"
 
-FENETRE = 14          # blocs envoyés d'un coup
-RECOUVREMENT = 3      # blocs de contexte repris de la fenêtre précédente
+# Fenêtres larges à dessein : la consigne système est renvoyée à chaque
+# appel, donc doubler la fenêtre divise par deux ce qu'on repaie. Sur un
+# transcript de 600 blocs, passer de 14 à 30 fait tomber le nombre
+# d'appels de 44 à 21. Le quota gratuit de Groq est de 200 000 jetons par
+# jour et par modèle : une relecture complète en consommait presque tout.
+FENETRE = 30          # blocs envoyés d'un coup
+RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
+CARACTERES_PAR_JETON = 3.4   # approximation pour du français
 FIDELITE_MIN = 0.72   # en dessous, la « correction » est une réécriture
 
 RESUMES = {
@@ -57,6 +63,44 @@ RESUMES = {
 
 class RelectureError(RuntimeError):
     pass
+
+
+class QuotaError(RelectureError):
+    """Quota du fournisseur épuisé.
+
+    Distincte des autres pannes parce qu'elle ne se rattrape pas : réessayer
+    la fenêtre suivante ne fera que rejouer le même refus. Une relecture à
+    moitié faite qui se présente comme terminée est pire qu'un arrêt net,
+    donc celle-ci interrompt la passe entière."""
+
+
+def _est_quota(exc: Exception) -> bool:
+    texte = str(exc)
+    return "rate_limit" in texte or "429" in texte or "tokens per day" in texte
+
+
+def _delai(exc: Exception) -> str:
+    import re as _re
+    trouve = _re.search(r"try again in ([\dhms.]+)", str(exc))
+    # Le point final de la phrase colle au délai : « dans 1h21m9.936s. »
+    return trouve.group(1).rstrip(".") if trouve else ""
+
+
+def estimer_jetons(blocs: list[dict], attribution: bool, texte: bool) -> int:
+    """Ce que la relecture va coûter, avant de la lancer.
+
+    Approximation volontairement haute : mieux vaut annoncer plus que de
+    laisser quelqu'un épuiser son quota du jour sans prévenir."""
+    corps = sum(len(b["text"]) for b in blocs)
+    fenetres = max(1, -(-len(blocs) // FENETRE))
+    consigne = 1400 * fenetres          # la consigne système, à chaque appel
+    contexte = corps * (1 + RECOUVREMENT / FENETRE) / CARACTERES_PAR_JETON
+    total = 0
+    if attribution:
+        total += consigne + contexte + corps / CARACTERES_PAR_JETON * 0.15
+    if texte:
+        total += consigne + contexte + corps / CARACTERES_PAR_JETON * 0.5
+    return int(total)
 
 
 def _client(api_key: str):
@@ -155,6 +199,12 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
             brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete)
             proposees = json.loads(brut).get("corrections", [])
         except Exception as exc:  # noqa: BLE001
+            if _est_quota(exc):
+                raise QuotaError(
+                    "Quota de jetons épuisé chez Groq pour ce modèle"
+                    + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
+                    + ". Choisir un autre modèle : chaque modèle a son propre "
+                    "quota quotidien.") from exc
             if note:
                 note(f"relecture : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -200,6 +250,12 @@ def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
             brut = _appeler(api_key, modele, SYSTEME_TEXTE, "\n".join(lignes))
             proposees = json.loads(brut).get("blocs", [])
         except Exception as exc:  # noqa: BLE001
+            if _est_quota(exc):
+                raise QuotaError(
+                    "Quota de jetons épuisé chez Groq pour ce modèle"
+                    + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
+                    + ". Choisir un autre modèle : chaque modèle a son propre "
+                    "quota quotidien.") from exc
             if note:
                 note(f"relecture du texte : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -247,7 +303,16 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
         "l'échange, dis qu'il est resté ambigu plutôt que de le trancher. "
         "Écris en français, dans la langue de la réunion."
     )
-    return _appeler(api_key, modele, systeme, corps, json_attendu=False).strip()
+    try:
+        return _appeler(api_key, modele, systeme, corps, json_attendu=False).strip()
+    except Exception as exc:  # noqa: BLE001
+        if _est_quota(exc):
+            raise QuotaError(
+                "Quota de jetons épuisé chez Groq pour ce modèle"
+                + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
+                + ". Choisir un autre modèle : chaque modèle a son propre "
+                "quota quotidien.") from exc
+        raise
 
 
 def appliquer(blocs: list[dict], corrections: list[dict], noms: dict) -> list[dict]:
