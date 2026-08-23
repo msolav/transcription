@@ -21,6 +21,7 @@ def refus(*a, **k):
     appels.append(1)
     raise RuntimeError(MESSAGE)
 relecture._appeler = refus
+relecture.modeles_disponibles = lambda k: []   # les trois épuisés
 
 ok = rate = 0
 def verifie(nom, cond, detail=""):
@@ -44,7 +45,7 @@ for nom, appel in (("attribution", lambda: relecture.corriger_attribution(blocs,
         verifie(f"{nom} s'arrete net", True)
         verifie(f"{nom} : un seul appel avant l'arret", len(appels) == 1, f"{len(appels)} appels")
         verifie(f"{nom} : le message dit quoi faire",
-                "autre modèle" in str(exc) and "1h21m" in str(exc), str(exc)[:80])
+                "1h21m" in str(exc) and "épuisés aussi" in str(exc), str(exc)[:110])
     except Exception as exc:
         verifie(f"{nom} s'arrete net", False, f"{type(exc).__name__}: {exc}")
 

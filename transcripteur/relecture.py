@@ -26,6 +26,7 @@ qui aurait été mieux dit.
 from __future__ import annotations
 
 import json
+import time
 from difflib import SequenceMatcher
 
 # Modèles à poids ouverts servis par Groq. La clé est déjà là, il n'y a
@@ -55,7 +56,13 @@ FENETRE_ATTRIBUTION = 30
 FENETRE_TEXTE = 10
 FENETRE = FENETRE_ATTRIBUTION   # compatibilité
 RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
-JETONS_REPONSE = 8000 # plafond demandé pour la réponse
+# Groq applique deux limites de nature différente : un seau par minute
+# (8000 jetons) et un plafond par jour (200 000 sur le forfait gratuit).
+# Demander 8000 jetons de réponse, c'était réclamer le seau entier d'un
+# coup. La moitié suffit largement pour dix blocs réécrits.
+JETONS_REPONSE = 4000
+ATTENTE_MAX = 75.0    # secondes d'attente acceptées sur une limite par minute
+REESSAIS = 3
 CARACTERES_PAR_JETON = 3.4   # approximation pour du français
 FIDELITE_MIN = 0.72   # en dessous, la « correction » est une réécriture
 
@@ -83,9 +90,53 @@ class QuotaError(RelectureError):
     donc celle-ci interrompt la passe entière."""
 
 
-def _est_quota(exc: Exception) -> bool:
+def _genre_limite(exc: Exception) -> str:
+    """« jour », « minute » ou « » — la distinction commande la conduite.
+
+    Une limite par minute se franchit en patientant quelques secondes :
+    c'est un ralentisseur. Une limite par jour ne se franchit pas : rien
+    ne sert de réessayer, et continuer fenêtre après fenêtre ne fait que
+    rejouer le même refus. Les traiter pareil, c'était abandonner une
+    relecture entière pour une pause de trente secondes."""
     texte = str(exc)
-    return "rate_limit" in texte or "429" in texte or "tokens per day" in texte
+    if "rate_limit" not in texte and "429" not in texte:
+        return ""
+    if "per day" in texte or "TPD" in texte or "RPD" in texte:
+        return "jour"
+    if "per minute" in texte or "TPM" in texte or "RPM" in texte:
+        return "minute"
+    return "jour"      # dans le doute, ne pas s'acharner
+
+
+def _est_quota(exc: Exception) -> bool:
+    return _genre_limite(exc) == "jour"
+
+
+def _secondes(exc: Exception) -> float:
+    import re as _re
+    t = _re.search(r"try again in (?:(\d+)h)?(?:(\d+)m)?([\d.]+)s", str(exc))
+    if not t:
+        return 5.0
+    h, m, sec = t.group(1), t.group(2), t.group(3)
+    return int(h or 0) * 3600 + int(m or 0) * 60 + float(sec)
+
+
+def modeles_disponibles(api_key: str) -> list[str]:
+    """Quels modèles répondent encore, vérifié plutôt que supposé.
+
+    Le message d'erreur conseillait d'en changer sans savoir si un autre
+    était libre. Quand les trois sont épuisés, ce conseil fait perdre du
+    temps ; autant poser la question."""
+    libres = []
+    for cle, m in MODELES.items():
+        try:
+            _client(api_key).chat.completions.create(
+                model=m["id"], messages=[{"role": "user", "content": "ok"}],
+                max_completion_tokens=1)
+            libres.append(m["nom"])
+        except Exception:  # noqa: BLE001
+            continue
+    return libres
 
 
 def _delai(exc: Exception) -> str:
@@ -93,6 +144,29 @@ def _delai(exc: Exception) -> str:
     trouve = _re.search(r"try again in ([\dhms.]+)", str(exc))
     # Le point final de la phrase colle au délai : « dans 1h21m9.936s. »
     return trouve.group(1).rstrip(".") if trouve else ""
+
+
+def _quota_error(exc: Exception, api_key: str) -> "QuotaError":
+    """Message fondé sur ce qui est vrai à cet instant, pas sur une règle.
+
+    La version précédente affirmait que chaque modèle a son propre quota
+    et invitait à en changer. C'était inutile quand les trois étaient
+    épuisés, ce qui arrive vite : une relecture complète en consomme la
+    moitié. On regarde donc qui répond encore avant de conseiller."""
+    quand = f" Réessayer dans {_delai(exc)}." if _delai(exc) else ""
+    try:
+        libres = modeles_disponibles(api_key)
+    except Exception:  # noqa: BLE001
+        libres = []
+    if libres:
+        suite = (" D'autres modèles répondent encore : "
+                 + ", ".join(libres) + ". Les choisir dans la liste.")
+    else:
+        suite = (" Les autres modèles sont épuisés aussi. Le quota se "
+                 "renouvelle chaque jour ; d'ici là, ne lancer qu'une seule "
+                 "des deux passes, l'attribution étant celle qui corrige le "
+                 "découpage.")
+    return QuotaError("Quota quotidien de jetons épuisé chez Groq." + quand + suite)
 
 
 def estimer_jetons(blocs: list[dict], attribution: bool, texte: bool) -> int:
@@ -121,7 +195,23 @@ def _client(api_key: str):
 
 
 def _appeler(api_key: str, modele: str, systeme: str, requete: str,
-             json_attendu: bool = True) -> str:
+             json_attendu: bool = True, note=None) -> str:
+    """Un appel, en patientant si la limite est celle de la minute."""
+    for essai in range(REESSAIS):
+        try:
+            return _appeler_une_fois(api_key, modele, systeme, requete, json_attendu)
+        except Exception as exc:  # noqa: BLE001
+            if _genre_limite(exc) != "minute" or essai == REESSAIS - 1:
+                raise
+            pause = min(_secondes(exc) + 1.0, ATTENTE_MAX)
+            if note:
+                note(f"limite par minute atteinte, reprise dans {pause:.0f} s")
+            time.sleep(pause)
+    raise RelectureError("Appel impossible.")
+
+
+def _appeler_une_fois(api_key: str, modele: str, systeme: str, requete: str,
+                      json_attendu: bool = True) -> str:
     reference = MODELES.get(modele, MODELES[MODELE_DEFAUT])["id"]
     params = dict(
         model=reference,
@@ -232,15 +322,11 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                    "pour le contexte et ne doivent pas être corrigées.\n\n"
                    + "\n".join(lignes))
         try:
-            brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete)
+            brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete, note=note)
             proposees = json.loads(brut).get("corrections", [])
         except Exception as exc:  # noqa: BLE001
             if _est_quota(exc):
-                raise QuotaError(
-                    "Quota de jetons épuisé chez Groq pour ce modèle"
-                    + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
-                    + ". Choisir un autre modèle : chaque modèle a son propre "
-                    "quota quotidien.") from exc
+                raise _quota_error(exc, api_key) from exc
             if note:
                 note(f"relecture : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -293,15 +379,11 @@ def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
     lignes = [f"[{i}] {blocs[i]['text']}" for i in range(debut, fin)]
     try:
         brut = _appeler(api_key, modele, SYSTEME_TEXTE,
-                        _entete(contexte) + "\n".join(lignes))
+                        _entete(contexte) + "\n".join(lignes), note=note)
         return json.loads(brut).get("blocs", [])
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
-            raise QuotaError(
-                "Quota de jetons épuisé chez Groq pour ce modèle"
-                + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
-                + ". Choisir un autre modèle : chaque modèle a son propre "
-                "quota quotidien.") from exc
+            raise _quota_error(exc, api_key) from exc
         coupable = _tronque(exc) or isinstance(exc, json.JSONDecodeError)
         if coupable and profondeur < 2 and fin - debut > 1:
             milieu = (debut + fin) // 2
@@ -380,11 +462,7 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
                     json_attendu=False).strip()
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
-            raise QuotaError(
-                "Quota de jetons épuisé chez Groq pour ce modèle"
-                + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
-                + ". Choisir un autre modèle : chaque modèle a son propre "
-                "quota quotidien.") from exc
+            raise _quota_error(exc, api_key) from exc
         raise
 
 

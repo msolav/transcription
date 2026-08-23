@@ -1130,6 +1130,8 @@ function render() {
       </div>
       <div class="share"><i style="--w:${(s.share * 100).toFixed(1)}%"></i></div>
       <div class="stat"><span>${clock(s.speaking_seconds)} de parole</span><span>${s.turns} prises</span></div>
+      ${(s.extraits || []).length > 1 ? `<div class="stat"><span>extraits pris à
+        ${s.extraits.map(t => clock(t)).join(', ')}</span></div>` : ''}
     </div>`).join('');
 
   $('#dock').hidden = false;
@@ -1380,7 +1382,7 @@ function playExcerpt(button) {
   button.innerHTML = PAUSE_ICON;
   button.setAttribute('aria-label', 'Arrêter l\'écoute');
 
-  if (objectUrl && speaker.sample_seconds > 0) {
+  if (objectUrl && speaker.sample_seconds > 0 && !speaker.montage) {
     player.currentTime = speaker.sample_start;
     limit = speaker.sample_start + speaker.sample_seconds;
     play();

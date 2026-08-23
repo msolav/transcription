@@ -157,6 +157,62 @@ def to_excerpt(src: Path, start: float, duration: float, dst: Path) -> None:
           "-ac", "1", "-ar", "22050", "-c:a", "libmp3lame", "-b:a", "96k", str(dst)])
 
 
+def choisir_extraits(tours: list[tuple[float, float]],
+                     combien: int = 3) -> list[tuple[float, float]]:
+    """Trois passages de la même voix, pris loin les uns des autres.
+
+    On ne prend pas simplement les trois plus longs : ils se suivent
+    souvent dans la même minute, et trois extraits voisins valent un seul
+    extrait. On découpe donc l'enregistrement en tranches d'égale durée et
+    on retient le meilleur tour de chacune, ce qui écarte les extraits
+    dans le temps sans avoir à régler quoi que ce soit."""
+    utiles = [t for t in tours if t[1] - t[0] >= 1.2]
+    if not utiles:
+        return []
+    if len(utiles) <= combien:
+        return [(d + max(0.0, (f - d - SAMPLE_SECONDS / 2) / 2),
+                 min(SAMPLE_SECONDS / 2, f - d)) for d, f in utiles]
+
+    debut, fin = utiles[0][0], utiles[-1][1]
+    largeur = max((fin - debut) / combien, 1e-6)
+    meilleurs: dict[int, tuple[float, float]] = {}
+    for d, f in utiles:
+        case = min(int((d - debut) / largeur), combien - 1)
+        if case not in meilleurs or (f - d) > (meilleurs[case][1] - meilleurs[case][0]):
+            meilleurs[case] = (d, f)
+
+    duree = SAMPLE_SECONDS / len(meilleurs)
+    return [(d + max(0.0, (f - d - duree) / 2), min(duree, f - d))
+            for d, f in (meilleurs[c] for c in sorted(meilleurs))]
+
+
+def to_montage(src: Path, tranches: list[tuple[float, float]], dst: Path) -> None:
+    """Colle plusieurs extraits courts en un seul fichier d'écoute.
+
+    Un extrait unique pris dans le plus long tour de parole est fragile :
+    un long tour est justement celui qui a le plus de chances de contenir
+    un morceau de quelqu'un d'autre, et il suffit d'un mauvais tirage pour
+    que la carte soit nommée de travers. Trois extraits pris à des moments
+    éloignés se trompent beaucoup plus difficilement tous les trois."""
+    if len(tranches) == 1:
+        debut, duree = tranches[0]
+        to_excerpt(src, debut, duree, dst)
+        return
+
+    entrees, filtres = [], []
+    for i, (debut, duree) in enumerate(tranches):
+        entrees += ["-ss", f"{debut:.3f}", "-t", f"{duree:.3f}", "-i", str(src)]
+        filtres.append(f"[{i}:a]aresample=22050,aformat=channel_layouts=mono[a{i}]")
+    # un souffle de silence entre les extraits, pour qu'on les distingue
+    silence = len(tranches)
+    entrees += ["-f", "lavfi", "-t", "0.35", "-i", "anullsrc=r=22050:cl=mono"]
+    montage = "".join(f"[a{i}][{silence}:a]" for i in range(len(tranches) - 1))
+    montage += f"[a{len(tranches) - 1}]"
+    filtre = ";".join(filtres) + f";{montage}concat=n={2 * len(tranches) - 1}:v=0:a=1[out]"
+    _run(entrees + ["-filter_complex", filtre, "-map", "[out]",
+                    "-c:a", "libmp3lame", "-b:a", "96k", str(dst)])
+
+
 def read_wav16k(path: Path):
     """Lit un WAV 16 kHz mono 16 bits en float32. Ni ffprobe, ni librosa."""
     import numpy as np
@@ -784,6 +840,7 @@ def join_words(words: list[dict]) -> str:
 def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:
     order: list[str] = []
     totals: dict[str, float] = {}
+    par_voix: dict[str, list[tuple[float, float]]] = {}
     longest: dict[str, tuple[float, float]] = {}
 
     for t_start, t_end, speaker in turns:
@@ -791,6 +848,7 @@ def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:
         totals[speaker] = totals.get(speaker, 0.0) + length
         if speaker not in longest or length > (longest[speaker][1] - longest[speaker][0]):
             longest[speaker] = (t_start, t_end)
+        par_voix.setdefault(speaker, []).append((t_start, t_end))
 
     for block in blocks:
         if block["speaker"] not in order:
@@ -808,9 +866,10 @@ def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:
         take = min(SAMPLE_SECONDS, max(length, 1.0))
         offset = t_start + max(0.0, (length - take) / 2)
 
+        tranches = choisir_extraits(par_voix.get(speaker, []))
         sample = out_dir / f"sample_{index}.mp3"
         try:
-            to_excerpt(src, offset, take, sample)
+            to_montage(src, tranches or [(offset, take)], sample)
             has_sample = sample.exists() and sample.stat().st_size > 0
         except PipelineError:
             has_sample = False
@@ -822,8 +881,13 @@ def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:
             "speaking_seconds": round(totals.get(speaker, 0.0), 1),
             "share": round(totals.get(speaker, 0.0) / grand_total, 4),
             "turns": sum(1 for t in turns if t[2] == speaker),
-            "sample_start": round(offset, 2),
-            "sample_seconds": round(take, 2),
+            "sample_start": round(tranches[0][0] if tranches else offset, 2),
+            "sample_seconds": round(tranches[0][1] if tranches else take, 2),
+            # Un montage ne peut pas être joué depuis le fichier local du
+            # navigateur : ses morceaux ne se suivent pas. On le signale pour
+            # que l'interface demande le fichier au serveur.
+            "montage": len(tranches) > 1,
+            "extraits": [round(d, 2) for d, _ in tranches],
             "has_sample": has_sample,
         })
     return profiles

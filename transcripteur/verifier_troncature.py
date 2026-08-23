@@ -25,7 +25,7 @@ v("un 429 n'est pas pris pour une troncature", not r._tronque(RuntimeError("429 
 
 # echoue tant que la fenetre depasse 3 blocs : doit se scinder puis reussir
 tailles=[]
-def capricieux(api_key, modele, systeme, requete, json_attendu=True):
+def capricieux(api_key, modele, systeme, requete, json_attendu=True, note=None):
     n=requete.count("\n")+1
     tailles.append(n)
     if n > 3: raise RuntimeError(TRONQUE)
@@ -40,7 +40,7 @@ v("aucune fenetre annoncee ignoree", not any("ignorée" in n for n in notes), no
 
 # echec permanent : on abandonne apres deux scissions, sans boucler
 appels=[]
-def toujours(api_key, modele, systeme, requete, json_attendu=True):
+def toujours(api_key, modele, systeme, requete, json_attendu=True, note=None):
     appels.append(1); raise RuntimeError(TRONQUE)
 r._appeler = toujours
 notes.clear()
@@ -50,7 +50,7 @@ v("la recursion est bornee", len(appels) <= 8, f"{len(appels)} appels")
 
 # le contexte remonte bien dans la requete
 recu=[]
-def espion(api_key, modele, systeme, requete, json_attendu=True):
+def espion(api_key, modele, systeme, requete, json_attendu=True, note=None):
     recu.append(requete); return json.dumps({"blocs":[]})
 r._appeler = espion
 r.corriger_texte(blocs[:2], "k", contexte="AEPP = Association des entreprises")

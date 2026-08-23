@@ -167,10 +167,17 @@ en demande environ 120 000 : l'attribution seule 57 000, le texte seul
 65 000. La fenêtre de dialogue annonce le montant avant de lancer, et il
 se recalcule quand on décoche une des deux passes.
 
-Le quota étant compté par modèle, en épuiser un ne bloque pas les autres :
-changer de modèle dans la liste suffit à continuer le même jour. Si le
-quota tombe en cours de route, la passe s'arrête net et le dit, plutôt que
-de rendre une relecture à moitié faite qui aurait l'air terminée.
+Groq applique deux limites de nature différente, et elles n'appellent pas
+la même conduite. Celle de la minute (8 000 jetons) est un ralentisseur :
+le programme patiente le temps annoncé et reprend, en le disant dans le
+journal. Celle du jour ne se franchit pas : la passe s'arrête net plutôt
+que de rendre une relecture à moitié faite qui aurait l'air terminée.
+
+Quand le quota du jour tombe, le message regarde d'abord quels modèles
+répondent encore avant de conseiller quoi que ce soit. Une version
+précédente affirmait qu'il suffisait de changer de modèle ; c'est faux
+quand les trois sont épuisés, ce qui arrive vite puisqu'une relecture
+complète en consomme la moitié.
 
 **Résumer** rédige un compte rendu, une liste de décisions et de suites à
 donner, un résumé bref ou une synthèse par thème. La consigne interdit
