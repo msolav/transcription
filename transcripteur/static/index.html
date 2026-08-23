@@ -319,6 +319,11 @@ button{cursor:pointer;border:none;background:none}
   .panneau label{display:flex;gap:7px;align-items:center;cursor:pointer}
   .panneau .opts{display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
   .panneau pre{white-space:pre-wrap;font:inherit;margin:0}
+  .panneau textarea{
+    width:100%;margin-top:10px;padding:9px 11px;border:1px solid var(--rule);
+    border-radius:7px;background:var(--paper);color:var(--ink);
+    font:inherit;font-size:12.5px;resize:vertical;
+  }
 </style>
 </head>
 <body>
@@ -560,6 +565,16 @@ loadModels();
 /* ---------- relecture et résumé ---------- */
 let relOpts = null, relTimer = null, corrections = [];
 
+/* Le contexte saisi est retenu d'un panneau à l'autre : les sigles et les
+   rôles valent pour la relecture comme pour le résumé, et personne n'a
+   envie de les retaper. */
+let contexteMemo = '';
+function ctx() {
+  const champ = $('#rctx') || $('#sctx');
+  contexteMemo = champ ? champ.value.trim() : contexteMemo;
+  return contexteMemo;
+}
+
 /* Ces deux boutons vivent dans le socle, affiché dès l'écran de la clé.
    Sans ce garde-fou, les cliquer avant d'avoir un transcript lèverait une
    erreur sur `job.id`. */
@@ -590,6 +605,7 @@ $('#reread').onclick = async () => {
       <button id="rgo">Lancer</button>
       <button id="rno">Fermer</button>
     </div>
+    <textarea id="rctx" rows="3" placeholder="Contexte : sigles, noms propres, rôle de chacun. Par exemple « AEPP = Association des entreprises. Vincent développe le site, Annie dirige, Dominique gère les locaux. »"></textarea>
     <p class="hint" id="rcout">…</p>
     <p class="hint">L'original n'est pas modifié : les corrections s'affichent
     ici une par une et se décochent. L'attribution se juge sur la syntaxe, ce
@@ -608,10 +624,11 @@ $('#reread').onclick = async () => {
   $('#ratt').onchange = majCout;
   $('#rtxt').onchange = majCout;
   majCout();
+  $('#rctx').value = contexteMemo;
   $('#rno').onclick = closePanel;
   $('#rgo').onclick = async () => {
     const body = { attribution: $('#ratt').checked, texte: $('#rtxt').checked,
-                   modele: $('#rmod').value };
+                   modele: $('#rmod').value, contexte: ctx() };
     if (!body.attribution && !body.texte) { flash('Rien à relire'); return; }
     $('#rgo').disabled = true;
     try {
@@ -708,7 +725,9 @@ $('#sum').onclick = async () => {
         `<option value="${m.cle}"${m.cle === o.defaut ? ' selected' : ''}>${escapeHtml(m.nom)}</option>`).join('')}</select>
       <button id="sgo">Rédiger</button>
       <button id="rno">Fermer</button>
-    </div>`;
+    </div>
+    <textarea id="sctx" rows="2" placeholder="Contexte : sigles, noms propres, rôle de chacun."></textarea>`;
+  $('#sctx').value = contexteMemo;
   $('#rno').onclick = closePanel;
   $('#sgo').onclick = async () => {
     $('#sgo').disabled = true;
@@ -716,7 +735,8 @@ $('#sum').onclick = async () => {
     try {
       const out = await api(`/api/jobs/${job.id}/resume`, { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forme: $('#sform').value, modele: $('#smod').value }) });
+        body: JSON.stringify({ forme: $('#sform').value, modele: $('#smod').value,
+                               contexte: ctx() }) });
       p.innerHTML = `<h4>Résumé</h4><pre id="stexte">${escapeHtml(out.texte)}</pre>
         <div class="opts" style="margin-top:12px">
           <button id="scopy">Copier</button>

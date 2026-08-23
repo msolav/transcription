@@ -45,8 +45,17 @@ MODELE_DEFAUT = "gpt-oss-120b"
 # transcript de 600 blocs, passer de 14 à 30 fait tomber le nombre
 # d'appels de 44 à 21. Le quota gratuit de Groq est de 200 000 jetons par
 # jour et par modèle : une relecture complète en consommait presque tout.
-FENETRE = 30          # blocs envoyés d'un coup
+# Deux tailles, parce que les deux passes n'ont pas le même coût de
+# réponse. L'attribution ne renvoie que des numéros : une large fenêtre
+# est gratuite en sortie et économise la consigne système. La correction
+# de texte, elle, renvoie chaque bloc réécrit en entier — sur trente
+# blocs la réponse dépasse ce que le modèle peut produire d'un coup,
+# le JSON revient tronqué et l'appel entier est perdu.
+FENETRE_ATTRIBUTION = 30
+FENETRE_TEXTE = 10
+FENETRE = FENETRE_ATTRIBUTION   # compatibilité
 RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
+JETONS_REPONSE = 8000 # plafond demandé pour la réponse
 CARACTERES_PAR_JETON = 3.4   # approximation pour du français
 FIDELITE_MIN = 0.72   # en dessous, la « correction » est une réécriture
 
@@ -122,15 +131,33 @@ def _appeler(api_key: str, modele: str, systeme: str, requete: str,
     )
     if json_attendu:
         params["response_format"] = {"type": "json_object"}
+        params["max_completion_tokens"] = JETONS_REPONSE
     reponse = _client(api_key).chat.completions.create(**params)
     return reponse.choices[0].message.content or ""
+
+
+def _entete(contexte: str) -> str:
+    """Ce que l'utilisateur sait et que la transcription ne dit pas.
+
+    Les noms propres, les sigles et les rôles sont ce que la machine rate
+    le plus : « IMER » et « AEPP » n'existent dans aucun dictionnaire, et
+    savoir qui préside aide à décider qui répond. On le place en tête de
+    la requête plutôt que dans la consigne système, pour qu'il reste du
+    contexte et non une instruction."""
+    contexte = (contexte or "").strip()
+    if not contexte:
+        return ""
+    return ("Contexte fourni par la personne qui a assisté à la réunion. "
+            "Il sert à reconnaître les noms propres, les sigles et les rôles ; "
+            "il ne dit pas ce qu'il faut corriger :\n"
+            f"{contexte[:4000]}\n\n")
 
 
 def _nom(bloc: dict, noms: dict) -> str:
     return noms.get(bloc["speaker"]) or bloc["speaker"].replace("SPEAKER_", "Voix ")
 
 
-def _fenetres(total: int):
+def _fenetres(total: int, taille: int = FENETRE_ATTRIBUTION):
     """Découpe en fenêtres qui se chevauchent.
 
     Le recouvrement n'est pas du luxe : une frontière mal placée se juge
@@ -138,9 +165,15 @@ def _fenetres(total: int):
     verrait que la moitié du problème."""
     debut = 0
     while debut < total:
-        fin = min(debut + FENETRE, total)
+        fin = min(debut + taille, total)
         yield max(0, debut - RECOUVREMENT), debut, fin
         debut = fin
+
+
+def _tronque(exc: Exception) -> bool:
+    """Réponse coupée avant la fin du JSON, faute de place."""
+    texte = str(exc)
+    return "json_validate_failed" in texte or "Failed to validate JSON" in texte
 
 
 SYSTEME_ATTRIBUTION = """Tu relis la transcription d'une conversation réelle.
@@ -181,18 +214,20 @@ N'inclus que les blocs réellement modifiés."""
 
 
 def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
-                         modele: str = MODELE_DEFAUT, note=None) -> list[dict]:
+                         modele: str = MODELE_DEFAUT, note=None,
+                         contexte: str = "") -> list[dict]:
     """Corrections d'attribution proposées, sans rien appliquer."""
     connus = sorted({_nom(b, noms) for b in blocs})
     vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
 
-    for contexte, debut, fin in _fenetres(len(blocs)):
+    for amorce, debut, fin in _fenetres(len(blocs)):
         lignes = []
-        for i in range(contexte, fin):
+        for i in range(amorce, fin):
             marque = "  " if i < debut else "→ "
             lignes.append(f"{marque}[{i}] {_nom(blocs[i], noms)} : {blocs[i]['text']}")
-        requete = (f"Personnes présentes : {', '.join(connus)}\n\n"
+        requete = (_entete(contexte)
+                   + f"Personnes présentes : {', '.join(connus)}\n\n"
                    "Les lignes marquées → sont à examiner ; les autres sont là "
                    "pour le contexte et ne doivent pas être corrigées.\n\n"
                    + "\n".join(lignes))
@@ -246,24 +281,52 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
     return corrections
 
 
+def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
+                    profondeur: int = 0):
+    """Une fenêtre de correction, coupée en deux si la réponse déborde.
+
+    La passe de texte renvoie chaque bloc réécrit en entier : sur une
+    fenêtre trop large, le modèle s'arrête au milieu du JSON et l'appel
+    entier est perdu. Plutôt que d'abandonner la fenêtre, on la scinde et
+    on redemande. Deux niveaux suffisent à ramener dix blocs à deux ou
+    trois ; au-delà, l'échec vient d'autre chose et remonte."""
+    lignes = [f"[{i}] {blocs[i]['text']}" for i in range(debut, fin)]
+    try:
+        brut = _appeler(api_key, modele, SYSTEME_TEXTE,
+                        _entete(contexte) + "\n".join(lignes))
+        return json.loads(brut).get("blocs", [])
+    except Exception as exc:  # noqa: BLE001
+        if _est_quota(exc):
+            raise QuotaError(
+                "Quota de jetons épuisé chez Groq pour ce modèle"
+                + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
+                + ". Choisir un autre modèle : chaque modèle a son propre "
+                "quota quotidien.") from exc
+        coupable = _tronque(exc) or isinstance(exc, json.JSONDecodeError)
+        if coupable and profondeur < 2 and fin - debut > 1:
+            milieu = (debut + fin) // 2
+            if note:
+                note(f"réponse trop longue, fenêtre {debut}-{fin} coupée en deux")
+            return (_demander_texte(blocs, debut, milieu, api_key, modele,
+                                    contexte, note, profondeur + 1)
+                    + _demander_texte(blocs, milieu, fin, api_key, modele,
+                                      contexte, note, profondeur + 1))
+        raise
+
+
 def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
-                   note=None) -> list[dict]:
+                   note=None, contexte: str = "") -> list[dict]:
     """Corrections de texte proposées, filtrées sur leur fidélité."""
     corrections: list[dict] = []
     refusees = 0
 
-    for _, debut, fin in _fenetres(len(blocs)):
-        lignes = [f"[{i}] {blocs[i]['text']}" for i in range(debut, fin)]
+    for _, debut, fin in _fenetres(len(blocs), FENETRE_TEXTE):
         try:
-            brut = _appeler(api_key, modele, SYSTEME_TEXTE, "\n".join(lignes))
-            proposees = json.loads(brut).get("blocs", [])
+            proposees = _demander_texte(blocs, debut, fin, api_key, modele,
+                                        contexte, note)
+        except QuotaError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            if _est_quota(exc):
-                raise QuotaError(
-                    "Quota de jetons épuisé chez Groq pour ce modèle"
-                    + (f" (réessayer dans {_delai(exc)})" if _delai(exc) else "")
-                    + ". Choisir un autre modèle : chaque modèle a son propre "
-                    "quota quotidien.") from exc
             if note:
                 note(f"relecture du texte : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -293,7 +356,8 @@ def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
 
 
 def resumer(blocs: list[dict], noms: dict, api_key: str,
-            forme: str = "compte_rendu", modele: str = MODELE_DEFAUT) -> str:
+            forme: str = "compte_rendu", modele: str = MODELE_DEFAUT,
+            contexte: str = "") -> str:
     """Un résumé de la conversation, dans la forme demandée."""
     if forme not in RESUMES:
         forme = "compte_rendu"
@@ -312,7 +376,8 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
         "Écris en français, dans la langue de la réunion."
     )
     try:
-        return _appeler(api_key, modele, systeme, corps, json_attendu=False).strip()
+        return _appeler(api_key, modele, systeme, _entete(contexte) + corps,
+                    json_attendu=False).strip()
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
             raise QuotaError(

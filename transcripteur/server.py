@@ -229,7 +229,8 @@ async def create_job(
     return JSONResponse({"id": job_id}, status_code=202)
 
 
-def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str) -> None:
+def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
+                   contexte: str = "") -> None:
     """Relit un transcript déjà produit, dans un fil à part.
 
     Rien n'est appliqué ici : on range des propositions que l'interface
@@ -248,10 +249,10 @@ def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str) -> 
         corrections = []
         if attribution:
             corrections += relecture.corriger_attribution(
-                blocs, noms, config.get_key(), modele, note=note)
+                blocs, noms, config.get_key(), modele, note=note, contexte=contexte)
         if texte:
             corrections += relecture.corriger_texte(
-                blocs, config.get_key(), modele, note=note)
+                blocs, config.get_key(), modele, note=note, contexte=contexte)
         apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
         with _lock:
             job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
@@ -298,7 +299,8 @@ def relire(job_id: str, payload: dict) -> dict:
         target=_run_relecture,
         args=(job_id, bool(payload.get("attribution", True)),
               bool(payload.get("texte", True)),
-              str(payload.get("modele") or relecture.MODELE_DEFAUT)),
+              str(payload.get("modele") or relecture.MODELE_DEFAUT),
+              str(payload.get("contexte") or "")),
         daemon=True).start()
     return {"ok": True}
 
@@ -316,7 +318,8 @@ def resume(job_id: str, payload: dict) -> dict:
     try:
         texte = relecture.resumer(blocs, job["names"], config.get_key(),
                                   str(payload.get("forme") or "compte_rendu"),
-                                  str(payload.get("modele") or relecture.MODELE_DEFAUT))
+                                  str(payload.get("modele") or relecture.MODELE_DEFAUT),
+                                  str(payload.get("contexte") or ""))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Résumé impossible : {exc}") from exc
     return {"texte": texte}

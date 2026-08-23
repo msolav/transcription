@@ -144,6 +144,17 @@ rupture, et la relecture peut réunir sous un seul nom ce que deux
 personnes ont dit. Seul le son porte cette information. C'est la raison
 d'être du bouton de comparaison.
 
+**Le contexte.** Un champ libre, sous les deux boutons, où écrire ce que
+la transcription ne peut pas deviner : les sigles, les noms propres, le
+rôle de chacun. « AEPP = Association des entreprises. Vincent développe le
+site, Annie dirige, Dominique gère les locaux. » Trois lignes suffisent.
+
+C'est ce qui manque le plus au correcteur : un sigle comme IMER ou AEPP
+n'existe dans aucun dictionnaire, et Whisper le rend au son. Savoir qui
+fait quoi aide aussi à décider qui répond à qui. Le texte est transmis
+comme du contexte, pas comme une consigne, et il est retenu d'un panneau
+à l'autre : ce qui vaut pour la relecture vaut pour le résumé.
+
 **Ce que ça consomme.** Le forfait gratuit de Groq donne 200 000 jetons
 par jour et par modèle. Une relecture complète d'une réunion de 80 minutes
 en demande environ 120 000 : l'attribution seule 57 000, le texte seul
