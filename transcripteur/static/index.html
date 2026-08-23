@@ -721,7 +721,10 @@ $('#sum').onclick = async () => {
 };
 
 $('#changekey').onclick = askForKey;
-document.querySelectorAll('.exportbar button').forEach(
+// [data-x] et pas « tous les boutons de la barre » : la barre contient
+// aussi Relire, Résumer et la bascule, dont les gestionnaires étaient
+// écrasés ici, ce qui déclenchait un export « .undefined ».
+document.querySelectorAll('.exportbar button[data-x]').forEach(
   b => b.onclick = () => exportAs(b.dataset.x));
 
 function askForKey() {

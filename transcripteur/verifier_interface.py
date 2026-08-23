@@ -40,6 +40,16 @@ for vide in ("emb", "clean"):
     ok(f"#{vide} est rempli par le serveur", bool(balise) and not balise.group(1).strip())
 
 ok("catalogue demandé au serveur", "/api/models" in script)
+
+# La barre d'export contient aussi des boutons qui ne sont pas des exports.
+# Les câbler en bloc écrasait leurs gestionnaires et lançait un
+# téléchargement « .undefined » : le sélecteur doit être restreint.
+ok("les exports ne câblent que [data-x]",
+   ".exportbar button[data-x]" in script)
+barre = re.search(r'<div class="exportbar">(.*?)</div>', h, re.S)
+sans_x = re.findall(r'<button (?![^>]*data-x)[^>]*id="([\w-]+)"', barre.group(1) if barre else "")
+for bouton in sans_x:
+    ok(f"#{bouton} a son propre gestionnaire", f"$('#{bouton}').onclick" in script)
 ok("langue relit le catalogue", "'#lang'" in script and "loadModels" in script)
 
 print(f"\n{'INTERFACE CONFORME' if not fails else str(len(fails)) + ' PROBLÈME(S)'}")
