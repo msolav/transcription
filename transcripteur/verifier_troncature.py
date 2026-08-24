@@ -1,5 +1,8 @@
 """Contrôles de la passe de texte : troncature, scission, contexte.
 
+Les doublures acceptent **k : elles se sont brisées deux fois parce que
+la signature de _appeler avait gagné un paramètre.
+
 Aucun appel réseau : le client Groq est remplacé par des doublures."""
 import sys, json
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
@@ -25,7 +28,7 @@ v("un 429 n'est pas pris pour une troncature", not r._tronque(RuntimeError("429 
 
 # echoue tant que la fenetre depasse 3 blocs : doit se scinder puis reussir
 tailles=[]
-def capricieux(api_key, modele, systeme, requete, json_attendu=True, note=None):
+def capricieux(api_key, modele, systeme, requete, **k):
     n=requete.count("\n")+1
     tailles.append(n)
     if n > 3: raise RuntimeError(TRONQUE)
@@ -40,7 +43,7 @@ v("aucune fenetre annoncee ignoree", not any("ignorée" in n for n in notes), no
 
 # echec permanent : on abandonne apres deux scissions, sans boucler
 appels=[]
-def toujours(api_key, modele, systeme, requete, json_attendu=True, note=None):
+def toujours(api_key, modele, systeme, requete, **k):
     appels.append(1); raise RuntimeError(TRONQUE)
 r._appeler = toujours
 notes.clear()
@@ -50,7 +53,7 @@ v("la recursion est bornee", len(appels) <= 8, f"{len(appels)} appels")
 
 # le contexte remonte bien dans la requete
 recu=[]
-def espion(api_key, modele, systeme, requete, json_attendu=True, note=None):
+def espion(api_key, modele, systeme, requete, **k):
     recu.append(requete); return json.dumps({"blocs":[]})
 r._appeler = espion
 r.corriger_texte(blocs[:2], "k", contexte="AEPP = Association des entreprises")

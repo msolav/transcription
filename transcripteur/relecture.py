@@ -31,13 +31,23 @@ from difflib import SequenceMatcher
 
 # Modèles à poids ouverts servis par Groq. La clé est déjà là, il n'y a
 # donc ni compte à créer ni gigaoctet à télécharger.
+# `effort` : ces modèles réfléchissent avant de répondre, et ce
+# raisonnement est facturé sur le même plafond que la réponse. Sans le
+# brider, GPT-OSS épuise les jetons alloués en réflexion et ne rend rien
+# du tout — un JSON vide, refusé par le serveur. Qwen, lui, rejette le
+# paramètre : il faut donc le déclarer par modèle plutôt que l'envoyer à
+# tous.
 MODELES = {
     "gpt-oss-120b": {"id": "openai/gpt-oss-120b", "nom": "GPT-OSS 120B",
+                     "effort": True,
                      "note": "Le plus fiable des trois. À préférer pour l'attribution."},
     "gpt-oss-20b": {"id": "openai/gpt-oss-20b", "nom": "GPT-OSS 20B",
+                    "effort": True,
                     "note": "Plus rapide et moins cher, un peu moins sûr."},
     "qwen3.6-27b": {"id": "qwen/qwen3.6-27b", "nom": "Qwen 3.6 27B",
-                    "note": "Autre famille : utile en deuxième avis."},
+                    "effort": False,
+                    "note": "Autre famille : utile en deuxième avis. Plus bavard, "
+                            "donc plus lent à quota égal."},
 }
 MODELE_DEFAUT = "gpt-oss-120b"
 
@@ -52,7 +62,9 @@ MODELE_DEFAUT = "gpt-oss-120b"
 # de texte, elle, renvoie chaque bloc réécrit en entier — sur trente
 # blocs la réponse dépasse ce que le modèle peut produire d'un coup,
 # le JSON revient tronqué et l'appel entier est perdu.
-FENETRE_ATTRIBUTION = 30
+# Dix blocs : mesuré comme le point où le modèle juge encore chaque bloc
+# de façon stable. Au-delà, il commence à rendre des listes incomplètes.
+FENETRE_ATTRIBUTION = 10
 FENETRE_TEXTE = 10
 FENETRE = FENETRE_ATTRIBUTION   # compatibilité
 RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
@@ -60,7 +72,13 @@ RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
 # (8000 jetons) et un plafond par jour (200 000 sur le forfait gratuit).
 # Demander 8000 jetons de réponse, c'était réclamer le seau entier d'un
 # coup. La moitié suffit largement pour dix blocs réécrits.
-JETONS_REPONSE = 4000
+# Deux plafonds, parce que les deux passes ne rendent pas la même chose :
+# l'attribution quelques numéros, la correction dix blocs réécrits. Le
+# plafond demandé est réservé sur le seau de la minute, qu'on le consomme
+# ou non : demander large, c'est se limiter à deux appels par minute.
+JETONS_ATTRIBUTION = 1500
+JETONS_TEXTE = 3000
+JETONS_REPONSE = JETONS_TEXTE   # compatibilité
 ATTENTE_MAX = 75.0    # secondes d'attente acceptées sur une limite par minute
 REESSAIS = 3
 CARACTERES_PAR_JETON = 3.4   # approximation pour du français
@@ -162,10 +180,11 @@ def _quota_error(exc: Exception, api_key: str) -> "QuotaError":
         suite = (" D'autres modèles répondent encore : "
                  + ", ".join(libres) + ". Les choisir dans la liste.")
     else:
-        suite = (" Les autres modèles sont épuisés aussi. Le quota se "
-                 "renouvelle chaque jour ; d'ici là, ne lancer qu'une seule "
-                 "des deux passes, l'attribution étant celle qui corrige le "
-                 "découpage.")
+        suite = (" Les autres modèles sont épuisés aussi. Le décompte glisse "
+                 "sur la journée, donc l'attente indiquée ci-dessus est la "
+                 "bonne, souvent quelques minutes seulement. Pour consommer "
+                 "moins, ne lancer qu'une des deux passes : l'attribution est "
+                 "celle qui corrige le découpage.")
     return QuotaError("Quota quotidien de jetons épuisé chez Groq." + quand + suite)
 
 
@@ -175,14 +194,15 @@ def estimer_jetons(blocs: list[dict], attribution: bool, texte: bool) -> int:
     Approximation volontairement haute : mieux vaut annoncer plus que de
     laisser quelqu'un épuiser son quota du jour sans prévenir."""
     corps = sum(len(b["text"]) for b in blocs)
-    fenetres = max(1, -(-len(blocs) // FENETRE))
-    consigne = 1400 * fenetres          # la consigne système, à chaque appel
-    contexte = corps * (1 + RECOUVREMENT / FENETRE) / CARACTERES_PAR_JETON
     total = 0
     if attribution:
-        total += consigne + contexte + corps / CARACTERES_PAR_JETON * 0.15
+        # fenêtre de dix, et un verdict rendu pour chaque bloc
+        fen = max(1, -(-len(blocs) // FENETRE_ATTRIBUTION))
+        total += 500 * fen + corps / CARACTERES_PAR_JETON + len(blocs) * 12
     if texte:
-        total += consigne + contexte + corps / CARACTERES_PAR_JETON * 0.5
+        fen = max(1, -(-len(blocs) // FENETRE_TEXTE))
+        total += 300 * fen + corps / CARACTERES_PAR_JETON * (1 + RECOUVREMENT / FENETRE_TEXTE)
+        total += corps / CARACTERES_PAR_JETON * 0.5
     return int(total)
 
 
@@ -195,11 +215,12 @@ def _client(api_key: str):
 
 
 def _appeler(api_key: str, modele: str, systeme: str, requete: str,
-             json_attendu: bool = True, note=None) -> str:
+             json_attendu: bool = True, note=None, plafond: int = 0) -> str:
     """Un appel, en patientant si la limite est celle de la minute."""
     for essai in range(REESSAIS):
         try:
-            return _appeler_une_fois(api_key, modele, systeme, requete, json_attendu)
+            return _appeler_une_fois(api_key, modele, systeme, requete,
+                                     json_attendu, plafond)
         except Exception as exc:  # noqa: BLE001
             if _genre_limite(exc) != "minute" or essai == REESSAIS - 1:
                 raise
@@ -211,17 +232,19 @@ def _appeler(api_key: str, modele: str, systeme: str, requete: str,
 
 
 def _appeler_une_fois(api_key: str, modele: str, systeme: str, requete: str,
-                      json_attendu: bool = True) -> str:
-    reference = MODELES.get(modele, MODELES[MODELE_DEFAUT])["id"]
+                      json_attendu: bool = True, plafond: int = 0) -> str:
+    fiche = MODELES.get(modele, MODELES[MODELE_DEFAUT])
     params = dict(
-        model=reference,
+        model=fiche["id"],
         messages=[{"role": "system", "content": systeme},
                   {"role": "user", "content": requete}],
         temperature=0.0,
     )
+    if fiche.get("effort"):
+        params["reasoning_effort"] = "low"
     if json_attendu:
         params["response_format"] = {"type": "json_object"}
-        params["max_completion_tokens"] = JETONS_REPONSE
+        params["max_completion_tokens"] = plafond or JETONS_TEXTE
     reponse = _client(api_key).chat.completions.create(**params)
     return reponse.choices[0].message.content or ""
 
@@ -266,27 +289,40 @@ def _tronque(exc: Exception) -> bool:
     return "json_validate_failed" in texte or "Failed to validate JSON" in texte
 
 
+# Le modèle doit se prononcer sur CHAQUE bloc, et pas seulement signaler
+# les erreurs. Demander « la liste des erreurs » rend la réponse vide la
+# moins coûteuse, et le modèle la choisissait souvent : sur cinq fenêtres
+# identiques, trois revenaient vides et deux trouvaient trois ou quatre
+# corrections, à température nulle. En exigeant un verdict par bloc, la
+# réponse vide devient invalide et détectable, et cinq essais identiques
+# rendent exactement le même résultat.
 SYSTEME_ATTRIBUTION = """Tu relis la transcription d'une conversation réelle.
 
 Un logiciel a réparti les phrases entre les personnes en comparant les
-voix. Il se trompe régulièrement de deux façons :
-- il coupe au milieu d'une proposition et donne la fin à quelqu'un d'autre
-- il rate un changement de personne et colle une réponse au locuteur précédent
+voix. Il se trompe de deux façons : il coupe au milieu d'une proposition
+et donne la fin à quelqu'un d'autre, ou il rate un changement de personne
+et colle une réponse au locuteur précédent.
 
-Tu ne juges QUE sur le sens et la syntaxe. Une proposition grammaticale
-appartient à une seule personne. Une question et sa réponse appartiennent
-à deux personnes différentes. Une approbation (« exactement », « tout à
-fait », « oui ») vient de quelqu'un d'autre que celui qui vient de parler.
+Tu juges sur le sens et la syntaxe, jamais sur le son. Une proposition
+grammaticale appartient à une seule personne. Une question et sa réponse
+appartiennent à deux personnes différentes. Une approbation (« exactement »,
+« tout à fait », « oui ») vient de quelqu'un d'autre que celui qui vient
+de parler.
 
-Réponds en JSON : {"corrections": [...]}, chaque correction étant
-- {"bloc": <numéro>, "locuteur": "<nom exact>"} pour réattribuer un bloc entier
-- {"bloc": <numéro>, "deplacer": <n>} pour déplacer des mots à la frontière :
-  n positif = les n premiers mots du bloc reviennent au bloc précédent,
-  n négatif = les |n| derniers mots du bloc passent au bloc suivant
+Indice mécanique : quand un bloc se termine sans ponctuation forte et que
+le suivant commence par une minuscule, la phrase a été coupée en deux et
+la coupure est presque toujours mal placée. Regarde ces enchaînements en
+premier.
 
-N'inclus que les blocs à corriger. Dans le doute, ne corrige pas : une
-attribution douteuse laissée telle quelle est préférable à une correction
-inventée. Si tout est correct, réponds {"corrections": []}."""
+Pour CHAQUE bloc numéroté, indique qui parle. Réponds en JSON :
+{"blocs": [{"bloc": 0, "locuteur": "<nom exact>"}, ...]}
+
+Un bloc peut aussi porter "deplacer": n, pour ramener ses n premiers mots
+au bloc précédent (n positif) ou pousser ses |n| derniers mots au bloc
+suivant (n négatif), quand la coupure tombe au milieu d'une proposition.
+
+Réponds pour tous les blocs, sans exception, dans l'ordre. N'invente aucun
+nom : n'emploie que ceux de la liste fournie."""
 
 SYSTEME_TEXTE = """Tu corriges la transcription automatique d'une conversation.
 
@@ -303,6 +339,23 @@ Réponds en JSON : {"blocs": [{"bloc": <numéro>, "texte": "<texte corrigé>"}]}
 N'inclus que les blocs réellement modifiés."""
 
 
+def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
+                          contexte, note):
+    """Le verdict du modèle sur une fenêtre, vérifié puis traduit.
+
+    Rend la liste brute des jugements. La couverture est contrôlée par
+    l'appelant : une réponse qui ne parle que de trois blocs sur dix n'est
+    pas une fenêtre sans erreur, c'est une fenêtre mal lue."""
+    lignes = [f"[{i}] {_nom(blocs[i], noms)} : {blocs[i]['text']}"
+              for i in range(debut, fin)]
+    requete = (_entete(contexte)
+               + f"Personnes présentes : {', '.join(connus)}\n\n"
+               + "\n".join(lignes))
+    brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete,
+                    note=note, plafond=JETONS_ATTRIBUTION)
+    return json.loads(brut).get("blocs", [])
+
+
 def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                          modele: str = MODELE_DEFAUT, note=None,
                          contexte: str = "") -> list[dict]:
@@ -311,19 +364,10 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
     vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
 
-    for amorce, debut, fin in _fenetres(len(blocs)):
-        lignes = []
-        for i in range(amorce, fin):
-            marque = "  " if i < debut else "→ "
-            lignes.append(f"{marque}[{i}] {_nom(blocs[i], noms)} : {blocs[i]['text']}")
-        requete = (_entete(contexte)
-                   + f"Personnes présentes : {', '.join(connus)}\n\n"
-                   "Les lignes marquées → sont à examiner ; les autres sont là "
-                   "pour le contexte et ne doivent pas être corrigées.\n\n"
-                   + "\n".join(lignes))
+    for _, debut, fin in _fenetres(len(blocs), FENETRE_ATTRIBUTION):
         try:
-            brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete, note=note)
-            proposees = json.loads(brut).get("corrections", [])
+            verdicts = _demander_attribution(blocs, noms, connus, debut, fin,
+                                             api_key, modele, contexte, note)
         except Exception as exc:  # noqa: BLE001
             if _est_quota(exc):
                 raise _quota_error(exc, api_key) from exc
@@ -331,33 +375,33 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                 note(f"relecture : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
 
-        for c in proposees:
-            index = c.get("bloc")
-            if not isinstance(index, int) or not debut <= index < fin:
+        vus = {v.get("bloc") for v in verdicts if isinstance(v.get("bloc"), int)}
+        attendus = set(range(debut, fin))
+        if len(vus & attendus) < len(attendus) * 0.7:
+            # Une fenêtre à moitié lue n'est pas une fenêtre sans erreur.
+            if note:
+                note(f"fenêtre {debut}-{fin} : {len(vus & attendus)}/{len(attendus)} "
+                     "blocs jugés, réponse écartée")
+            continue
+
+        for v in verdicts:
+            index = v.get("bloc")
+            if not isinstance(index, int) or index not in attendus:
                 continue
-            if "locuteur" in c:
-                cible = str(c["locuteur"]).strip()
-                # Un nom inventé ne vaut rien : on n'accepte que les personnes
-                # déjà identifiées dans l'enregistrement.
-                if cible in connus and cible != _nom(blocs[index], noms):
-                    # On range aussi l'identifiant technique. Se contenter du
-                    # nom affiché obligeait à le retraduire au moment
-                    # d'appliquer, et cette traduction échouait quand les voix
-                    # n'étaient pas nommées : le bloc héritait alors du libellé
-                    # « Voix 01 » en guise d'identifiant, que l'interface ne
-                    # reconnaissait plus et affichait « Voix ? ».
-                    corrections.append({"type": "locuteur", "bloc": index,
-                                        "avant": _nom(blocs[index], noms),
-                                        "apres": cible,
-                                        "apres_id": vers_id.get(cible, "")})
-            elif "deplacer" in c:
+            cible = str(v.get("locuteur") or "").strip()
+            actuel = _nom(blocs[index], noms)
+            if cible and cible in connus and cible != actuel:
+                corrections.append({"type": "locuteur", "bloc": index,
+                                    "avant": actuel, "apres": cible,
+                                    "apres_id": vers_id.get(cible, "")})
+            if v.get("deplacer"):
                 try:
-                    n = int(c["deplacer"])
+                    n = int(v["deplacer"])
                 except (TypeError, ValueError):
                     continue
                 voisin = index - 1 if n > 0 else index + 1
-                disponibles = len(blocs[index]["words"])
-                if n == 0 or abs(n) >= disponibles or not 0 <= voisin < len(blocs):
+                if (n == 0 or abs(n) >= len(blocs[index]["words"])
+                        or not 0 <= voisin < len(blocs)):
                     continue
                 if blocs[voisin]["speaker"] == blocs[index]["speaker"]:
                     continue
@@ -379,7 +423,8 @@ def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
     lignes = [f"[{i}] {blocs[i]['text']}" for i in range(debut, fin)]
     try:
         brut = _appeler(api_key, modele, SYSTEME_TEXTE,
-                        _entete(contexte) + "\n".join(lignes), note=note)
+                        _entete(contexte) + "\n".join(lignes), note=note,
+                        plafond=JETONS_TEXTE)
         return json.loads(brut).get("blocs", [])
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):

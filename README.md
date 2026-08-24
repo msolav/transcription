@@ -123,7 +123,16 @@ langue à poids ouverts, servi par Groq avec la même clé. Rien à installer.
 **Relire** propose des corrections sans rien écraser. L'attribution
 d'abord : un modèle de langue voit que « avant d'être » et « accordés »
 forment une seule proposition, qu'une question appelle une réponse, qu'un
-« exactement » vient de quelqu'un d'autre. C'est ce qui répare les phrases
+« exactement » vient de quelqu'un d'autre.
+
+Le modèle se prononce sur chaque bloc, pas seulement sur ceux qu'il juge
+fautifs. C'est ce qui rend la passe fiable : tant qu'on lui demandait la
+seule liste des erreurs, la réponse vide restait la moins coûteuse et il
+la choisissait souvent — sur cinq fenêtres identiques, à température
+nulle, trois revenaient vides. En exigeant un verdict par bloc, une
+réponse incomplète devient détectable : elle est écartée et signalée, au
+lieu de passer pour une fenêtre sans erreur. Cinq essais identiques
+rendent désormais exactement le même résultat. C'est ce qui répare les phrases
 coupées en deux, qui représentaient un bloc sur cinq dans nos essais. Le
 texte ensuite : coquilles, mots tronqués, ponctuation.
 
@@ -168,7 +177,9 @@ en demande environ 120 000 : l'attribution seule 57 000, le texte seul
 se recalcule quand on décoche une des deux passes.
 
 Groq applique deux limites de nature différente, et elles n'appellent pas
-la même conduite. Celle de la minute (8 000 jetons) est un ralentisseur :
+la même conduite. Le décompte quotidien glisse sur la journée plutôt que
+de se remettre à zéro à minuit : l'attente annoncée se compte souvent en
+minutes, pas en heures. Celle de la minute (8 000 jetons) est un ralentisseur :
 le programme patiente le temps annoncé et reprend, en le disant dans le
 journal. Celle du jour ne se franchit pas : la passe s'arrête net plutôt
 que de rendre une relecture à moitié faite qui aurait l'air terminée.
