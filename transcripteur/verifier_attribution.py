@@ -7,7 +7,7 @@ faisait passer une lecture ratée pour une absence d'erreur."""
 import sys, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from transcripteur import relecture
+from transcripteur import relecture, fournisseurs
 
 def bloc(sp, texte):
     mots = texte.split()
@@ -30,7 +30,7 @@ def v(nom, cond, d=""):
     ok += cond; rate += not cond
 
 def rejoue(reponse, note=None):
-    relecture._appeler = lambda *a, **k: json.dumps(reponse)
+    fournisseurs.appeler = lambda *a, **k: json.dumps(reponse)
     return relecture.corriger_attribution(BLOCS, NOMS, "k", note=note)
 
 # 1. verdicts complets, une reattribution et un deplacement

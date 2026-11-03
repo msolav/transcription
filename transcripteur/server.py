@@ -24,7 +24,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 
-from . import assets, config, relecture, pipeline
+from . import assets, config, fournisseurs, relecture, pipeline
 from .pipeline import Cancelled, Options, PipelineError
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -125,7 +125,7 @@ def index() -> HTMLResponse:
 @app.get("/api/health")
 def health() -> dict:
     return {
-        "has_key": bool(config.get_key()),
+        "has_key": bool(config.get_key("groq")),
         "key_from_env": bool(os.environ.get("GROQ_API_KEY")),
         "models_ready": assets.models_ready(),
     }
@@ -144,7 +144,7 @@ def save_key(payload: dict) -> dict:
 @app.delete("/api/key")
 def forget_key() -> dict:
     config.clear_key()
-    return {"has_key": bool(config.get_key())}
+    return {"has_key": bool(config.get_key("groq"))}
 
 
 @app.get("/api/models")
@@ -173,7 +173,7 @@ async def create_job(
         value = (value or "").strip()
         return int(value) if value.isdigit() and int(value) > 0 else None
 
-    if not config.get_key():
+    if not config.get_key("groq"):
         raise HTTPException(400, "Aucune clé Groq enregistrée.")
 
     job_id = uuid.uuid4().hex[:12]
@@ -222,7 +222,7 @@ async def create_job(
         diarize=diarize.lower() != "false",
         embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
-        api_key=config.get_key(),
+        api_key=config.get_key("groq"),
     )
 
     threading.Thread(target=_run_job, args=(job_id, options), daemon=True).start()
@@ -249,10 +249,12 @@ def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
         corrections = []
         if attribution:
             corrections += relecture.corriger_attribution(
-                blocs, noms, config.get_key(), modele, note=note, contexte=contexte)
+                blocs, noms, config.get_key(fournisseurs.fournisseur_de(modele)),
+                modele, note=note, contexte=contexte)
         if texte:
             corrections += relecture.corriger_texte(
-                blocs, config.get_key(), modele, note=note, contexte=contexte)
+                blocs, config.get_key(fournisseurs.fournisseur_de(modele)),
+                modele, note=note, contexte=contexte)
         apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
         with _lock:
             job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
@@ -316,7 +318,8 @@ def resume(job_id: str, payload: dict) -> dict:
     blocs = job["relecture"]["blocks"] if (job.get("relecture") or {}).get("blocks") \
         else job["blocks"]
     try:
-        texte = relecture.resumer(blocs, job["names"], config.get_key(),
+        texte = relecture.resumer(blocs, job["names"],
+                                  config.get_key(fournisseurs.fournisseur_de(modele)),
                                   str(payload.get("forme") or "compte_rendu"),
                                   str(payload.get("modele") or relecture.MODELE_DEFAUT),
                                   str(payload.get("contexte") or ""))

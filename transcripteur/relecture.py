@@ -29,27 +29,12 @@ import json
 import time
 from difflib import SequenceMatcher
 
+from . import fournisseurs
+from .fournisseurs import (MODELES, MODELE_DEFAUT, MODELE_GRATUIT,  # noqa: F401
+                           QuotaError, LimiteMinute, FournisseurError)
+
 # Modèles à poids ouverts servis par Groq. La clé est déjà là, il n'y a
 # donc ni compte à créer ni gigaoctet à télécharger.
-# `effort` : ces modèles réfléchissent avant de répondre, et ce
-# raisonnement est facturé sur le même plafond que la réponse. Sans le
-# brider, GPT-OSS épuise les jetons alloués en réflexion et ne rend rien
-# du tout — un JSON vide, refusé par le serveur. Qwen, lui, rejette le
-# paramètre : il faut donc le déclarer par modèle plutôt que l'envoyer à
-# tous.
-MODELES = {
-    "gpt-oss-120b": {"id": "openai/gpt-oss-120b", "nom": "GPT-OSS 120B",
-                     "effort": True,
-                     "note": "Le plus fiable des trois. À préférer pour l'attribution."},
-    "gpt-oss-20b": {"id": "openai/gpt-oss-20b", "nom": "GPT-OSS 20B",
-                    "effort": True,
-                    "note": "Plus rapide et moins cher, un peu moins sûr."},
-    "qwen3.6-27b": {"id": "qwen/qwen3.6-27b", "nom": "Qwen 3.6 27B",
-                    "effort": False,
-                    "note": "Autre famille : utile en deuxième avis. Plus bavard, "
-                            "donc plus lent à quota égal."},
-}
-MODELE_DEFAUT = "gpt-oss-120b"
 
 # Fenêtres larges à dessein : la consigne système est renvoyée à chaque
 # appel, donc doubler la fenêtre divise par deux ce qu'on repaie. Sur un
@@ -99,16 +84,13 @@ class RelectureError(RuntimeError):
     pass
 
 
-class QuotaError(RelectureError):
-    """Quota du fournisseur épuisé.
-
-    Distincte des autres pannes parce qu'elle ne se rattrape pas : réessayer
-    la fenêtre suivante ne fera que rejouer le même refus. Une relecture à
-    moitié faite qui se présente comme terminée est pire qu'un arrêt net,
-    donc celle-ci interrompt la passe entière."""
+# QuotaError, LimiteMinute et FournisseurError viennent de fournisseurs :
+# les redéfinir ici créait deux classes du même nom, et un isinstance qui
+# répondait faux selon le module d'où venait l'exception.
+RelectureError = FournisseurError
 
 
-def _genre_limite(exc: Exception) -> str:
+def _genre_limite_inutilise(exc: Exception) -> str:
     """« jour », « minute » ou « » — la distinction commande la conduite.
 
     Une limite par minute se franchit en patientant quelques secondes :
@@ -127,7 +109,7 @@ def _genre_limite(exc: Exception) -> str:
 
 
 def _est_quota(exc: Exception) -> bool:
-    return _genre_limite(exc) == "jour"
+    return isinstance(exc, QuotaError)
 
 
 def _secondes(exc: Exception) -> float:
@@ -164,30 +146,6 @@ def _delai(exc: Exception) -> str:
     return trouve.group(1).rstrip(".") if trouve else ""
 
 
-def _quota_error(exc: Exception, api_key: str) -> "QuotaError":
-    """Message fondé sur ce qui est vrai à cet instant, pas sur une règle.
-
-    La version précédente affirmait que chaque modèle a son propre quota
-    et invitait à en changer. C'était inutile quand les trois étaient
-    épuisés, ce qui arrive vite : une relecture complète en consomme la
-    moitié. On regarde donc qui répond encore avant de conseiller."""
-    quand = f" Réessayer dans {_delai(exc)}." if _delai(exc) else ""
-    try:
-        libres = modeles_disponibles(api_key)
-    except Exception:  # noqa: BLE001
-        libres = []
-    if libres:
-        suite = (" D'autres modèles répondent encore : "
-                 + ", ".join(libres) + ". Les choisir dans la liste.")
-    else:
-        suite = (" Les autres modèles sont épuisés aussi. Le décompte glisse "
-                 "sur la journée, donc l'attente indiquée ci-dessus est la "
-                 "bonne, souvent quelques minutes seulement. Pour consommer "
-                 "moins, ne lancer qu'une des deux passes : l'attribution est "
-                 "celle qui corrige le découpage.")
-    return QuotaError("Quota quotidien de jetons épuisé chez Groq." + quand + suite)
-
-
 def estimer_jetons(blocs: list[dict], attribution: bool, texte: bool) -> int:
     """Ce que la relecture va coûter, avant de la lancer.
 
@@ -215,38 +173,40 @@ def _client(api_key: str):
 
 
 def _appeler(api_key: str, modele: str, systeme: str, requete: str,
-             json_attendu: bool = True, note=None, plafond: int = 0) -> str:
+             json_attendu: bool = True, note=None, plafond: int = 0,
+             schema: dict | None = None) -> str:
     """Un appel, en patientant si la limite est celle de la minute."""
     for essai in range(REESSAIS):
         try:
-            return _appeler_une_fois(api_key, modele, systeme, requete,
-                                     json_attendu, plafond)
-        except Exception as exc:  # noqa: BLE001
-            if _genre_limite(exc) != "minute" or essai == REESSAIS - 1:
+            return fournisseurs.appeler(api_key, modele, systeme, requete,
+                                        schema=schema, note=note)
+        except LimiteMinute as pause:
+            if essai == REESSAIS - 1:
                 raise
-            pause = min(_secondes(exc) + 1.0, ATTENTE_MAX)
+            delai = min(pause.secondes + 1.0, ATTENTE_MAX)
             if note:
-                note(f"limite par minute atteinte, reprise dans {pause:.0f} s")
-            time.sleep(pause)
-    raise RelectureError("Appel impossible.")
+                note(f"limite par minute atteinte, reprise dans {delai:.0f} s")
+            time.sleep(delai)
+    raise FournisseurError("Appel impossible.")
 
 
-def _appeler_une_fois(api_key: str, modele: str, systeme: str, requete: str,
-                      json_attendu: bool = True, plafond: int = 0) -> str:
-    fiche = MODELES.get(modele, MODELES[MODELE_DEFAUT])
-    params = dict(
-        model=fiche["id"],
-        messages=[{"role": "system", "content": systeme},
-                  {"role": "user", "content": requete}],
-        temperature=0.0,
-    )
-    if fiche.get("effort"):
-        params["reasoning_effort"] = "low"
-    if json_attendu:
-        params["response_format"] = {"type": "json_object"}
-        params["max_completion_tokens"] = plafond or JETONS_TEXTE
-    reponse = _client(api_key).chat.completions.create(**params)
-    return reponse.choices[0].message.content or ""
+def _decoupage(blocs: list[dict], modele: str, note=None):
+    """Un seul appel quand le transcript tient, sinon des fenêtres.
+
+    C'est le seul endroit où la taille du modèle change la stratégie, et
+    elle la change du tout au tout. Contre un million de jetons, une
+    réunion de quatre-vingts minutes part entière et le modèle juge
+    l'attribution en voyant la conversation complète : qui répond à qui,
+    qui reprend la parole, qui approuve. Les fenêtres de dix blocs ne
+    sont pas une précaution, c'est le prix d'un petit contexte — chacune
+    juge à l'aveugle, sans savoir ce qui s'est dit deux minutes plus
+    tôt."""
+    jetons = int(sum(len(b["text"]) for b in blocs) / CARACTERES_PAR_JETON) + 800
+    if fournisseurs.tient_en_un_appel(modele, jetons):
+        if note:
+            note(f"transcript entier en un seul appel ({jetons} jetons)")
+        return [(0, 0, len(blocs))]
+    return list(_fenetres(len(blocs), FENETRE_ATTRIBUTION))
 
 
 def _entete(contexte: str) -> str:
@@ -351,9 +311,10 @@ def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
     requete = (_entete(contexte)
                + f"Personnes présentes : {', '.join(connus)}\n\n"
                + "\n".join(lignes))
-    brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete,
-                    note=note, plafond=JETONS_ATTRIBUTION)
-    return json.loads(brut).get("blocs", [])
+    brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete, note=note,
+                    plafond=JETONS_ATTRIBUTION,
+                    schema=fournisseurs.SCHEMA_ATTRIBUTION)
+    return fournisseurs.lire_json(brut).get("blocs", [])
 
 
 def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
@@ -364,13 +325,13 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
     vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
 
-    for _, debut, fin in _fenetres(len(blocs), FENETRE_ATTRIBUTION):
+    for _, debut, fin in _decoupage(blocs, modele, note):
         try:
             verdicts = _demander_attribution(blocs, noms, connus, debut, fin,
                                              api_key, modele, contexte, note)
         except Exception as exc:  # noqa: BLE001
             if _est_quota(exc):
-                raise _quota_error(exc, api_key) from exc
+                raise
             if note:
                 note(f"relecture : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -424,11 +385,11 @@ def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
     try:
         brut = _appeler(api_key, modele, SYSTEME_TEXTE,
                         _entete(contexte) + "\n".join(lignes), note=note,
-                        plafond=JETONS_TEXTE)
-        return json.loads(brut).get("blocs", [])
+                        plafond=JETONS_TEXTE, schema=fournisseurs.SCHEMA_TEXTE)
+        return fournisseurs.lire_json(brut).get("blocs", [])
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
-            raise _quota_error(exc, api_key) from exc
+            raise
         coupable = _tronque(exc) or isinstance(exc, json.JSONDecodeError)
         if coupable and profondeur < 2 and fin - debut > 1:
             milieu = (debut + fin) // 2
@@ -507,7 +468,7 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
                     json_attendu=False).strip()
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
-            raise _quota_error(exc, api_key) from exc
+            raise
         raise
 
 
