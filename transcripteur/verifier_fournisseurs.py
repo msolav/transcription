@@ -28,6 +28,16 @@ v("tout modèle annonce contexte et sortie",
 v("un modèle inconnu retombe sur le défaut",
   f.fiche("n'existe pas")["id"] == f.fiche(f.MODELE_DEFAUT)["id"])
 
+# ---- le defaut suit les cles, sans jamais exiger un compte payant
+v("sans clé payante, le défaut est gratuit",
+  not f.payant(f.modele_par_defaut({})) and not f.payant(f.modele_par_defaut({"groq": True})),
+  f.modele_par_defaut({}))
+v("avec une clé Claude, le défaut en profite",
+  f.modele_par_defaut({"groq": True, "anthropic": True}) == f.MODELE_DEFAUT)
+v("le défaut est toujours un modèle du catalogue",
+  all(f.modele_par_defaut(c) in f.MODELES
+      for c in ({}, {"groq": True}, {"anthropic": True}, {"groq": True, "anthropic": True})))
+
 # ---- appel unique ou decoupage
 reunion = int(14_300 / 0.75)          # ~14 300 mots d'une vraie reunion
 v("une réunion entière tient chez Claude", f.tient_en_un_appel("claude-opus-5-5", reunion))

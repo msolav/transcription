@@ -301,7 +301,7 @@ def relire(job_id: str, payload: dict) -> dict:
         target=_run_relecture,
         args=(job_id, bool(payload.get("attribution", True)),
               bool(payload.get("texte", True)),
-              str(payload.get("modele") or relecture.MODELE_DEFAUT),
+              str(payload.get("modele") or fournisseurs.modele_par_defaut(config.cles_presentes())),
               str(payload.get("contexte") or "")),
         daemon=True).start()
     return {"ok": True}
@@ -321,7 +321,7 @@ def resume(job_id: str, payload: dict) -> dict:
         texte = relecture.resumer(blocs, job["names"],
                                   config.get_key(fournisseurs.fournisseur_de(modele)),
                                   str(payload.get("forme") or "compte_rendu"),
-                                  str(payload.get("modele") or relecture.MODELE_DEFAUT),
+                                  str(payload.get("modele") or fournisseurs.modele_par_defaut(config.cles_presentes())),
                                   str(payload.get("contexte") or ""))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Résumé impossible : {exc}") from exc

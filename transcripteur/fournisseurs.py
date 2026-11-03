@@ -67,6 +67,20 @@ MODELES = {
 MODELE_DEFAUT = "claude-opus-5-5"
 MODELE_GRATUIT = "gpt-oss-120b"
 
+
+def modele_par_defaut(cles: dict) -> str:
+    """Le meilleur modèle que les clés présentes permettent d'appeler.
+
+    Figer Claude comme défaut rendait l'application muette au premier
+    lancement de quelqu'un qui n'a pas de compte payant — l'API Anthropic
+    n'a pas d'offre gratuite, il faut y déposer du crédit. Figer le modèle
+    gratuit, à l'inverse, priverait d'un contexte d'un million de jetons
+    ceux qui ont une clé. Le défaut suit donc ce qui est configuré, et
+    l'utilisateur garde la main dans la liste."""
+    if cles.get("anthropic"):
+        return MODELE_DEFAUT
+    return MODELE_GRATUIT
+
 CLES = {
     "anthropic": {"nom": "Claude (Anthropic)", "prefixe": "sk-ant-",
                   "ou": "console.anthropic.com"},
