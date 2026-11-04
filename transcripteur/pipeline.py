@@ -53,6 +53,17 @@ DIARIZE_THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
 DENOISE_THREADS = 1
 MP3_BYTES_PER_SECOND = 8000  # mono, 64 kbit/s constants
 
+# Une tranche était dimensionnée sur la seule limite de taille de Groq,
+# ce qui donnait quarante et une minutes d'audio par requête sur une
+# réunion de deux heures et demie. Le fichier passait, mais l'appel
+# dépassait le délai d'attente et la transcription entière était perdue
+# après une heure de calcul. Le temps de traitement compte autant que le
+# poids : un quart d'heure par requête tient confortablement, et les
+# tranches partent de toute façon en parallèle.
+MAX_CHUNK_SECONDS = 900          # 15 minutes d'audio par requête
+GROQ_TIMEOUT = 600.0             # le défaut du SDK ne suffit pas
+GROQ_RETRIES = 3
+
 CHANNEL_COLORS = [
     "#3F8EFC", "#E4572E", "#17BEBB", "#F4B942",
     "#A06CD5", "#7DAF3A", "#EC5F8E", "#5B6BF5",
@@ -259,7 +270,7 @@ def split_audio(src: Path, duration: float, max_mb: int, work_dir: Path,
     import os
     from concurrent.futures import ThreadPoolExecutor
 
-    budget = max_mb * 1048576 * 0.92 / MP3_BYTES_PER_SECOND
+    budget = min(max_mb * 1048576 * 0.92 / MP3_BYTES_PER_SECOND, MAX_CHUNK_SECONDS)
     parts = max(1, math.ceil(duration / budget))
     low, high = span
     log(f"découpage : {parts} tranche(s) de {duration / parts / 60:.0f} min")
@@ -484,7 +495,9 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
     except ImportError as exc:
         raise PipelineError("Le paquet groq n'est pas installé.") from exc
 
-    client = Groq(api_key=api_key)
+    # Le délai par défaut du SDK est calculé pour du texte ; téléverser
+    # puis faire transcrire un quart d'heure d'audio demande davantage.
+    client = Groq(api_key=api_key, timeout=GROQ_TIMEOUT, max_retries=0)
     with open(chunk, "rb") as f:
         payload = f.read()
 
@@ -497,15 +510,32 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
     if language:
         params["language"] = language
 
-    try:
-        result = client.audio.transcriptions.create(**params)
-    except Exception as exc:  # noqa: BLE001
-        message = str(exc)
-        if "401" in message or "invalid_api_key" in message:
-            raise PipelineError("Clé Groq refusée. Corrige-la dans les réglages.") from exc
-        if "429" in message or "rate_limit" in message:
-            raise PipelineError("Quota Groq atteint. Réessaie dans quelques minutes.") from exc
-        raise PipelineError(f"Transcription refusée par Groq : {message}") from exc
+    dernier = None
+    for essai in range(GROQ_RETRIES):
+        try:
+            result = client.audio.transcriptions.create(**params)
+            break
+        except Exception as exc:  # noqa: BLE001
+            message = str(exc)
+            if "401" in message or "invalid_api_key" in message:
+                raise PipelineError("Clé Groq refusée. Corrige-la dans les réglages.") from exc
+            if "429" in message or "rate_limit" in message:
+                raise PipelineError("Quota Groq atteint. Réessaie dans quelques minutes.") from exc
+            # Un dépassement de délai ou une coupure réseau se rejoue ;
+            # perdre une heure de calcul pour un envoi qui a échoué une
+            # fois serait absurde.
+            passager = ("timed out" in message.lower() or "timeout" in message.lower()
+                        or "connection" in message.lower() or "502" in message
+                        or "503" in message or "504" in message)
+            dernier = exc
+            if not passager or essai == GROQ_RETRIES - 1:
+                raise PipelineError(
+                    f"Transcription refusée par Groq : {message}") from exc
+            attente = 5.0 * (essai + 1)
+            log(f"tranche {chunk.name} : {message[:60]} — reprise dans {attente:.0f}s")
+            time.sleep(attente)
+    else:  # pragma: no cover - la boucle sort par break ou par raise
+        raise PipelineError(f"Transcription refusée par Groq : {dernier}")
 
     data = result if isinstance(result, dict) else result.model_dump()
 
