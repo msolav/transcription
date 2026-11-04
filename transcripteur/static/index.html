@@ -328,6 +328,13 @@ button{cursor:pointer;border:none;background:none}
   .cmp mark.mis{background:rgba(125,175,58,.20)}
   .panneau .extrait{margin:4px 0 0;color:var(--ink-faint);line-height:1.45}
   @media (max-width:720px){ .cmp{grid-template-columns:1fr} }
+  .apercu{margin-top:10px;border:1px solid var(--rule);border-radius:8px;
+    padding:10px 12px;background:var(--paper-2,rgba(0,0,0,.02));max-height:260px;
+    overflow:auto}
+  .apercu-tete{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-faint);margin-bottom:6px}
+  .apercu pre{white-space:pre-wrap;font:inherit;font-size:12px;line-height:1.5;
+    margin:0;color:var(--ink-soft)}
   .panneau .keyrow{display:flex;gap:8px;margin:6px 0}
   .panneau .keyrow input{flex:1;padding:8px 11px;border:1px solid var(--rule);
     border-radius:7px;background:var(--paper);color:var(--ink);font:inherit;font-size:12.5px}
@@ -876,8 +883,20 @@ $('#sum').onclick = async () => {
       <button id="sgo">Rédiger</button>
       <button id="rno">Fermer</button>
     </div>
+    <div class="apercu" id="sapercu"></div>
     <textarea id="sctx" rows="2" placeholder="Contexte : sigles, noms propres, rôle de chacun."></textarea>`;
   $('#sctx').value = contexteMemo;
+
+  /* L'aperçu montre la forme, pas le contenu : on choisit un format de
+     restitution sans avoir à le payer pour découvrir ce qu'il donne. */
+  const apercus = Object.fromEntries(o.resumes.map(r => [r.cle, r.apercu]));
+  const majApercu = () => {
+    const t = apercus[$('#sform').value] || '';
+    $('#sapercu').innerHTML = `<div class="apercu-tete">Aperçu de la forme</div>`
+      + `<pre>${escapeHtml(t)}</pre>`;
+  };
+  $('#sform').onchange = majApercu;
+  majApercu();
   $('#rno').onclick = closePanel;
   $('#sgo').onclick = async () => {
     $('#sgo').disabled = true;

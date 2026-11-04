@@ -120,6 +120,40 @@ de la convergence vers la même erreur.
 Une fois le transcript obtenu, deux boutons font appel à un modèle de
 langue à poids ouverts, servi par Groq avec la même clé. Rien à installer.
 
+## Ce que l'outil affirme, et ce qu'il n'affirme pas
+
+La séparation des voix, sur un micro unique dans une salle, se trompe
+souvent. Mesuré sur une réunion de 83 minutes : un quart des blocs sont
+coupés en pleine phrase, et la personne à qui revient la fin n'est pas
+toujours la bonne.
+
+Demander à un modèle de langue de réparer cela a été essayé et mesuré.
+Le résultat ne le justifie pas : en un seul appel sur le transcript
+entier, le modèle approuve tout et ne corrige qu'un bloc sur six cents ;
+par tranches, il propose une trentaine de corrections qui *dégradent*
+le découpage au lieu de l'améliorer. Un modèle de langue ne sait pas qui
+a parlé ; il ne peut que deviner à partir de la syntaxe, et là où le
+texte se tient dans les deux sens, il devine mal.
+
+L'outil ne cherche donc plus à affirmer qui a dit quoi. Il restitue ce
+qui s'est dit, décidé et confié, et ne nomme une personne que lorsque la
+conversation la désigne — quelqu'un se nomme, on l'interpelle. Un nom
+prononcé pendant la réunion est une information fiable ; la répartition
+des voix ne l'est pas. Les étiquettes « Voix 1 », « Voix 2 » ne sortent
+jamais dans un document : une tâche sans responsable désigné est écrite
+comme telle.
+
+Un compte rendu qui attribue une décision à la mauvaise personne est
+plus nuisible qu'un compte rendu qui n'en nomme aucune : l'erreur y est
+invisible, et elle se propage.
+
+## Six formes de restitution
+
+Compte rendu, décisions et suites à donner, résumé bref, par thème,
+transcript lisible, questions soulevées. Chaque forme affiche un aperçu
+de ce qu'elle donne — la forme, pas le contenu — pour qu'on la choisisse
+sans avoir à la payer pour la découvrir.
+
 **Relire** propose des corrections sans rien écraser. L'attribution
 d'abord : un modèle de langue voit que « avant d'être » et « accordés »
 forment une seule proposition, qu'une question appelle une réponse, qu'un

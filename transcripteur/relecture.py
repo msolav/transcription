@@ -70,15 +70,149 @@ REESSAIS = 3
 CARACTERES_PAR_JETON = 3.4   # approximation pour du français
 FIDELITE_MIN = 0.72   # en dessous, la « correction » est une réécriture
 
+# Les formes de restitution.
+#
+# Un parti pris, né d'une mesure : la séparation des voix sur un micro
+# unique dans une salle se trompe souvent, et aucun modèle de langue ne
+# la répare de façon fiable — essayé, mesuré, les corrections proposées
+# dégradaient le découpage au lieu de l'améliorer. Plutôt que d'affirmer
+# qui a dit quoi en se trompant, ces formes restituent ce qui a été dit,
+# décidé et confié, et n'attribuent une parole que lorsque la
+# conversation elle-même la désigne sans ambiguïté.
+#
+# Un compte rendu qui écrit « Annie s'occupe des locaux » alors que
+# c'était quelqu'un d'autre est plus nuisible qu'un compte rendu qui ne
+# nomme personne : l'erreur y est invisible et se propage.
+PRUDENCE_ATTRIBUTION = """
+La répartition des voix dans ce transcript est approximative : elle vient
+d'un logiciel qui compare des empreintes vocales et se trompe
+régulièrement, surtout aux changements de tour.
+
+N'attribue donc une parole, une décision ou une tâche à une personne que
+lorsque la conversation la désigne sans ambiguïté — quelqu'un se nomme,
+on l'interpelle, ou le propos ne peut venir que d'elle. Dans tous les
+autres cas, écris ce qui a été dit sans dire qui. « Il a été convenu
+que… », « un membre propose… » valent mieux qu'un nom inventé.
+
+Les étiquettes « Voix 1 », « Voix 2 » et autres ne sont pas des noms :
+ce sont des numéros posés par la machine. Elles ne doivent jamais
+apparaître dans ce que tu écris. Si une tâche revient à quelqu'un que la
+conversation ne nomme pas, écris que la personne n'a pas été désignée.
+
+En revanche, un nom prononcé pendant la réunion — « c'est Dominique qui
+s'en charge », « Annie, tu peux… » — est une information fiable, bien
+plus que la répartition des voix : sers-t'en sans hésiter.
+
+Ne signale pas cette incertitude dans le texte : contente-toi de ne pas
+affirmer ce que tu ne sais pas."""
+
 RESUMES = {
-    "compte_rendu": ("Compte rendu", "un compte rendu structuré : contexte, "
-                     "points abordés, décisions prises, points en suspens"),
-    "actions": ("Décisions et suites à donner", "la liste des décisions arrêtées et "
-                "des actions à mener, avec qui s'en charge quand c'est dit"),
-    "bref": ("Résumé bref", "un résumé de dix lignes au plus, en prose"),
-    "themes": ("Par thème", "une synthèse organisée par thème plutôt que "
-               "chronologiquement"),
+    "compte_rendu": {
+        "nom": "Compte rendu",
+        "consigne": "un compte rendu structuré : contexte, points abordés, "
+                    "décisions prises, points laissés en suspens",
+        "apercu": """## Contexte
+Réunion du conseil, 83 minutes, trois personnes présentes.
+
+## Points abordés
+**Gestion des locaux.** La question d'un comité chargé d'accepter ou de
+refuser les activités selon leur nature. Les propositions reçues
+seraient réévaluées avant d'être accordées.
+
+**Transition.** Développer des lieux de rencontre où les gens peuvent
+élaborer et se mobiliser ensemble.
+
+## Décisions
+- Un comité sera constitué, réunissant des citoyens, des membres du CA
+  et de l'équipe.
+
+## En suspens
+- Les modalités d'accès aux locaux en soirée.""",
+    },
+    "actions": {
+        "nom": "Décisions et suites à donner",
+        "consigne": "la liste des décisions arrêtées et des actions à mener, "
+                    "avec l'échéance et la personne chargée quand la "
+                    "conversation les désigne clairement",
+        "apercu": """## Décisions
+1. Constitution d'un comité d'évaluation des activités.
+2. Les propositions seront réévaluées avant d'être accordées.
+
+## À faire
+| Quoi | Qui | Quand |
+|---|---|---|
+| Réunir le comité | — | non précisé |
+| Définir les règles d'accès aux locaux | Dominique | avant l'été |
+
+Les tirets marquent ce que la réunion n'a pas attribué.""",
+    },
+    "bref": {
+        "nom": "Résumé bref",
+        "consigne": "un résumé de dix lignes au plus, en prose continue, "
+                    "sans titres ni listes",
+        "apercu": """La réunion a porté sur l'usage des locaux et sur la mise en place
+d'un comité chargé d'évaluer les activités proposées. L'idée retenue
+est de permettre à chaque personne de gérer son propre secteur, dans
+le cadre plus large de la transition : créer des lieux où les gens
+peuvent se rencontrer, élaborer et se mobiliser ensemble. Les
+propositions reçues seront réévaluées avant d'être accordées. Les
+modalités d'accès en soirée restent à préciser.""",
+    },
+    "themes": {
+        "nom": "Par thème",
+        "consigne": "une synthèse organisée par thème plutôt que "
+                    "chronologiquement, chaque thème regroupant tout ce qui "
+                    "s'est dit à son sujet même à des moments éloignés",
+        "apercu": """## Locaux
+Accès en soirée, remise des clés, usage autonome par les groupes.
+Comparaison avec le fonctionnement de Milton Park, où les groupes
+viennent chercher la clé eux-mêmes.
+
+## Comité et gouvernance
+Composition : citoyens, membres du CA, équipe. Rôle : accepter ou
+refuser les activités selon leur nature.
+
+## Transition
+Développer des lieux de rencontre et de mobilisation.""",
+    },
+    "verbatim": {
+        "nom": "Transcript lisible",
+        "consigne": "le transcript complet rendu lisible : ponctuation, "
+                    "paragraphes, hésitations et répétitions retirées quand "
+                    "elles n'apportent rien. Ne résume pas, ne raccourcis "
+                    "pas, ne reformule pas le propos — garde tout ce qui a "
+                    "été dit, dans l'ordre",
+        "apercu": """**[06:06]** Il y a deux possibilités. Il va y avoir, c'est sûr,
+d'abord un comité. Ça entre dans le cadre de la transition :
+développer des lieux où les gens peuvent se rencontrer, élaborer,
+se mobiliser ensemble.
+
+**[06:14]** Un comité réunissant des citoyens, des membres du CA et
+de l'équipe, qui va accepter ou non les activités selon leur nature.
+Vous allez recevoir des propositions ; elles seront réévaluées avant
+d'être accordées.
+
+**[06:30]** Exactement. Et il y aura des façons pour eux d'utiliser
+les locaux eux-mêmes.""",
+    },
+    "questions": {
+        "nom": "Questions soulevées",
+        "consigne": "les questions posées pendant la réunion et restées sans "
+                    "réponse, ou dont la réponse a été remise à plus tard, "
+                    "avec ce qui a été dit autour de chacune",
+        "apercu": """## Restées sans réponse
+**Qui décide en dernier ressort de refuser une activité ?** Le comité
+est évoqué, sa composition aussi, mais pas la règle de décision.
+
+**Les locaux sont-ils accessibles en soirée ?** Évoqué deux fois, sans
+conclusion.
+
+## Réponse remise à plus tard
+**Comment se fait la remise des clés ?** Renvoyé au modèle de Milton
+Park, à préciser.""",
+    },
 }
+RESUME_DEFAUT = "compte_rendu"
 
 
 class RelectureError(RuntimeError):
@@ -464,20 +598,22 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
             contexte: str = "") -> str:
     """Un résumé de la conversation, dans la forme demandée."""
     if forme not in RESUMES:
-        forme = "compte_rendu"
-    _, consigne = RESUMES[forme]
+        forme = RESUME_DEFAUT
+    fiche = RESUMES[forme]
     corps = "\n".join(f"{_nom(b, noms)} : {b['text']}" for b in blocs)
     # Whisper produit beaucoup de texte ; on borne l'envoi plutôt que de
     # laisser l'appel échouer sur la limite du modèle.
-    if len(corps) > 180_000:
-        corps = corps[:180_000] + "\n[…suite tronquée…]"
+    limite = 180_000 if fournisseurs.fiche(modele)["contexte"] > 100_000 else 60_000
+    if len(corps) > limite:
+        corps = corps[:limite] + "\n[…suite tronquée…]"
     systeme = (
         "Tu rédiges à partir de la transcription d'une réunion réelle. "
-        "Tu produis " + consigne + ". "
+        "Tu produis " + fiche["consigne"] + ". "
         "N'invente aucune décision, aucun chiffre, aucun engagement qui ne "
         "figure pas dans la transcription. Si un point reste ambigu dans "
         "l'échange, dis qu'il est resté ambigu plutôt que de le trancher. "
         "Écris en français, dans la langue de la réunion."
+        + PRUDENCE_ATTRIBUTION
     )
     try:
         return _appeler(api_key, modele, systeme, _entete(contexte) + corps,

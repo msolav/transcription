@@ -292,11 +292,15 @@ def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
 
 @app.get("/api/relecture")
 def relecture_options() -> dict:
+    cles = config.cles_presentes()
     return {
-        "modeles": [{"cle": k, "nom": v["nom"], "note": v["note"]}
-                    for k, v in relecture.MODELES.items()],
-        "defaut": relecture.MODELE_DEFAUT,
-        "resumes": [{"cle": k, "nom": v[0]} for k, v in relecture.RESUMES.items()],
+        "modeles": [{"cle": k, "nom": v["nom"], "note": v["note"],
+                     "dispo": bool(cles.get(v["fournisseur"]))}
+                    for k, v in fournisseurs.MODELES.items()],
+        "defaut": fournisseurs.modele_par_defaut(cles),
+        "resumes": [{"cle": k, "nom": v["nom"], "apercu": v["apercu"]}
+                    for k, v in relecture.RESUMES.items()],
+        "resume_defaut": relecture.RESUME_DEFAUT,
     }
 
 
