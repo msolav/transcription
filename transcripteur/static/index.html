@@ -328,6 +328,10 @@ button{cursor:pointer;border:none;background:none}
   .cmp mark.mis{background:rgba(125,175,58,.20)}
   .panneau .extrait{margin:4px 0 0;color:var(--ink-faint);line-height:1.45}
   @media (max-width:720px){ .cmp{grid-template-columns:1fr} }
+  .panneau .keyrow{display:flex;gap:8px;margin:6px 0}
+  .panneau .keyrow input{flex:1;padding:8px 11px;border:1px solid var(--rule);
+    border-radius:7px;background:var(--paper);color:var(--ink);font:inherit;font-size:12.5px}
+  .panneau .keyerr{color:var(--warn,#c0392b)}
   .panneau textarea{
     width:100%;margin-top:10px;padding:9px 11px;border:1px solid var(--rule);
     border-radius:7px;background:var(--paper);color:var(--ink);
@@ -578,6 +582,62 @@ let relOpts = null, relTimer = null, corrections = [];
    rôles valent pour la relecture comme pour le résumé, et personne n'a
    envie de les retaper. */
 let contexteMemo = '';
+
+/* Le choix du modèle de relecture n'est pas un réglage de confort : un
+   modèle à grand contexte lit la réunion entière d'un coup, un petit la
+   lit par tranches de dix blocs sans savoir ce qui s'est dit avant. On
+   le montre donc, au lieu de laisser deviner. */
+async function majModeles() {
+  const sel = $('#rmod');
+  if (!sel) return;
+  let d;
+  try { d = await api('/api/relecture/modeles'); } catch { return; }
+  const choisi = sel.value || d.defaut;
+  sel.innerHTML = d.modeles.map(m => `<option value="${m.cle}"
+    ${m.dispo ? '' : 'disabled'} ${m.cle === choisi && m.dispo ? 'selected' : ''}>
+    ${m.nom}${m.dispo ? '' : ' — clé manquante'}</option>`).join('');
+  const actuel = d.modeles.find(m => m.cle === sel.value) || {};
+  const manquants = d.modeles.filter(m => !m.dispo && m.gratuit);
+  $('#rmodnote').innerHTML = (actuel.note || '')
+    + (actuel.un_appel
+        ? ' <b>Lit la réunion entière d\'un seul coup.</b>'
+        : ' <b>Lit par tranches de dix blocs</b>, sans voir le reste de la réunion.')
+    + (manquants.length && !actuel.un_appel
+        ? ` <a href="#" id="addkey">Ajouter une clé ${manquants[0].fournisseur === 'google'
+            ? 'Gemini (gratuite)' : manquants[0].nom}</a> pour la lecture d'un seul tenant.`
+        : '');
+  const lien = $('#addkey');
+  if (lien) lien.onclick = (e) => { e.preventDefault(); panneauCle(d.fournisseurs); };
+}
+
+/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau. */
+function panneauCle(fiches) {
+  const f = fiches.google ? 'google' : Object.keys(fiches)[0];
+  const fiche = fiches[f];
+  $('#rmodnote').innerHTML = `<div class="keyrow">
+      <input type="password" id="kin" placeholder="${fiche.prefixe}…"
+             spellcheck="false" autocomplete="off">
+      <button id="ksave">Enregistrer</button>
+    </div>
+    <span class="hint">Gratuit, sans carte bancaire, sur
+    <a href="https://${fiche.ou}" target="_blank" rel="noopener">${fiche.ou}</a>.
+    La clé est rangée dans le trousseau du système et n'est envoyée qu'à
+    ${fiche.nom}.</span>`;
+  $('#kin').focus();
+  $('#ksave').onclick = async () => {
+    const b = $('#ksave');
+    b.disabled = true; b.textContent = 'Vérification…';
+    try {
+      await api('/api/key', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: $('#kin').value, fournisseur: f }) });
+      majModeles();
+    } catch (err) {
+      $('#rmodnote').innerHTML = `<span class="keyerr">${escapeHtml(err.message)}</span>`;
+      setTimeout(() => majModeles(), 2500);
+    }
+  };
+}
 function ctx() {
   const champ = $('#rctx') || $('#sctx');
   contexteMemo = champ ? champ.value.trim() : contexteMemo;
@@ -614,6 +674,7 @@ $('#reread').onclick = async () => {
       <button id="rgo">Lancer</button>
       <button id="rno">Fermer</button>
     </div>
+    <p class="hint" id="rmodnote">…</p>
     <textarea id="rctx" rows="3" placeholder="Contexte : sigles, noms propres, rôle de chacun. Par exemple « AEPP = Association des entreprises. Vincent développe le site, Annie dirige, Dominique gère les locaux. »"></textarea>
     <p class="hint" id="rcout">…</p>
     <p class="hint">L'original n'est pas modifié : les corrections s'affichent
@@ -630,10 +691,12 @@ $('#reread').onclick = async () => {
         + `si l'un est épuisé, en choisir un autre dans la liste.`;
     } catch { $('#rcout').textContent = ''; }
   };
+  $('#rmod').onchange = () => { majModeles(); majCout(); };
   $('#ratt').onchange = majCout;
   $('#rtxt').onchange = majCout;
   majCout();
   $('#rctx').value = contexteMemo;
+  majModeles();
   $('#rno').onclick = closePanel;
   $('#rgo').onclick = async () => {
     const body = { attribution: $('#ratt').checked, texte: $('#rtxt').checked,

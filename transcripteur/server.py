@@ -124,27 +124,54 @@ def index() -> HTMLResponse:
 
 @app.get("/api/health")
 def health() -> dict:
+    cles = config.cles_presentes()
     return {
-        "has_key": bool(config.get_key("groq")),
+        # Groq reste la clé indispensable : c'est elle qui transcrit.
+        "has_key": bool(cles.get("groq")),
         "key_from_env": bool(os.environ.get("GROQ_API_KEY")),
+        "cles": cles,
+        "relecture": fournisseurs.modele_par_defaut(cles),
         "models_ready": assets.models_ready(),
     }
 
 
 @app.post("/api/key")
 def save_key(payload: dict) -> dict:
+    """Enregistre une clé. `fournisseur` vaut groq par défaut."""
     key = str(payload.get("key", ""))
-    problem = config.check_key(key)
+    f = str(payload.get("fournisseur") or "groq")
+    if f not in config.FOURNISSEURS:
+        raise HTTPException(400, "Fournisseur inconnu.")
+    problem = config.check_key(key, f)
     if problem:
         raise HTTPException(400, problem)
-    config.set_key(key)
-    return {"has_key": True}
+    config.set_key(key, f)
+    return {"cles": config.cles_presentes()}
 
 
 @app.delete("/api/key")
-def forget_key() -> dict:
-    config.clear_key()
-    return {"has_key": bool(config.get_key("groq"))}
+def forget_key(fournisseur: str = "groq") -> dict:
+    config.clear_key(fournisseur)
+    return {"cles": config.cles_presentes()}
+
+
+@app.get("/api/relecture/modeles")
+def modeles_relecture() -> dict:
+    """Les modèles de relecture, avec ce qu'ils exigent et ce qu'ils coûtent."""
+    cles = config.cles_presentes()
+    liste = []
+    for cle, m in fournisseurs.MODELES.items():
+        liste.append({
+            "cle": cle, "nom": m["nom"], "note": m["note"],
+            "fournisseur": m["fournisseur"],
+            "gratuit": not fournisseurs.payant(cle),
+            "dispo": bool(cles.get(m["fournisseur"])),
+            "un_appel": m["contexte"] > 100_000,
+        })
+    # Les utilisables d'abord, puis les gratuits.
+    liste.sort(key=lambda x: (not x["dispo"], not x["gratuit"]))
+    return {"modeles": liste, "defaut": fournisseurs.modele_par_defaut(cles),
+            "fournisseurs": config.FOURNISSEURS}
 
 
 @app.get("/api/models")
