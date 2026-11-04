@@ -144,6 +144,30 @@ try:
 except f.FournisseurError as exc:
     v("Gemini est annoncé gratuit", "gratuite" in str(exc), str(exc)[:70])
 
+# ---- un refus de cle nomme sa provenance
+#      Une variable d'environnement l'emporte sur le trousseau : une cle
+#      revoquee oubliee dans un shell etait envoyee a la place de la
+#      bonne, et le message du fournisseur ne disait pas laquelle.
+import os
+from transcripteur import server as srv
+refus = f._traduire(RuntimeError("401 UNAUTHENTICATED API key not valid"))
+v("un 401 est reconnu comme refus de clé", isinstance(refus, f.FournisseurError)
+  and str(refus).startswith("CLE_REFUSEE::"), str(refus)[:50])
+avant = os.environ.get("GEMINI_API_KEY")
+try:
+    os.environ["GEMINI_API_KEY"] = "périmée"
+    m = srv._expliquer_cle(refus, "google")
+    v("la variable d'environnement est nommée",
+      "GEMINI_API_KEY" in m and "unset" in m, m[:70])
+    v("et le conflit avec le trousseau est expliqué", "emporte" in m, m[:70])
+finally:
+    if avant is None:
+        os.environ.pop("GEMINI_API_KEY", None)
+    else:
+        os.environ["GEMINI_API_KEY"] = avant
+v("une panne ordinaire n'est pas déguisée en refus de clé",
+  srv._expliquer_cle(RuntimeError("réseau coupé"), "google") == "réseau coupé")
+
 # ---- la pause est bien reprise, pas fatale
 essais = []
 import time as _t

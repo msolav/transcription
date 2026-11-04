@@ -55,6 +55,32 @@ def _trousseau():
         return None
 
 
+def source_cle(fournisseur: str) -> str:
+    """D'où vient la clé en service : « environnement », « trousseau »,
+    « fichier » ou « » si aucune.
+
+    La distinction n'est pas décorative. Une variable d'environnement
+    l'emporte sur le trousseau, donc une clé révoquée oubliée dans un
+    shell continue d'être envoyée alors qu'une clé valide dort à côté. Le
+    fournisseur répond « clé invalide » sans dire laquelle, et rien dans
+    l'interface ne laisse deviner qu'il en existe deux."""
+    fiche = FOURNISSEURS.get(fournisseur)
+    if not fiche:
+        return ""
+    if os.environ.get(fiche["env"], "").strip():
+        return "environnement"
+    kr = _trousseau()
+    if kr:
+        try:
+            if (kr.get_password(SERVICE, fournisseur) or "").strip():
+                return "trousseau"
+        except Exception:  # noqa: BLE001
+            pass
+    if (_load().get(fiche["ancien"]) or "").strip():
+        return "fichier"
+    return ""
+
+
 def get_key(fournisseur: str = "groq") -> str:
     """Environnement, puis trousseau, puis ancien fichier."""
     fiche = FOURNISSEURS.get(fournisseur)

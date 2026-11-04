@@ -123,6 +123,30 @@ def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
+def _expliquer_cle(exc: Exception, fournisseur: str) -> str:
+    """Rend un refus de clé lisible, en nommant d'où venait la clé.
+
+    Une variable d'environnement l'emporte sur le trousseau : une clé
+    révoquée oubliée dans un shell est envoyée à la place de la bonne, et
+    le message du fournisseur ne dit jamais laquelle il a reçue."""
+    message = str(exc)
+    if not message.startswith("CLE_REFUSEE::"):
+        return message
+    fiche = config.FOURNISSEURS.get(fournisseur, {})
+    source = config.source_cle(fournisseur)
+    ou = {"environnement": f"de la variable {fiche.get('env', '')}",
+          "trousseau": "du trousseau du système",
+          "fichier": "de l'ancien fichier de configuration"}.get(source, "de nulle part")
+    suite = ""
+    if source == "environnement":
+        suite = (f" Elle vient {ou}, qui l'emporte sur le trousseau : si une"
+                 f" clé valide y est enregistrée, relancer le programme après"
+                 f" « unset {fiche.get('env', '')} ».")
+    elif source:
+        suite = f" Elle vient {ou}."
+    return (f"Clé {fiche.get('nom', fournisseur)} refusée." + suite)
+
+
 def _empreinte_code() -> float:
     """Date du fichier source le plus récent de l'application.
 
@@ -383,7 +407,9 @@ def resume(job_id: str, payload: dict) -> dict:
                                   modele,
                                   str(payload.get("contexte") or ""))
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(502, f"Résumé impossible : {exc}") from exc
+        raise HTTPException(
+            502, "Résumé impossible : "
+            + _expliquer_cle(exc, fournisseurs.fournisseur_de(modele))) from exc
     return {"texte": texte}
 
 

@@ -311,6 +311,12 @@ def _groq(cle: str, f: dict, systeme: str, requete: str,
 
 # --------------------------------------------------------------- erreurs
 
+def _auth_echouee(texte: str) -> bool:
+    return ("401" in texte or "UNAUTHENTICATED" in texte
+            or "invalid_api_key" in texte or "API key not valid" in texte
+            or "authentication" in texte.lower())
+
+
 def _traduire(exc: Exception) -> Exception:
     """Range une panne de fournisseur dans l'une de nos trois catégories.
 
@@ -319,6 +325,8 @@ def _traduire(exc: Exception) -> Exception:
     confondre faisait abandonner une relecture entière pour une pause de
     trente secondes."""
     texte = str(exc)
+    if _auth_echouee(texte):
+        return FournisseurError("CLE_REFUSEE::" + texte[:200])
     # Saturation passagère : les offres gratuites en voient beaucoup.
     if ("503" in texte or "UNAVAILABLE" in texte or "high demand" in texte
             or "overloaded" in texte):
