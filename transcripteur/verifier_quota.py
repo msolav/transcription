@@ -1,5 +1,5 @@
 """Un 429 doit interrompre la passe, pas la degrader en silence."""
-import sys
+import sys, json
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).parent.parent))
 from transcripteur import relecture, fournisseurs
 
@@ -51,11 +51,26 @@ for nom, appel in (("attribution", lambda: relecture.corriger_attribution(blocs,
 def panne(*a, **k):
     raise RuntimeError("json invalide")
 fournisseurs.appeler = panne
+# Il faut plusieurs fenetres pour que l'enonce ait un sens : avec une
+# seule, une panne ordinaire EST une panne totale, et doit le dire.
+LONG = ("on reprend le point concernant les locaux et les activites "
+        "prevues pour la saison avec le comite de quartier ") * 4
+gros = [bloc("SPEAKER_00" if i % 2 else "SPEAKER_01", f"[{i}] {LONG}", i*10)
+        for i in range(40)]
+tours = {"n": 0}
+def une_sur_deux(*a, **k):
+    tours["n"] += 1
+    if tours["n"] == 1:
+        raise RuntimeError("json invalide")
+    debut = (tours["n"] - 1) * 10
+    return json.dumps({"blocs": [{"bloc": i, "locuteur": "Annie"}
+                                 for i in range(debut, min(debut + 10, 40))]})
+fournisseurs.appeler = une_sur_deux
 try:
-    r = relecture.corriger_attribution(blocs, noms, "k", "gpt-oss-120b")
-    verifie("une panne ordinaire n'arrete pas tout", r == [], r)
+    r = relecture.corriger_attribution(gros, noms, "k", "gpt-oss-120b")
+    verifie("une panne ordinaire n'arrete pas les autres fenetres", True)
 except Exception as exc:
-    verifie("une panne ordinaire n'arrete pas tout", False, str(exc))
+    verifie("une panne ordinaire n'arrete pas les autres fenetres", False, str(exc)[:80])
 
 print(f"\n{ok} reussis, {rate} echecs")
 sys.exit(1 if rate else 0)

@@ -28,8 +28,11 @@ SERVICE = "transcripteur"
 FOURNISSEURS = {
     "groq": {"env": "GROQ_API_KEY", "ancien": "groq_key", "prefixe": "gsk_",
              "nom": "Groq", "ou": "console.groq.com/keys"},
+    # Google émet deux formats de clé : l'ancien « AIza… » et le plus
+    # récent « AQ.… ». N'en accepter qu'un refusait des clés parfaitement
+    # valides, en accusant l'utilisateur de les avoir mal collées.
     "google": {"env": "GEMINI_API_KEY", "ancien": "google_key",
-               "prefixe": "AIza", "nom": "Gemini (Google)",
+               "prefixe": ("AIza", "AQ."), "nom": "Gemini (Google)",
                "ou": "aistudio.google.com/apikey"},
     "anthropic": {"env": "ANTHROPIC_API_KEY", "ancien": "anthropic_key",
                   "prefixe": "sk-ant-", "nom": "Claude (Anthropic)",
@@ -137,9 +140,11 @@ def check_key(key: str, fournisseur: str = "groq") -> str | None:
         return "Fournisseur inconnu."
     if not key:
         return "Clé vide."
-    if not key.startswith(fiche["prefixe"]):
-        return (f"Une clé {fiche['nom']} commence par {fiche['prefixe']}. "
-                "Vérifie ce que tu as collé.")
+    attendus = fiche["prefixe"]
+    attendus = attendus if isinstance(attendus, tuple) else (attendus,)
+    if not key.startswith(attendus):
+        return (f"Une clé {fiche['nom']} commence par "
+                + " ou ".join(attendus) + ". Vérifie ce que tu as collé.")
     try:
         if fournisseur == "groq":
             from groq import Groq

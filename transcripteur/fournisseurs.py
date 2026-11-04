@@ -124,6 +124,15 @@ class QuotaError(FournisseurError):
     """Plafond quotidien atteint : réessayer ne sert à rien."""
 
 
+class Indisponible(FournisseurError):
+    """Le modèle est momentanément saturé. Comme une limite par minute,
+    cela se franchit en patientant — ce n'est pas une panne de la requête."""
+
+    def __init__(self, message: str, secondes: float = 20.0):
+        super().__init__(message)
+        self.secondes = secondes
+
+
 class LimiteMinute(FournisseurError):
     """Seau par minute vidé : il suffit de patienter."""
 
@@ -233,8 +242,12 @@ def _google(cle: str, f: dict, systeme: str, requete: str,
         reglages["response_mime_type"] = "application/json"
         reglages["response_json_schema"] = schema
 
+    # Le client doit vivre jusqu'à la fin de l'appel : construit à la
+    # volée dans l'expression, il est ramassé avant que la requête
+    # n'aboutisse, et le SDK répond « client has been closed ».
+    client = genai.Client(api_key=cle)
     try:
-        reponse = genai.Client(api_key=cle).models.generate_content(
+        reponse = client.models.generate_content(
             model=f["id"], contents=requete,
             config=types.GenerateContentConfig(**reglages))
     except Exception as exc:  # noqa: BLE001
@@ -283,7 +296,11 @@ def _traduire(exc: Exception) -> Exception:
     confondre faisait abandonner une relecture entière pour une pause de
     trente secondes."""
     texte = str(exc)
-    bride = ("429" in texte or "rate_limit" in texte or "overloaded" in texte
+    # Saturation passagère : les offres gratuites en voient beaucoup.
+    if ("503" in texte or "UNAVAILABLE" in texte or "high demand" in texte
+            or "overloaded" in texte):
+        return Indisponible("Modèle momentanément saturé.", _secondes(texte) or 20.0)
+    bride = ("429" in texte or "rate_limit" in texte
              or "RESOURCE_EXHAUSTED" in texte)
     if not bride:
         return exc

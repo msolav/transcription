@@ -615,7 +615,7 @@ function panneauCle(fiches) {
   const f = fiches.google ? 'google' : Object.keys(fiches)[0];
   const fiche = fiches[f];
   $('#rmodnote').innerHTML = `<div class="keyrow">
-      <input type="password" id="kin" placeholder="${fiche.prefixe}…"
+      <input type="password" id="kin" placeholder="${[].concat(fiche.prefixe).join(' ou ')}…"
              spellcheck="false" autocomplete="off">
       <button id="ksave">Enregistrer</button>
     </div>

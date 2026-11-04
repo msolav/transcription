@@ -31,7 +31,8 @@ from difflib import SequenceMatcher
 
 from . import fournisseurs
 from .fournisseurs import (MODELES, MODELE_DEFAUT, MODELE_GRATUIT,  # noqa: F401
-                           QuotaError, LimiteMinute, FournisseurError)
+                           QuotaError, LimiteMinute, Indisponible,
+                           FournisseurError)
 
 # Modèles à poids ouverts servis par Groq. La clé est déjà là, il n'y a
 # donc ni compte à créer ni gigaoctet à télécharger.
@@ -180,7 +181,7 @@ def _appeler(api_key: str, modele: str, systeme: str, requete: str,
         try:
             return fournisseurs.appeler(api_key, modele, systeme, requete,
                                         schema=schema, note=note)
-        except LimiteMinute as pause:
+        except (LimiteMinute, Indisponible) as pause:
             if essai == REESSAIS - 1:
                 raise
             delai = min(pause.secondes + 1.0, ATTENTE_MAX)
@@ -325,13 +326,16 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
     vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
 
+    tentees = perdues = 0
     for _, debut, fin in _decoupage(blocs, modele, note):
+        tentees += 1
         try:
             verdicts = _demander_attribution(blocs, noms, connus, debut, fin,
                                              api_key, modele, contexte, note)
         except Exception as exc:  # noqa: BLE001
             if _est_quota(exc):
                 raise
+            perdues += 1
             if note:
                 note(f"relecture : fenêtre {debut}-{fin} ignorée ({exc})")
             continue
@@ -340,6 +344,7 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
         attendus = set(range(debut, fin))
         if len(vus & attendus) < len(attendus) * 0.7:
             # Une fenêtre à moitié lue n'est pas une fenêtre sans erreur.
+            perdues += 1
             if note:
                 note(f"fenêtre {debut}-{fin} : {len(vus & attendus)}/{len(attendus)} "
                      "blocs jugés, réponse écartée")
@@ -369,6 +374,17 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                 corrections.append({"type": "frontiere", "bloc": index, "mots": n})
         if note:
             note(f"relecture de l'attribution : {fin}/{len(blocs)} blocs")
+
+    # Hors de la boucle : une fenêtre perdue y sort par `continue` et
+    # sauterait le contrôle. Avec un seul grand appel, perdre cette
+    # fenêtre c'est perdre tout le transcript, et rendre une liste vide
+    # ferait passer un échec complet pour une relecture sans rien à
+    # corriger — la panne la plus trompeuse qui soit.
+    if tentees and perdues == tentees:
+        raise FournisseurError(
+            "La relecture n'a abouti sur aucune partie du transcript "
+            f"({perdues} tentative(s) perdue(s)). Rien n'a été corrigé. "
+            "Réessayer, ou choisir un autre modèle dans la liste.")
     return corrections
 
 
