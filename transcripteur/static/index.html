@@ -396,12 +396,14 @@ button{cursor:pointer;border:none;background:none}
           <option value="fi">Finnois</option>
           <option value="">Détection automatique</option>
         </select>
+        <p class="hint" id="counthint"></p>
       </div>
       <div class="field">
         <label for="count">Nombre de voix</label>
         <select id="count">
           <option value="auto" selected>Laisser détecter</option>
-          <option value="1">1 (pas de séparation)</option>
+          <option value="none">Ne pas séparer — beaucoup plus rapide</option>
+          <option value="1">1 seule personne</option>
           <option value="2">2</option>
           <option value="3">3</option>
           <option value="4">4</option>
@@ -976,6 +978,28 @@ function askForKey() {
 
 /* ---------- dépôt du fichier ---------- */
 const zone = $('#dropzone');
+/* Séparer les voix est de loin l'étape la plus lente — sur une réunion
+   de deux heures et demie, trois quarts d'heure contre quelques minutes
+   pour le reste — et c'est aussi la moins fiable. Quand on ne cherche
+   qu'un compte rendu, s'en passer n'enlève rien au résultat. Autant le
+   dire là où le choix se fait. */
+function majCount() {
+  const v = $('#count').value;
+  const notes = {
+    none: "Le texte seul, sans chercher qui parle. C'est l'étape la plus "
+        + "longue : sur une réunion de deux heures, quelques minutes au lieu "
+        + "d'une heure. Les comptes rendus et résumés n'en ont pas besoin.",
+    auto: "Le nombre de personnes sera deviné. Moins fiable que de l'indiquer.",
+    1: "Un seul locuteur : rien à séparer, donc aussi rapide que l'option "
+       + "ci-dessus.",
+  };
+  $('#counthint').textContent = notes[v]
+    || "La séparation est nettement plus fiable quand le nombre est indiqué, "
+     + "mais elle reste approximative sur un micro unique dans une salle.";
+}
+$('#count').onchange = majCount;
+majCount();
+
 $('#pick').onclick = () => $('#file').click();
 
 /* Rouvrir un transcript déjà produit.
@@ -1040,10 +1064,11 @@ $('#go').onclick = async () => {
   const form = new FormData();
   form.append('file', picked);
   form.append('language', $('#lang').value);
-  form.append('diarize', count === '1' ? 'false' : 'true');
+  const separe = count !== '1' && count !== 'none';
+  form.append('diarize', separe ? 'true' : 'false');
   form.append('embedding', $('#emb').value);
   form.append('denoise', $('#clean').value);
-  if (count !== 'auto' && count !== '1') form.append('speakers', count);
+  if (separe && count !== 'auto') form.append('speakers', count);
 
   $('#go').disabled = true;
   $('#go').textContent = 'Envoi…';
