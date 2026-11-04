@@ -65,8 +65,13 @@ RECOUVREMENT = 2      # blocs de contexte repris de la fenêtre précédente
 JETONS_ATTRIBUTION = 1500
 JETONS_TEXTE = 3000
 JETONS_REPONSE = JETONS_TEXTE   # compatibilité
-ATTENTE_MAX = 75.0    # secondes d'attente acceptées sur une limite par minute
-REESSAIS = 3
+# Un quota par minute se rétablit sur une frontière de minute, pas au
+# bout du délai poliment suggéré par le serveur : patienter six secondes
+# ne faisait que consommer les tentatives sans rien changer. On attend
+# donc au moins le quart d'une minute, et on insiste davantage.
+ATTENTE_MIN = 20.0
+ATTENTE_MAX = 75.0
+REESSAIS = 5
 CARACTERES_PAR_JETON = 3.4   # approximation pour du français
 FIDELITE_MIN = 0.72   # en dessous, la « correction » est une réécriture
 
@@ -314,11 +319,12 @@ def _appeler(api_key: str, modele: str, systeme: str, requete: str,
     for essai in range(REESSAIS):
         try:
             return fournisseurs.appeler(api_key, modele, systeme, requete,
-                                        schema=schema, note=note)
+                                        schema=schema, note=note,
+                                        plafond=plafond)
         except (LimiteMinute, Indisponible) as pause:
             if essai == REESSAIS - 1:
                 raise
-            delai = min(pause.secondes + 1.0, ATTENTE_MAX)
+            delai = min(max(pause.secondes + 1.0, ATTENTE_MIN), ATTENTE_MAX)
             if note:
                 note(f"limite par minute atteinte, reprise dans {delai:.0f} s")
             time.sleep(delai)
@@ -434,6 +440,15 @@ Réponds en JSON : {"blocs": [{"bloc": <numéro>, "texte": "<texte corrigé>"}]}
 N'inclus que les blocs réellement modifiés."""
 
 
+def _plafond_attribution(combien: int) -> int:
+    """Un verdict par bloc, donc une réponse qui grandit avec le transcript.
+
+    Mille cinq cents jetons suffisaient pour dix blocs et pas du tout
+    pour six cents. Trop peu tronque la réponse ; trop réserve du quota
+    pour rien."""
+    return max(1500, min(32_000, 500 + combien * 28))
+
+
 def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
                           contexte, note):
     """Le verdict du modèle sur une fenêtre, vérifié puis traduit.
@@ -447,7 +462,7 @@ def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
                + f"Personnes présentes : {', '.join(connus)}\n\n"
                + "\n".join(lignes))
     brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete, note=note,
-                    plafond=JETONS_ATTRIBUTION,
+                    plafond=_plafond_attribution(fin - debut),
                     schema=fournisseurs.SCHEMA_ATTRIBUTION)
     return fournisseurs.lire_json(brut).get("blocs", [])
 

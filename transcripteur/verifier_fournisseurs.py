@@ -98,12 +98,31 @@ try:
 except Exception:
     v("texte sans JSON : erreur", True)
 
+# ---- le plafond demande atteint vraiment le fournisseur
+#      Il était calculé puis jeté : chaque appel réservait 32 000 jetons
+#      de sortie sur le quota par minute, ce qui faisait échouer la
+#      relecture d'un long transcript sans que la requête paraisse
+#      déraisonnable.
+vus = {}
+def guetteur(cle, f, systeme, requete, schema, sortie=0):
+    vus["sortie"] = sortie
+    return '{"blocs": []}'
+f._google = guetteur
+f.appeler("k", "gemini-flash", "sys", "req", plafond=1500)
+v("le plafond atteint le fournisseur", vus.get("sortie") == 1500, vus)
+f.appeler("k", "gemini-flash", "sys", "req", plafond=999_999)
+v("un plafond démesuré est ramené au maximum du modèle",
+  vus.get("sortie") == f.MODELES["gemini-flash"]["sortie"], vus)
+f.appeler("k", "gemini-flash", "sys", "req")
+v("sans plafond, le maximum du modèle",
+  vus.get("sortie") == f.MODELES["gemini-flash"]["sortie"], vus)
+
 # ---- la pause est bien reprise, pas fatale
 essais = []
 import time as _t
 _t.sleep = lambda s: essais.append(s)
 appels = []
-def doublure(cle, modele, systeme, requete, schema=None, note=None):
+def doublure(cle, modele, systeme, requete, **k):
     appels.append(1)
     if len(appels) == 1:
         raise f.LimiteMinute("minute", 9.0)

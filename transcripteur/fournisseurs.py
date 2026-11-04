@@ -167,18 +167,26 @@ def tient_en_un_appel(modele: str, jetons: int) -> bool:
 # ------------------------------------------------------------------ appels
 
 def appeler(cle: str, modele: str, systeme: str, requete: str,
-            schema: dict | None = None, note=None) -> str:
-    """Rend le texte de la réponse. `schema` impose la forme du JSON."""
+            schema: dict | None = None, note=None, plafond: int = 0) -> str:
+    """Rend le texte de la réponse. `schema` impose la forme du JSON.
+
+    `plafond` borne la réponse. Ce n'est pas une économie de confort : le
+    plafond demandé est réservé sur le quota par minute, qu'on le
+    consomme ou non. En réclamer trente-deux mille pour une réponse qui
+    en fait mille suffisait, avec un transcript de quarante mille jetons,
+    à dépasser le budget d'une minute entière — et la relecture échouait
+    sans que rien dans la requête ne paraisse déraisonnable."""
     f = fiche(modele)
+    sortie = min(plafond or f["sortie"], f["sortie"])
     if f["fournisseur"] == "anthropic":
-        return _anthropic(cle, f, systeme, requete, schema)
+        return _anthropic(cle, f, systeme, requete, schema, sortie)
     if f["fournisseur"] == "google":
-        return _google(cle, f, systeme, requete, schema)
-    return _groq(cle, f, systeme, requete, schema)
+        return _google(cle, f, systeme, requete, schema, sortie)
+    return _groq(cle, f, systeme, requete, schema, sortie)
 
 
 def _anthropic(cle: str, f: dict, systeme: str, requete: str,
-               schema: dict | None) -> str:
+               schema: dict | None, sortie: int = 0) -> str:
     """Un appel à Claude.
 
     Deux choix méritent un mot. La forme de la réponse est imposée par
@@ -196,7 +204,7 @@ def _anthropic(cle: str, f: dict, systeme: str, requete: str,
 
     params = dict(
         model=f["id"],
-        max_tokens=f["sortie"],
+        max_tokens=sortie or f["sortie"],
         system=systeme,
         messages=[{"role": "user", "content": requete}],
         thinking={"type": "adaptive"},
@@ -224,7 +232,7 @@ def _anthropic(cle: str, f: dict, systeme: str, requete: str,
 
 
 def _google(cle: str, f: dict, systeme: str, requete: str,
-            schema: dict | None) -> str:
+            schema: dict | None, sortie: int = 0) -> str:
     """Un appel à Gemini.
 
     Même parti pris que pour Claude : la forme de la réponse est imposée
@@ -237,7 +245,7 @@ def _google(cle: str, f: dict, systeme: str, requete: str,
         raise FournisseurError("Le paquet google-genai n'est pas installé.") from exc
 
     reglages = dict(system_instruction=systeme, temperature=0.0,
-                    max_output_tokens=f["sortie"])
+                    max_output_tokens=sortie or f["sortie"])
     if schema:
         reglages["response_mime_type"] = "application/json"
         reglages["response_json_schema"] = schema
@@ -261,7 +269,7 @@ def _google(cle: str, f: dict, systeme: str, requete: str,
 
 
 def _groq(cle: str, f: dict, systeme: str, requete: str,
-          schema: dict | None) -> str:
+          schema: dict | None, sortie: int = 0) -> str:
     try:
         from groq import Groq
     except ImportError as exc:
@@ -272,7 +280,7 @@ def _groq(cle: str, f: dict, systeme: str, requete: str,
         messages=[{"role": "system", "content": systeme},
                   {"role": "user", "content": requete}],
         temperature=0.0,
-        max_completion_tokens=f["sortie"],
+        max_completion_tokens=sortie or f["sortie"],
     )
     if f.get("effort"):
         params["reasoning_effort"] = "low"

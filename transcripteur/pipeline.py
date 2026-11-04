@@ -24,6 +24,11 @@ GROQ_MODEL = "whisper-large-v3-turbo"
 DEFAULT_MAX_MB = 24
 SAMPLE_SECONDS = 6.0
 BLOCK_GAP_SECONDS = 2.0
+# Sans séparation des voix, ce sont ces deux seuils qui font les
+# paragraphes : on coupe de préférence à la fin d'une phrase passé le
+# premier, et de force passé le second.
+PARAGRAPHE_SECONDES = 20.0
+PARAGRAPHE_MAX_SECONDES = 45.0
 MIN_TURN_AUDIO = 0.30     # tour de parole trop bref pour être autre chose qu'un « hum »
 MIN_TURN_SECONDS = 0.45   # durée en dessous de laquelle une bascule est un artefact
 MIN_TURN_WORDS = 2        # ou nombre de mots
@@ -856,6 +861,42 @@ def build_blocks(words: list[dict], turns) -> list[dict]:
     return [b for b in blocks if b["text"]]
 
 
+def decouper_sans_voix(words: list[dict]) -> list[dict]:
+    """Découpe un transcript sans séparation des voix en paragraphes.
+
+    Sans locuteur pour marquer les ruptures, tout le monologue tenait en
+    un seul bloc : deux heures de texte d'un trait, un seul horodatage à
+    00:00, et rien à suivre pendant la lecture. On coupe donc sur ce qui
+    reste lisible dans le signal — les silences — en préférant les fins
+    de phrase quand un paragraphe s'étire.
+
+    Les deux seuils se complètent : le silence marque les vraies
+    respirations, la durée empêche un orateur ininterrompu de produire un
+    pavé de cinq minutes."""
+    blocs: list[dict] = []
+    for mot in words:
+        courant = blocs[-1] if blocs else None
+        if courant:
+            silence = mot["start"] - courant["end"]
+            longueur = courant["end"] - courant["start"]
+            coupe = (silence >= BLOCK_GAP_SECONDS
+                     or (longueur >= PARAGRAPHE_SECONDES
+                         and _ends_sentence(courant["words"][-1]))
+                     or longueur >= PARAGRAPHE_MAX_SECONDES)
+        else:
+            coupe = True
+        if coupe:
+            blocs.append({"speaker": "SPEAKER_00", "start": mot["start"],
+                          "end": mot["end"], "words": [mot]})
+        else:
+            courant["end"] = mot["end"]
+            courant["words"].append(mot)
+
+    for b in blocs:
+        b["text"] = join_words(b["words"])
+    return [b for b in blocs if b["text"]]
+
+
 def join_words(words: list[dict]) -> str:
     """Recolle les mots avec des espaces, sans en mettre avant la ponctuation."""
     out = ""
@@ -1010,12 +1051,11 @@ def process(src: Path, work_dir: Path, options: Options,
     progress("Assemblage", 0.94)
 
     if not turns:
-        blocks = [{"speaker": "SPEAKER_00", "start": words[0]["start"],
-                   "end": words[-1]["end"], "words": words,
-                   "text": join_words(words)}]
+        blocks = decouper_sans_voix(words)
+        log(f"{len(blocks)} paragraphes (sans séparation des voix)")
         profiles = [{"id": "SPEAKER_00", "index": 0, "color": CHANNEL_COLORS[0],
                      "speaking_seconds": round(duration, 1), "share": 1.0,
-                     "turns": 1, "sample_start": 0.0, "sample_seconds": 0.0,
+                     "turns": len(blocks), "sample_start": 0.0, "sample_seconds": 0.0,
                      "has_sample": False}]
     else:
         blocks = build_blocks(words, turns)

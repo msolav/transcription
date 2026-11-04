@@ -593,6 +593,7 @@ let relOpts = null, relTimer = null, corrections = [];
    rôles valent pour la relecture comme pour le résumé, et personne n'a
    envie de les retaper. */
 let contexteMemo = '';
+let modelesRelecture = null;
 
 /* Le choix du modèle de relecture n'est pas un réglage de confort : un
    modèle à grand contexte lit la réunion entière d'un coup, un petit la
@@ -603,6 +604,7 @@ async function majModeles() {
   if (!sel) return;
   let d;
   try { d = await api('/api/relecture/modeles'); } catch { return; }
+  modelesRelecture = d.modeles;
   const choisi = sel.value || d.defaut;
   sel.innerHTML = d.modeles.map(m => `<option value="${m.cle}"
     ${m.dispo ? '' : 'disabled'} ${m.cle === choisi && m.dispo ? 'selected' : ''}>
@@ -697,9 +699,15 @@ $('#reread').onclick = async () => {
     try {
       const c = await api(`/api/jobs/${job.id}/cout?${q}`);
       const milliers = Math.round(c.jetons / 1000);
-      $('#rcout').textContent = `Environ ${milliers} 000 jetons pour ${c.blocs} blocs. `
-        + `Le forfait gratuit de Groq en donne 200 000 par jour et par modèle : `
-        + `si l'un est épuisé, en choisir un autre dans la liste.`;
+      // La note nommait Groq quel que soit le modèle retenu, et annonçait
+      // un quota qui n'est pas celui du fournisseur en service.
+      const m = (modelesRelecture || []).find(x => x.cle === $('#rmod').value) || {};
+      const bloc = c.blocs === 1 ? 'bloc' : 'blocs';
+      $('#rcout').textContent = `Environ ${milliers} 000 jetons pour ${c.blocs} ${bloc}.`
+        + (m.gratuit === false
+            ? ` Facturé à l'usage : quelques dizaines de centimes.`
+            : ` Modèle gratuit, soumis à un quota quotidien — s'il est épuisé,`
+              + ` en choisir un autre dans la liste.`);
     } catch { $('#rcout').textContent = ''; }
   };
   $('#rmod').onchange = () => { majModeles(); majCout(); };

@@ -69,5 +69,28 @@ except pipeline.PipelineError as exc:
     v("une clé refusée ne se rejoue pas",
       len(essais) == 1 and "refus" in str(exc).lower(), f"{len(essais)} essais")
 
+# ---- sans separation des voix : des paragraphes, pas un pave
+#      Le transcript entier tenait dans un seul bloc : deux heures de
+#      texte d'un trait, un seul horodatage, rien a suivre en lecture.
+mots = []
+t = 0.0
+for i in range(4000):
+    mots.append({"start": t, "end": t + 0.35,
+                 "text": ("fin." if i % 35 == 34 else f"mot{i}")})
+    t += 0.42 + (2.5 if i % 60 == 59 else 0.0)
+paras = pipeline.decouper_sans_voix(mots)
+v("un monologue est découpé", len(paras) > 20, f"{len(paras)} paragraphes")
+durees = [x["end"] - x["start"] for x in paras]
+v("aucun paragraphe interminable",
+  max(durees) <= pipeline.PARAGRAPHE_MAX_SECONDES + 1, f"{max(durees):.0f}s")
+v("chaque paragraphe a son horodatage",
+  len({round(x["start"], 2) for x in paras}) == len(paras))
+v("aucun mot perdu",
+  sum(len(x["words"]) for x in paras) == len(mots),
+  f'{sum(len(x["words"]) for x in paras)} / {len(mots)}')
+v("l'ordre est conservé",
+  all(paras[i]["start"] <= paras[i + 1]["start"] for i in range(len(paras) - 1)))
+v("aucun paragraphe vide", all(x["text"].strip() for x in paras))
+
 print(f"\n{ok} reussis, {rate} echecs")
 sys.exit(1 if rate else 0)
