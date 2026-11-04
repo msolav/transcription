@@ -374,11 +374,13 @@ def resume(job_id: str, payload: dict) -> dict:
         raise HTTPException(400, "La transcription n'est pas terminée.")
     blocs = job["relecture"]["blocks"] if (job.get("relecture") or {}).get("blocks") \
         else job["blocks"]
+    modele = str(payload.get("modele")
+                 or fournisseurs.modele_par_defaut(config.cles_presentes()))
     try:
         texte = relecture.resumer(blocs, job["names"],
                                   config.get_key(fournisseurs.fournisseur_de(modele)),
-                                  str(payload.get("forme") or "compte_rendu"),
-                                  str(payload.get("modele") or fournisseurs.modele_par_defaut(config.cles_presentes())),
+                                  str(payload.get("forme") or relecture.RESUME_DEFAUT),
+                                  modele,
                                   str(payload.get("contexte") or ""))
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(502, f"Résumé impossible : {exc}") from exc
