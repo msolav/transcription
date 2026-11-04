@@ -581,6 +581,10 @@ button { cursor: pointer; border: 0; background: none; }
   .turn .tc { text-align: left; padding-top: 0; }
   .cmp { grid-template-columns: 1fr; }
   .deck .who, .deck .keys { display: none; }
+  .dock { position: static; }                                   /* export bar flows after the transcript */
+  .deck { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; padding-top: 8px; padding-bottom: 10px; gap: 4px; }
+  .deck .line { gap: 6px; }
+  .doc { padding-bottom: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .blank h1 em { transition: none; } }
 
@@ -1842,6 +1846,7 @@ async function tick() {
       names = { ...job.names };
       idle('Transcrire à nouveau');
       render();
+      if (matchMedia('(max-width:900px)').matches) $('#stage-area').scrollIntoView({ behavior: 'smooth' });
     }
   } catch (err) {
     fail(err.message);

@@ -147,12 +147,30 @@ Un compte rendu qui attribue une décision à la mauvaise personne est
 plus nuisible qu'un compte rendu qui n'en nomme aucune : l'erreur y est
 invisible, et elle se propage.
 
-## Six formes de restitution
+## Sept formes de restitution
 
 Compte rendu, décisions et suites à donner, résumé bref, par thème,
-transcript lisible, questions soulevées. Chaque forme affiche un aperçu
-de ce qu'elle donne — la forme, pas le contenu — pour qu'on la choisisse
-sans avoir à la payer pour la découvrir.
+transcript lisible, questions soulevées — et un relevé des dates et
+chiffres. Chaque forme affiche un aperçu de ce qu'elle donne, pour qu'on
+la choisisse sans avoir à la payer pour la découvrir.
+
+**Le relevé des dates n'emploie aucun modèle de langue.** Il est tiré du
+texte à la lecture : rien ne peut y être inventé ni oublié. Il existe
+parce qu'un compte rendu rédigé par un modèle a été mesuré sur une
+réunion réelle de 2 h 42 : vingt-sept affirmations vérifiables sur
+trente étaient exactes, et l'erreur qui comptait portait sur une date
+corrigée en séance.
+
+    « C'est-à-dire le 24 novembre, on se fait une rencontre ?
+      C'était le 24 ? Non, le 17. Le 17 ? Oui, deux semaines. »
+
+Le compte rendu avait retenu le 24 — la date proposée puis abandonnée.
+C'est l'erreur la plus coûteuse qu'un compte rendu puisse contenir,
+parce qu'elle est invisible à la relecture : la date fausse y a l'air
+aussi sûre que les autres. Demander au modèle de suivre les corrections
+aide, sans régler le cas des passages confus. Le relevé, lui, montre les
+deux mentions dans l'ordre avec leur contexte : la lecture tranche en
+une seconde.
 
 **Relire** propose des corrections sans rien écraser. L'attribution
 d'abord : un modèle de langue voit que « avant d'être » et « accordés »

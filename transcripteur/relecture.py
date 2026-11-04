@@ -108,6 +108,17 @@ En revanche, un nom prononcé pendant la réunion — « c'est Dominique qui
 s'en charge », « Annie, tu peux… » — est une information fiable, bien
 plus que la répartition des voix : sers-t'en sans hésiter.
 
+Une réunion se corrige en parlant. « C'était le 24 ? — Non, le 17 » : la
+date retenue est la seconde. Chaque fois qu'un chiffre, une date, un
+montant ou un nom est repris, contredit ou rectifié dans l'échange,
+retiens la dernière version, jamais la première. C'est l'erreur la plus
+coûteuse dans un compte rendu, parce qu'elle est invisible à la
+relecture : la date fausse y a l'air aussi sûre que les autres.
+
+N'ajoute aucune précision qui ne soit pas dans l'échange. Si une adresse,
+un montant ou un intitulé n'est pas prononcé, n'en invente pas un
+plausible : décris ce qui a été décidé sans le détail manquant.
+
 Ne signale pas cette incertitude dans le texte : contente-toi de ne pas
 affirmer ce que tu ne sais pas."""
 
@@ -215,6 +226,25 @@ conclusion.
 ## Réponse remise à plus tard
 **Comment se fait la remise des clés ?** Renvoyé au modèle de Milton
 Park, à préciser.""",
+    },
+    "reperes": {
+        "nom": "Dates et chiffres à vérifier",
+        "consigne": "",   # aucun modèle n'intervient
+        "mecanique": True,
+        "apercu": """Toutes les dates, heures et sommes prononcées, dans l'ordre,
+avec la phrase qui les entoure. Aucun modèle n'intervient : c'est
+relevé dans le texte, donc rien ne peut être inventé ni oublié.
+
+**04:12** · 4 novembre
+  …je rencontre des impôts pour demain le 4 novembre à 11h. Puis le
+  reste de la semaine…
+
+**1:52:30** · 24 novembre
+  …Fait qu'on a deux semaines. C'est-à-dire le 24 novembre, on se fait
+  une rencontre ? C'était le 24 ? Non, le 17…
+
+Une réunion se corrige en parlant. Les deux mentions figurent ici dans
+l'ordre : la lecture tranche en une seconde.""",
     },
 }
 RESUME_DEFAUT = "compte_rendu"
@@ -608,6 +638,86 @@ def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
     return corrections
 
 
+MOIS = ("janvier février mars avril mai juin juillet août septembre "
+        "octobre novembre décembre").split()
+
+# Repères chiffrés : dates, heures, montants. Rien d'autre ne mérite
+# d'être extrait mécaniquement, et rien d'autre n'est aussi coûteux à
+# rater dans un compte rendu.
+_MOTIFS = [
+    (r"\b(\d{1,2}|1er)\s+(" + "|".join(MOIS) + r")\b", "date"),
+    (r"\b(\d{1,2})\s*h\s*(\d{2})?\b", "heure"),
+    (r"\b(\d+(?:[,.]\d+)?)\s*(?:\$|dollars?|piastres?)\b", "montant"),
+    (r"\b(lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b", "jour"),
+    # « Non, le 17 » : une correction de date se dit sans répéter le mois.
+    # C'est justement la mention qu'il ne faut pas rater, puisque c'est
+    # elle qui annule la précédente.
+    (r"\ble\s+([12]?\d|3[01])\b(?!\s*(?:" + "|".join(MOIS) + r"))", "quantième"),
+]
+
+
+def _horloge(secondes: float) -> str:
+    s = int(secondes)
+    h, m, r = s // 3600, (s % 3600) // 60, s % 60
+    return f"{h}:{m:02d}:{r:02d}" if h else f"{m:02d}:{r:02d}"
+
+
+def reperes(blocs: list[dict], autour: int = 110) -> list[dict]:
+    """Toutes les dates, heures et sommes prononcées, avec leur contexte.
+
+    Extraction mécanique, sans modèle de langue — donc sans invention
+    possible. C'est la réponse au seul défaut mesuré des comptes rendus :
+    une réunion se corrige en parlant (« C'était le 24 ? — Non, le 17 »),
+    et un modèle retient parfois la première version. Ici, les deux
+    mentions apparaissent dans l'ordre, avec ce qui les entoure : la
+    lecture tranche en une seconde.
+
+    Ce n'est pas un résumé et cela ne le remplace pas ; c'est de quoi
+    vérifier celui qu'on s'apprête à envoyer."""
+    import re as _re
+
+    texte = " ".join(b["text"] for b in blocs)
+    # Correspondance position dans le texte -> seconde dans l'audio. On
+    # suit les mots plutôt que les blocs : sans séparation des voix, un
+    # transcript peut tenir en un seul bloc, et tous les repères
+    # renverraient alors à 00:00.
+    reperes_temps, position = [], 0
+    for b in blocs:
+        mots = b.get("words") or []
+        if mots:
+            curseur = position
+            for mot in mots:
+                reperes_temps.append((curseur, float(mot.get("start") or 0.0)))
+                curseur += len(str(mot.get("text") or "")) + 1
+        else:
+            reperes_temps.append((position, float(b.get("start") or 0.0)))
+        position += len(b["text"]) + 1
+
+    import bisect
+    bornes = [x[0] for x in reperes_temps]
+
+    def quand(i: int) -> float:
+        k = bisect.bisect_right(bornes, i) - 1
+        return reperes_temps[k][1] if k >= 0 else 0.0
+
+    vus, sortie = set(), []
+    for motif, genre in _MOTIFS:
+        for m in _re.finditer(motif, texte, _re.IGNORECASE):
+            cle = (m.start() // 40, m.group(0).lower())
+            if cle in vus:
+                continue
+            vus.add(cle)
+            a = max(0, m.start() - autour)
+            sortie.append({
+                "genre": genre,
+                "valeur": " ".join(m.group(0).split()),
+                "seconde": quand(m.start()),
+                "extrait": " ".join(texte[a:m.end() + autour].split()),
+            })
+    sortie.sort(key=lambda x: x["seconde"])
+    return sortie
+
+
 def resumer(blocs: list[dict], noms: dict, api_key: str,
             forme: str = "compte_rendu", modele: str = MODELE_DEFAUT,
             contexte: str = "") -> str:
@@ -615,6 +725,20 @@ def resumer(blocs: list[dict], noms: dict, api_key: str,
     if forme not in RESUMES:
         forme = RESUME_DEFAUT
     fiche = RESUMES[forme]
+    if fiche.get("mecanique"):
+        # Relevé dans le texte, sans modèle : ni clé, ni quota, ni
+        # invention possible. C'est la réponse au seul défaut mesuré des
+        # comptes rendus — une date corrigée en cours de réunion dont la
+        # première version se retrouve parfois retenue.
+        lignes = ["# Dates et chiffres prononcés", "",
+                  "Relevé mot à mot dans la transcription, dans l'ordre. "
+                  "Quand une date est reprise ou corrigée, les deux mentions "
+                  "apparaissent : la bonne est la dernière.", ""]
+        for x in reperes(blocs):
+            lignes.append(f"**{_horloge(x['seconde'])}** · {x['valeur']}")
+            lignes.append(f"  …{x['extrait']}…")
+            lignes.append("")
+        return "\n".join(lignes).strip()
     corps = "\n".join(f"{_nom(b, noms)} : {b['text']}" for b in blocs)
     # Whisper produit beaucoup de texte ; on borne l'envoi plutôt que de
     # laisser l'appel échouer sur la limite du modèle.
