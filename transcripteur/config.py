@@ -28,6 +28,9 @@ SERVICE = "transcripteur"
 FOURNISSEURS = {
     "groq": {"env": "GROQ_API_KEY", "ancien": "groq_key", "prefixe": "gsk_",
              "nom": "Groq", "ou": "console.groq.com/keys"},
+    "google": {"env": "GEMINI_API_KEY", "ancien": "google_key",
+               "prefixe": "AIza", "nom": "Gemini (Google)",
+               "ou": "aistudio.google.com/apikey"},
     "anthropic": {"env": "ANTHROPIC_API_KEY", "ancien": "anthropic_key",
                   "prefixe": "sk-ant-", "nom": "Claude (Anthropic)",
                   "ou": "console.anthropic.com/settings/keys"},
@@ -141,6 +144,10 @@ def check_key(key: str, fournisseur: str = "groq") -> str | None:
         if fournisseur == "groq":
             from groq import Groq
             Groq(api_key=key).models.list()
+        elif fournisseur == "google":
+            from google import genai
+            genai.Client(api_key=key).models.generate_content(
+                model="gemini-3.5-flash-lite", contents="ok")
         else:
             import anthropic
             # Un appel minuscule : c'est la seule façon de distinguer une

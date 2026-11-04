@@ -1,4 +1,4 @@
-"""Contrôle du chemin Claude, contre la véritable API.
+"""Contrôle d'un fournisseur vivant, contre la véritable API.
 
 Ne tourne que si une clé est disponible (ANTHROPIC_API_KEY, le trousseau,
 ou l'ancien fichier). Sans clé, il s'annonce ignoré plutôt que réussi :
@@ -13,12 +13,30 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from transcripteur import fournisseurs as f, config
 
-cle = config.get_key("anthropic")
+# Le fournisseur à éprouver se choisit en argument ; par défaut, le
+# premier dont une clé est disponible.
+demande = sys.argv[1] if len(sys.argv) > 1 else ""
+CHOIX = {"anthropic": "claude-haiku-5-5", "google": "gemini-flash-lite",
+         "groq": "gpt-oss-20b"}
+if demande:
+    candidats = [demande]
+else:
+    candidats = [x for x in CHOIX if config.get_key(x)]
+cle = fournisseur = ""
+for nom in candidats:
+    if config.get_key(nom):
+        cle, fournisseur = config.get_key(nom), nom
+        break
 if not cle:
-    print("IGNORÉ : aucune clé Anthropic.")
-    print("  Pour l'exécuter : export ANTHROPIC_API_KEY=sk-ant-...")
-    print("  ou saisir la clé dans l'application, qui la range dans le trousseau.")
+    print("IGNORÉ : aucune clé disponible pour " + (demande or "aucun fournisseur"))
+    for nom, fiche in config.FOURNISSEURS.items():
+        etat = "présente" if config.get_key(nom) else "absente"
+        print(f"  {fiche['nom']:20s} {etat:9s} ({fiche['env']})")
+    print("  Pour en éprouver un : export <VARIABLE>=... puis relancer.")
     sys.exit(0)
+modele = CHOIX[fournisseur]
+print(f"fournisseur éprouvé : {config.FOURNISSEURS[fournisseur]['nom']} "
+      f"({f.fiche(modele)['nom']})\n")
 
 ok = rate = 0
 def v(nom, cond, d=""):
@@ -38,7 +56,6 @@ lignes = "\n".join(f"[{i}] {q} : {t}" for i, (q, t) in enumerate(BLOCS))
 from transcripteur.relecture import SYSTEME_ATTRIBUTION
 req = f"Personnes présentes : Annie, Vincent\n\n{lignes}"
 
-modele = "claude-haiku-5-5"   # le moins cher : ce test tourne souvent
 try:
     brut = f.appeler(cle, modele, SYSTEME_ATTRIBUTION, req,
                      schema=f.SCHEMA_ATTRIBUTION)

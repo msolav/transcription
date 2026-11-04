@@ -21,6 +21,9 @@ def v(nom, cond, d=""):
 # ---- catalogue
 v("le défaut est Claude", f.fournisseur_de(f.MODELE_DEFAUT) == "anthropic", f.MODELE_DEFAUT)
 v("un chemin gratuit existe", not f.payant(f.MODELE_GRATUIT), f.MODELE_GRATUIT)
+v("le gratuit par défaut voit le transcript entier",
+  f.tient_en_un_appel(f.MODELE_GRATUIT, int(14_300 / 0.75)), f.MODELE_GRATUIT)
+v("Gemini est gratuit", not f.payant("gemini-flash") and not f.payant("gemini-flash-lite"))
 v("tout modèle a un fournisseur connu",
   all(m["fournisseur"] in f.CLES for m in f.MODELES.values()))
 v("tout modèle annonce contexte et sortie",
@@ -32,11 +35,16 @@ v("un modèle inconnu retombe sur le défaut",
 v("sans clé payante, le défaut est gratuit",
   not f.payant(f.modele_par_defaut({})) and not f.payant(f.modele_par_defaut({"groq": True})),
   f.modele_par_defaut({}))
+v("une clé Gemini suffit pour l'appel unique",
+  not f.payant(f.modele_par_defaut({"google": True}))
+  and f.tient_en_un_appel(f.modele_par_defaut({"google": True}), 20_000),
+  f.modele_par_defaut({"google": True}))
 v("avec une clé Claude, le défaut en profite",
   f.modele_par_defaut({"groq": True, "anthropic": True}) == f.MODELE_DEFAUT)
 v("le défaut est toujours un modèle du catalogue",
   all(f.modele_par_defaut(c) in f.MODELES
-      for c in ({}, {"groq": True}, {"anthropic": True}, {"groq": True, "anthropic": True})))
+      for c in ({}, {"groq": True}, {"google": True}, {"anthropic": True},
+                {"groq": True, "anthropic": True}, {"google": True, "anthropic": True})))
 
 # ---- appel unique ou decoupage
 reunion = int(14_300 / 0.75)          # ~14 300 mots d'une vraie reunion
@@ -58,6 +66,11 @@ v("un modèle gratuit coûte zéro", f.cout_estime("gpt-oss-120b", 20_000, 15_00
 JOUR = "Error code: 429 ... rate_limit_exceeded on tokens per day (TPD): Limit 200000. Please try again in 7m6.816s."
 MIN  = "Error code: 429 ... rate_limit_exceeded on tokens per minute (TPM): Limit 8000. Please try again in 12.5s."
 v("une limite du jour est fatale", isinstance(f._traduire(RuntimeError(JOUR)), f.QuotaError))
+GOOG_JOUR = "429 RESOURCE_EXHAUSTED quota metric GenerateRequestsPerDayPerProjectPerModel"
+GOOG_MIN  = "429 RESOURCE_EXHAUSTED quota GenerateRequestsPerMinute, retry in 31.0s"
+v("quota Gemini par jour : fatal", isinstance(f._traduire(RuntimeError(GOOG_JOUR)), f.QuotaError))
+v("quota Gemini par minute : pause",
+  isinstance(f._traduire(RuntimeError(GOOG_MIN)), f.LimiteMinute))
 m = f._traduire(RuntimeError(MIN))
 v("une limite de la minute est une pause", isinstance(m, f.LimiteMinute))
 v("la pause connaît sa durée", abs(m.secondes - 12.5) < 0.01, m.secondes)

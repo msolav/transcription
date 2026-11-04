@@ -50,6 +50,29 @@ MODELES = {
         "prix": (0.10, 0.50),
         "note": "Quelques centimes par réunion.",
     },
+    # ---- Google : gratuit, et assez large pour le transcript entier
+    #
+    # Les offres gratuites n'ont pas toutes la même forme, et c'est la
+    # forme qui compte ici. Groq donne mille requêtes par jour mais huit
+    # mille jetons par minute : généreux en requêtes, avare en jetons,
+    # exactement l'inverse de ce qu'il nous faut, d'où les soixante
+    # tranches. Google donne peu de requêtes par jour mais deux cent
+    # cinquante mille jetons par minute, et notre travail tient en une à
+    # trois requêtes énormes par réunion. Vingt requêtes par jour, c'est
+    # six réunions.
+    "gemini-flash": {
+        "nom": "Gemini Flash (gratuit)", "fournisseur": "google",
+        "id": "gemini-3.8-flash", "contexte": 1_000_000, "sortie": 32_000,
+        "prix": (0.0, 0.0),
+        "note": "Gratuit, et voit la réunion entière d'un coup. "
+                "Peu de requêtes par jour, ce qui suffit largement.",
+    },
+    "gemini-flash-lite": {
+        "nom": "Gemini Flash Lite (gratuit)", "fournisseur": "google",
+        "id": "gemini-3.5-flash-lite", "contexte": 1_000_000, "sortie": 32_000,
+        "prix": (0.0, 0.0),
+        "note": "Plus de requêtes par jour, un peu moins fin.",
+    },
     # ---- Groq : gratuit, mais par tranches
     "gpt-oss-120b": {
         "nom": "GPT-OSS 120B (gratuit)", "fournisseur": "groq",
@@ -65,7 +88,8 @@ MODELES = {
     },
 }
 MODELE_DEFAUT = "claude-opus-5-5"
-MODELE_GRATUIT = "gpt-oss-120b"
+MODELE_GRATUIT = "gemini-flash"
+MODELE_TRANCHES = "gpt-oss-120b"   # le repli quand seule une clé Groq existe
 
 
 def modele_par_defaut(cles: dict) -> str:
@@ -79,12 +103,16 @@ def modele_par_defaut(cles: dict) -> str:
     l'utilisateur garde la main dans la liste."""
     if cles.get("anthropic"):
         return MODELE_DEFAUT
-    return MODELE_GRATUIT
+    if cles.get("google"):
+        return MODELE_GRATUIT
+    return MODELE_TRANCHES
 
 CLES = {
     "anthropic": {"nom": "Claude (Anthropic)", "prefixe": "sk-ant-",
                   "ou": "console.anthropic.com"},
     "groq": {"nom": "Groq", "prefixe": "gsk_", "ou": "console.groq.com"},
+    "google": {"nom": "Gemini (Google)", "prefixe": "AIza",
+               "ou": "aistudio.google.com/apikey"},
 }
 
 
@@ -135,6 +163,8 @@ def appeler(cle: str, modele: str, systeme: str, requete: str,
     f = fiche(modele)
     if f["fournisseur"] == "anthropic":
         return _anthropic(cle, f, systeme, requete, schema)
+    if f["fournisseur"] == "google":
+        return _google(cle, f, systeme, requete, schema)
     return _groq(cle, f, systeme, requete, schema)
 
 
@@ -184,6 +214,39 @@ def _anthropic(cle: str, f: dict, systeme: str, requete: str,
     return "".join(morceaux).strip()
 
 
+def _google(cle: str, f: dict, systeme: str, requete: str,
+            schema: dict | None) -> str:
+    """Un appel à Gemini.
+
+    Même parti pris que pour Claude : la forme de la réponse est imposée
+    par un schéma plutôt que demandée dans la consigne, de sorte qu'un
+    JSON vide ou tronqué ne soit pas une réponse possible."""
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError as exc:
+        raise FournisseurError("Le paquet google-genai n'est pas installé.") from exc
+
+    reglages = dict(system_instruction=systeme, temperature=0.0,
+                    max_output_tokens=f["sortie"])
+    if schema:
+        reglages["response_mime_type"] = "application/json"
+        reglages["response_json_schema"] = schema
+
+    try:
+        reponse = genai.Client(api_key=cle).models.generate_content(
+            model=f["id"], contents=requete,
+            config=types.GenerateContentConfig(**reglages))
+    except Exception as exc:  # noqa: BLE001
+        raise _traduire(exc) from exc
+
+    texte = getattr(reponse, "text", None)
+    if not texte:
+        raise FournisseurError(
+            "Réponse vide de Gemini. Si cela se répète, essayer un autre modèle.")
+    return texte.strip()
+
+
 def _groq(cle: str, f: dict, systeme: str, requete: str,
           schema: dict | None) -> str:
     try:
@@ -220,9 +283,15 @@ def _traduire(exc: Exception) -> Exception:
     confondre faisait abandonner une relecture entière pour une pause de
     trente secondes."""
     texte = str(exc)
-    if "429" not in texte and "rate_limit" not in texte and "overloaded" not in texte:
+    bride = ("429" in texte or "rate_limit" in texte or "overloaded" in texte
+             or "RESOURCE_EXHAUSTED" in texte)
+    if not bride:
         return exc
-    if "per day" in texte or "TPD" in texte or "RPD" in texte:
+    # Google nomme la métrique épuisée dans le message ; Groq écrit la
+    # période en toutes lettres.
+    jour = ("per day" in texte or "TPD" in texte or "RPD" in texte
+            or "PerDay" in texte)
+    if jour:
         return QuotaError(_message_quota(texte))
     return LimiteMinute("Limite par minute atteinte.", _secondes(texte))
 
