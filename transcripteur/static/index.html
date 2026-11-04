@@ -358,6 +358,8 @@ button{cursor:pointer;border:none;background:none}
       <h2>Dépose un fichier audio</h2>
       <p>m4a, mp3, wav, flac, ogg, mp4&nbsp;— jusqu'à 2 Go</p>
       <button type="button" id="pick">Choisir un fichier</button>
+      <p class="rouvrir">ou <a href="#" id="reopen">rouvrir un transcript .json</a></p>
+      <input type="file" id="jsonfile" accept=".json,application/json" hidden>
       <input type="file" id="file" accept="audio/*,video/mp4,video/quicktime" hidden>
     </div>
 
@@ -975,6 +977,28 @@ function askForKey() {
 /* ---------- dépôt du fichier ---------- */
 const zone = $('#dropzone');
 $('#pick').onclick = () => $('#file').click();
+
+/* Rouvrir un transcript déjà produit.
+
+   Transcrire quatre-vingts minutes coûte une dizaine de minutes de
+   calcul. Les repayer pour rédiger le compte rendu dans une autre forme,
+   ou pour reprendre le travail le lendemain, n'a pas de sens : le
+   transcript exporté contient déjà tout ce dont la rédaction a besoin. */
+$('#reopen').onclick = (e) => { e.preventDefault(); $('#jsonfile').click(); };
+$('#jsonfile').onchange = async () => {
+  const fichier = $('#jsonfile').files[0];
+  if (!fichier) return;
+  const corps = new FormData();
+  corps.append('file', fichier);
+  try {
+    job = await api('/api/jobs/import', { method: 'POST', body: corps });
+    jobId = job.id;
+    names = job.names || {};
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
+};
 $('#file').onchange = e => e.target.files[0] && accept(e.target.files[0]);
 
 ['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {

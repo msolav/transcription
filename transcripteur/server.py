@@ -12,6 +12,7 @@ La diarisation et le découpage restent locaux.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import tempfile
@@ -378,6 +379,54 @@ def appliquer(job_id: str, payload: dict) -> dict:
     with _lock:
         job["relecture"]["blocks"] = apercu
     return {"blocks": apercu}
+
+
+@app.post("/api/jobs/import")
+async def import_job(file: UploadFile = File(...)) -> dict:
+    """Rouvre un transcript déjà produit, exporté en .json.
+
+    Transcrire quatre-vingts minutes demande une dizaine de minutes de
+    calcul. Rien ne justifie de les repayer pour rédiger un compte rendu
+    dans une autre forme, ou pour reprendre un travail le lendemain : le
+    transcript contient déjà tout ce dont la rédaction a besoin."""
+    try:
+        donnees = json.loads((await file.read()).decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, "Fichier illisible : attendu un export .json.") from exc
+
+    blocs = donnees.get("blocks")
+    if not isinstance(blocs, list) or not blocs:
+        raise HTTPException(400, "Ce fichier ne contient pas de transcript.")
+    manquant = [c for c in ("speaker", "text", "start") if c not in (blocs[0] or {})]
+    if manquant:
+        raise HTTPException(400, "Transcript incomplet : il manque "
+                                 + ", ".join(manquant) + ".")
+
+    job_id = uuid.uuid4().hex[:12]
+    work_dir = Path(tempfile.mkdtemp(prefix="transcripteur-"))
+    job = {
+        "id": job_id,
+        "filename": donnees.get("filename") or file.filename or "transcript.json",
+        "source": "", "work_dir": str(work_dir),
+        # Rouvert, donc terminé : il n'y a rien à calculer.
+        "status": "done", "stage": "Transcript rouvert", "progress": 1.0,
+        "error": None,
+        "duration": float(donnees.get("duration") or (blocs[-1].get("end") or 0.0)),
+        "speakers": donnees.get("speakers") or [],
+        "blocks": blocs,
+        "names": donnees.get("names") or {},
+        "notes": ["transcript rouvert depuis un export"],
+        "relecture": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        # Sans l'audio d'origine, pas d'extrait d'écoute : on le signale
+        # plutôt que de laisser des boutons de lecture inertes.
+        "sans_audio": True,
+    }
+    for voix in job["speakers"]:
+        voix["has_sample"] = False
+    with _lock:
+        _jobs[job_id] = job
+    return _public(job)
 
 
 @app.get("/api/jobs/{job_id}")
