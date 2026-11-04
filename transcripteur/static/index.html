@@ -347,6 +347,9 @@ button{cursor:pointer;border:none;background:none}
 </style>
 </head>
 <body>
+<div class="perime" id="perime" hidden>Le programme a été modifié depuis son
+  démarrage. L'affichage est à jour, le traitement non : <b>arrête et relance</b>
+  le serveur pour que les corrections s'appliquent.</div>
 <div class="shell">
 
   <aside class="console">
@@ -508,6 +511,7 @@ let ready = false;
 
 api('/api/health').then(h => {
   ready = h.has_key;
+  if (h.code_perime) banniereRedemarrer();
   if (!ready) askForKey();
   else if (!h.key_from_env) $('#changekey').hidden = false;
 }).catch(() => {});
@@ -941,6 +945,14 @@ $('#changekey').onclick = askForKey;
 // écrasés ici, ce qui déclenchait un export « .undefined ».
 document.querySelectorAll('.exportbar button[data-x]').forEach(
   b => b.onclick = () => exportAs(b.dataset.x));
+
+/* Le serveur tourne du code plus ancien que les fichiers sur le disque.
+   L'interface se recharge du disque à chaque visite, le code Python non :
+   on peut donc voir des réglages tout neufs piloter un traitement
+   périmé. Plutôt que de laisser chercher la panne ailleurs, on le dit. */
+function banniereRedemarrer() {
+  $('#perime').hidden = false;
+}
 
 function askForKey() {
   $('#dock').hidden = false;

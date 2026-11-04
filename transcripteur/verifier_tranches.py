@@ -92,5 +92,26 @@ v("l'ordre est conservé",
   all(paras[i]["start"] <= paras[i + 1]["start"] for i in range(len(paras) - 1)))
 v("aucun paragraphe vide", all(x["text"].strip() for x in paras))
 
+# ---- le serveur signale qu'il tourne du code perime
+#      Python importe ses modules une fois ; l'interface est relue du
+#      disque a chaque visite. On peut donc piloter un traitement perime
+#      depuis des reglages tout neufs — c'est arrive trois fois.
+import os, time
+from fastapi.testclient import TestClient
+from transcripteur import server
+cl = TestClient(server.app)
+v("au démarrage, le code n'est pas périmé",
+  cl.get("/api/health").json()["code_perime"] is False)
+cible = Path(server.__file__).parent / "relecture.py"
+avant = cible.stat().st_mtime
+try:
+    os.utime(cible, (time.time() + 600, time.time() + 600))
+    v("un fichier modifié est détecté",
+      cl.get("/api/health").json()["code_perime"] is True)
+finally:
+    os.utime(cible, (avant, avant))
+v("une fois revenu en arrière, plus d'alerte",
+  cl.get("/api/health").json()["code_perime"] is False)
+
 print(f"\n{ok} reussis, {rate} echecs")
 sys.exit(1 if rate else 0)

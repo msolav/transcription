@@ -123,6 +123,29 @@ def index() -> HTMLResponse:
     return HTMLResponse((STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
+def _empreinte_code() -> float:
+    """Date du fichier source le plus récent de l'application.
+
+    Python importe ses modules une fois pour toutes : modifier le code
+    pendant que le serveur tourne ne change rien tant qu'on ne le relance
+    pas. L'interface, elle, est relue du disque à chaque chargement de
+    page — d'où une situation trompeuse où les réglages ont l'air à jour
+    alors que le traitement obéit encore à l'ancien code. Cela s'est
+    produit trois fois en une soirée, avec à chaque fois une demi-heure
+    perdue à chercher la panne ailleurs."""
+    dernier = 0.0
+    for fichier in Path(__file__).parent.glob("*.py"):
+        try:
+            dernier = max(dernier, fichier.stat().st_mtime)
+        except OSError:
+            continue
+    return dernier
+
+
+# Relevée à l'import, donc figée pour la durée de vie du processus.
+_CODE_CHARGE = _empreinte_code()
+
+
 @app.get("/api/health")
 def health() -> dict:
     cles = config.cles_presentes()
@@ -133,6 +156,8 @@ def health() -> dict:
         "cles": cles,
         "relecture": fournisseurs.modele_par_defaut(cles),
         "models_ready": assets.models_ready(),
+        # Vrai quand des fichiers ont changé depuis le démarrage.
+        "code_perime": _empreinte_code() > _CODE_CHARGE + 1.0,
     }
 
 
