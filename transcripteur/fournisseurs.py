@@ -109,10 +109,11 @@ def modele_par_defaut(cles: dict) -> str:
 
 CLES = {
     "anthropic": {"nom": "Claude (Anthropic)", "prefixe": "sk-ant-",
-                  "ou": "console.anthropic.com"},
-    "groq": {"nom": "Groq", "prefixe": "gsk_", "ou": "console.groq.com"},
-    "google": {"nom": "Gemini (Google)", "prefixe": "AIza",
-               "ou": "aistudio.google.com/apikey"},
+                  "ou": "console.anthropic.com", "gratuit": False},
+    "groq": {"nom": "Groq", "prefixe": "gsk_", "ou": "console.groq.com",
+             "gratuit": True},
+    "google": {"nom": "Gemini (Google)", "prefixe": ("AIza", "AQ."),
+               "ou": "aistudio.google.com/apikey", "gratuit": True},
 }
 
 
@@ -177,6 +178,20 @@ def appeler(cle: str, modele: str, systeme: str, requete: str,
     à dépasser le budget d'une minute entière — et la relecture échouait
     sans que rien dans la requête ne paraisse déraisonnable."""
     f = fiche(modele)
+    if not (cle or "").strip():
+        # Sans cette vérification, chaque SDK part chercher ailleurs —
+        # variables d'environnement, identifiants de la machine — et
+        # rapporte une panne d'authentification incompréhensible. Celle de
+        # Google parle d'un « type de jeton non pris en charge », ce qui
+        # n'aide personne à comprendre qu'il manque simplement une clé.
+        fourn = CLES.get(f["fournisseur"], {})
+        nom = fourn.get("nom", f["fournisseur"])
+        ou = fourn.get("ou", "")
+        comment = " gratuite" if fourn.get("gratuit") else ""
+        raise FournisseurError(
+            f"Aucune clé {nom} enregistrée. Ce modèle en demande une"
+            + (f"{comment}, sur {ou}." if ou else ".")
+            + " L'ajouter dans le panneau, ou choisir un autre modèle.")
     sortie = min(plafond or f["sortie"], f["sortie"])
     if f["fournisseur"] == "anthropic":
         return _anthropic(cle, f, systeme, requete, schema, sortie)

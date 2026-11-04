@@ -117,6 +117,33 @@ f.appeler("k", "gemini-flash", "sys", "req")
 v("sans plafond, le maximum du modèle",
   vus.get("sortie") == f.MODELES["gemini-flash"]["sortie"], vus)
 
+# ---- une cle absente se dit, au lieu d'egarer le SDK
+#      Sans ce garde-fou, chaque SDK part chercher ailleurs — variables
+#      d'environnement, identifiants de la machine — et rapporte une
+#      panne d'authentification qui ne nomme jamais la vraie cause.
+for modele in ("gemini-flash", "claude-opus-5-5", "gpt-oss-120b"):
+    for vide in ("", "   ", None):
+        try:
+            f.appeler(vide, modele, "sys", "req")
+            v(f"clé absente refusée ({modele})", False, "aucune erreur")
+            break
+        except f.FournisseurError as exc:
+            msg = str(exc)
+    else:
+        v(f"clé absente refusée ({modele})",
+          "Aucune clé" in msg and "panneau" in msg, msg[:70])
+v("le message ne promet pas une clé gratuite chez un payant",
+  "gratuite" not in str(next(
+      (e for e in [None] if False), None) or ""), "")
+try:
+    f.appeler("", "claude-opus-5-5", "s", "r")
+except f.FournisseurError as exc:
+    v("Claude n'est pas annoncé gratuit", "gratuite" not in str(exc), str(exc)[:70])
+try:
+    f.appeler("", "gemini-flash", "s", "r")
+except f.FournisseurError as exc:
+    v("Gemini est annoncé gratuit", "gratuite" in str(exc), str(exc)[:70])
+
 # ---- la pause est bien reprise, pas fatale
 essais = []
 import time as _t
