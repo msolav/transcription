@@ -64,14 +64,15 @@ MODELES = {
         "nom": "Gemini Flash (gratuit)", "fournisseur": "google",
         "id": "gemini-3.8-flash", "contexte": 1_000_000, "sortie": 32_000,
         "prix": (0.0, 0.0),
-        "note": "Gratuit, et voit la réunion entière d'un coup. "
-                "Peu de requêtes par jour, ce qui suffit largement.",
+        "note": "Plus fin, mais souvent saturé aux heures chargées. "
+                "Essayer Flash Lite s'il refuse.",
     },
     "gemini-flash-lite": {
         "nom": "Gemini Flash Lite (gratuit)", "fournisseur": "google",
         "id": "gemini-3.5-flash-lite", "contexte": 1_000_000, "sortie": 32_000,
         "prix": (0.0, 0.0),
-        "note": "Plus de requêtes par jour, un peu moins fin.",
+        "note": "Gratuit, voit la réunion entière d'un coup, et répond "
+                "de façon fiable. C'est le choix par défaut.",
     },
     # ---- Groq : gratuit, mais par tranches
     "gpt-oss-120b": {
@@ -88,7 +89,12 @@ MODELES = {
     },
 }
 MODELE_DEFAUT = "claude-opus-5-5"
-MODELE_GRATUIT = "gemini-flash"
+# Flash Lite plutôt que Flash : mesuré sur une soirée entière, Flash
+# répond 503 « forte demande » de façon persistante tandis que Lite
+# aboutit à chaque fois. Il offre aussi beaucoup plus de requêtes par
+# jour. Pour un outil remis à une association, aboutir vaut mieux qu'un
+# surcroît de finesse qu'on n'obtient jamais.
+MODELE_GRATUIT = "gemini-flash-lite"
 MODELE_TRANCHES = "gpt-oss-120b"   # le repli quand seule une clé Groq existe
 
 
@@ -330,7 +336,9 @@ def _traduire(exc: Exception) -> Exception:
     # Saturation passagère : les offres gratuites en voient beaucoup.
     if ("503" in texte or "UNAVAILABLE" in texte or "high demand" in texte
             or "overloaded" in texte):
-        return Indisponible("Modèle momentanément saturé.", _secondes(texte) or 20.0)
+        return Indisponible(
+            "Modèle momentanément saturé. Un autre modèle de la liste "
+            "répondra sans doute tout de suite.", _secondes(texte) or 20.0)
     bride = ("429" in texte or "rate_limit" in texte
              or "RESOURCE_EXHAUSTED" in texte)
     if not bride:

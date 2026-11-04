@@ -688,7 +688,7 @@ button { cursor: pointer; border: 0; background: none; }
       <button class="stop" id="stop" hidden>Arrêter le traitement</button>
       <details class="vm-acc">
         <summary data-en="Technical details">Détails techniques</summary>
-        <div class="journal" id="journal"></div>
+        <div class="journal" id="journal" data-no-i18n lang="fr"></div>
       </details>
     </div>
     <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
@@ -915,7 +915,7 @@ button { cursor: pointer; border: 0; background: none; }
     ul.addEventListener('mousedown', e => e.preventDefault());
     addEventListener('pointerdown', e => { if (!w.contains(e.target)) open(false); });
     Object.defineProperty(s, 'value', { get() { return selDesc.get.call(this); }, set(v) { selDesc.set.call(this, v); label(); }, configurable: true });
-    new MutationObserver(() => { label(); if (w.classList.contains('open')) build(); }).observe(s, { childList: true, subtree: true, characterData: true });
+    new MutationObserver(() => { label(); build(); }).observe(s, { childList: true, subtree: true, characterData: true });
     label();
   };
   vm.select = enhance;
@@ -1102,9 +1102,10 @@ button { cursor: pointer; border: 0; background: none; }
         const v = el.getAttribute(a), m = savedAttr.get(el) || {}, s = m[a];
         if (cur === 'en') { if (s && v === s.en) continue; const out = tr(v); if (out != null && out !== v) { m[a] = { fr: v, en: out }; savedAttr.set(el, m); el.setAttribute(a, out); } }
         else if (s && v === s.en) { el.setAttribute(a, s.fr); delete m[a]; } } };
-    const walk = n => { if (n.nodeType === 3) return fixText(n); if (n.nodeType !== 1) return;
+    const walk = n => { if (n.nodeType === 3) return fixText(n); if (n.nodeType !== 1 || n.closest('[data-no-i18n]')) return;
       if (n.hasAttribute('data-en') || [...n.attributes].some(a => a.name.startsWith('data-en-'))) staticEl(n);
-      if (skip(n)) return; fixAttrs(n); for (const c of [...n.childNodes]) walk(c); };
+      fixAttrs(n);                                  // attributes first: a textarea's placeholder must translate even though its content is skipped
+      if (skip(n)) return; for (const c of [...n.childNodes]) walk(c); };
     const statics = () => document.querySelectorAll('[data-en],' + ATTRS.map(a => `[data-en-${a}]`).join(',')).forEach(staticEl);
     const applyAll = () => { if (obs) obs.disconnect(); statics(); walk(document.body); observe(); mark(); };
     const observe = () => { obs = obs || new MutationObserver(recs => { obs.disconnect();
@@ -1444,9 +1445,9 @@ function peindre(parts, garde) {
 
 function comparer(avant, apres) {
   const d = diffMots(avant, apres);
-  return `<div class="cmp" data-no-i18n>
-    <div><span class="cmph">Actuel</span><p>${peindre(d, '-')}</p></div>
-    <div><span class="cmph">Proposé</span><p>${peindre(d, '+')}</p></div>
+  return `<div class="cmp">
+    <div><span class="cmph">Actuel</span><p data-no-i18n>${peindre(d, '-')}</p></div>
+    <div><span class="cmph">Proposé</span><p data-no-i18n>${peindre(d, '+')}</p></div>
   </div>`;
 }
 
@@ -2409,6 +2410,25 @@ vm.lang.add({
     [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`]
   ],
   parts: [
+    [`Entraîné sur VoxCeleb, une centaine de nationalités. Rapide.`, `Trained on VoxCeleb, about a hundred nationalities. Fast.`],
+    [`Même idée, autre équipe, affiné à marge large. Rapide.`, `Same idea, different team, tuned with a wide margin. Fast.`],
+    [`Architecture différente : à essayer quand les CAM++ confondent deux voix.`, `Different architecture: try it when the CAM++ models confuse two voices.`],
+    [`Encore une autre architecture, sur les mêmes données.`, `Yet another architecture, on the same data.`],
+    [`Anglais uniquement, mais réputé solide. Lent et lourd.`, `English only, but known to be solid. Slow and heavy.`],
+    [`Version légère du précédent.`, `Lightweight version of the previous one.`],
+    [`L'ancien réglage par défaut. Correct en anglais, jamais pensé pour le français.`, `The former default. Fine in English, never designed for French.`],
+    [`Mandarin uniquement. Trois fois plus lent, sans avantage hors chinois.`, `Mandarin only. Three times slower, with no advantage outside Chinese.`],
+    [`Mandarin, sur des enregistrements variés.`, `Mandarin, on varied recordings.`],
+    [`Enlève le souffle sans toucher au timbre. C'est ce qui a donné la meilleure séparation dans nos mesures, et c'est presque instantané.`, `Removes hiss without touching the voice's character. It gave the best separation in our measurements, and it is almost instant.`],
+    [`Nettoie beaucoup plus, mais a fait disparaître une voix sur trois dans notre enregistrement d'essai. À réserver à un son très dégradé, et à vérifier en écoutant les extraits.`, `Cleans much more, but made one voice in three disappear in our test recording. Keep it for very poor audio, and check by listening to the samples.`],
+    [`Encore plus agressif, avec le même risque de confondre deux personnes. Deux fois plus lent que le précédent.`, `Even more aggressive, with the same risk of merging two people. Twice as slow as the previous one.`],
+    [`Le plus capable. Voit la réunion entière d'un coup.`, `The most capable. Sees the whole meeting at once.`],
+    [`Deux fois moins cher qu'Opus, même contexte.`, `Half the price of Opus, same context.`],
+    [`Quelques centimes par réunion.`, `A few cents per meeting.`],
+    [`Gratuit, et voit la réunion entière d'un coup. Peu de requêtes par jour, ce qui suffit largement.`, `Free, and sees the whole meeting at once. Few requests per day, which is plenty.`],
+    [`Plus de requêtes par jour, un peu moins fin.`, `More requests per day, slightly less fine-grained.`],
+    [`Gratuit, par tranches de dix blocs. Quota quotidien.`, `Free, in slices of ten blocks. Daily quota.`],
+    [`Gratuit et rapide, un peu moins sûr.`, `Free and fast, slightly less reliable.`],
     [/\bMultilingue\b/g, 'Multilingual'], [/\bAnglais\b/g, 'English'], [/\bChinois\b/g, 'Chinese'], [/\banglais\b/g, 'English'],
     ['(grand)', '(large)'], ['(petit)', '(small)'], [/\bTrès fort\b/g, 'Very strong'], [/\bFort\b/g, 'Strong'], [/\bLéger\b/g, 'Light'],
     [/\(gratuite?\)/g, '(free)'], [/ Environ (\d+[.,]\d)× le temps de calcul du plus rapide\./g, ' About $1× the compute time of the fastest.'],
