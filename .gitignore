@@ -14,3 +14,8 @@ __pycache__/
 # Clé Groq : elle vit dans ~/.transcripteur.json, jamais ici.
 # Cette ligne est un garde-fou si quelqu'un la déplace un jour.
 .transcripteur.json
+
+# Empaquetage
+/build/
+/dist/
+*.part

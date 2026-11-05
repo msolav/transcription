@@ -18,10 +18,42 @@ from __future__ import annotations
 import json
 import os
 import stat
+import tempfile
 from pathlib import Path
 
 CONFIG_PATH = Path.home() / ".transcripteur.json"
 SERVICE = "transcripteur"
+
+# ------------------------------------------------------------------ vierge
+#
+# Sur le poste où l'on écrit le programme, les clés sont là depuis des
+# mois : dans le trousseau, et souvent aussi dans une variable
+# d'environnement du shell. Le premier écran — celui qui explique où
+# prendre une clé et comment la coller — ne s'affiche donc plus jamais.
+# C'est précisément l'écran que personne d'autre ne peut éviter, et le
+# seul qu'on ne peut pas relire par-dessus l'épaule de quelqu'un.
+#
+# TRANSCRIPTEUR_VIERGE=1 fait oublier au programme tout ce qu'il sait :
+# les variables d'environnement sont ignorées, le trousseau du système
+# n'est ni lu ni écrit, et les clés saisies pendant la simulation vont
+# dans un fichier jetable. Le trousseau réel ressort intact — une
+# simulation qui effacerait la vraie clé en coûterait une rotation.
+def en_simulation() -> bool:
+    """Relu à chaque appel, pour qu'un essai puisse basculer le mode."""
+    return os.environ.get("TRANSCRIPTEUR_VIERGE", "").strip() not in ("", "0")
+
+
+def bacen_simulation() -> Path:
+    return Path(tempfile.gettempdir()) / "transcripteur-simulation.json"
+
+
+def oublier_simulation() -> None:
+    """Remet la simulation à zéro, sans toucher au trousseau réel."""
+    bacen_simulation().unlink(missing_ok=True)
+
+
+def _fichier() -> Path:
+    return bacen_simulation() if en_simulation() else CONFIG_PATH
 
 # Par fournisseur : la variable d'environnement d'usage, la clé héritée
 # dans l'ancien fichier, et le préfixe attendu.
@@ -42,12 +74,16 @@ FOURNISSEURS = {
 
 def _load() -> dict:
     try:
-        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        return json.loads(_fichier().read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001
         return {}
 
 
 def _trousseau():
+    # En simulation, on rend None : le trousseau n'est alors ni interrogé
+    # ni modifié, ce qui met les vraies clés hors d'atteinte.
+    if en_simulation():
+        return None
     try:
         import keyring
         return keyring
@@ -67,7 +103,7 @@ def source_cle(fournisseur: str) -> str:
     fiche = FOURNISSEURS.get(fournisseur)
     if not fiche:
         return ""
-    if os.environ.get(fiche["env"], "").strip():
+    if not en_simulation() and os.environ.get(fiche["env"], "").strip():
         return "environnement"
     kr = _trousseau()
     if kr:
@@ -77,7 +113,7 @@ def source_cle(fournisseur: str) -> str:
         except Exception:  # noqa: BLE001
             pass
     if (_load().get(fiche["ancien"]) or "").strip():
-        return "fichier"
+        return "simulation" if en_simulation() else "fichier"
     return ""
 
 
@@ -86,7 +122,7 @@ def get_key(fournisseur: str = "groq") -> str:
     fiche = FOURNISSEURS.get(fournisseur)
     if not fiche:
         return ""
-    depuis_env = os.environ.get(fiche["env"], "").strip()
+    depuis_env = "" if en_simulation() else os.environ.get(fiche["env"], "").strip()
     if depuis_env:
         return depuis_env
     kr = _trousseau()
@@ -111,11 +147,12 @@ def set_key(key: str, fournisseur: str = "groq") -> None:
             pass
     # Sans trousseau disponible, on retombe sur le fichier, en le
     # réservant à son propriétaire.
+    cible = _fichier()
     data = _load()
     data[FOURNISSEURS[fournisseur]["ancien"]] = key
-    CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    cible.write_text(json.dumps(data, indent=2), encoding="utf-8")
     try:
-        CONFIG_PATH.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        cible.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except OSError:
         pass
 
@@ -129,7 +166,7 @@ def clear_key(fournisseur: str = "groq") -> None:
             pass
     data = _load()
     if data.pop(FOURNISSEURS.get(fournisseur, {}).get("ancien", ""), None) is not None:
-        CONFIG_PATH.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        _fichier().write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def cles_presentes() -> dict:
@@ -158,40 +195,76 @@ def migrer_vers_trousseau() -> list[str]:
     return deplacees
 
 
-def check_key(key: str, fournisseur: str = "groq") -> str | None:
-    """None si la clé fonctionne, sinon le message à afficher."""
+def check_key(key: str, fournisseur: str = "groq",
+              langue: str = "fr") -> str | None:
+    """None si la clé fonctionne, sinon le message à afficher.
+
+    Bilingue, parce que ces messages-là sont les premiers que quelqu'un
+    voit : refuser une clé en français à quelqu'un qui a mis l'interface
+    en anglais, c'est le laisser devant le seul écran qu'il ne peut pas
+    franchir. Le reste de l'application peut se traduire plus tard ; pas
+    celui-ci."""
+    def dit(fr: str, en: str) -> str:
+        return en if langue == "en" else fr
+
     key = key.strip()
     fiche = FOURNISSEURS.get(fournisseur)
     if not fiche:
-        return "Fournisseur inconnu."
+        return dit("Fournisseur inconnu.", "Unknown provider.")
     if not key:
-        return "Clé vide."
+        return dit("Clé vide.", "Empty key.")
     attendus = fiche["prefixe"]
     attendus = attendus if isinstance(attendus, tuple) else (attendus,)
     if not key.startswith(attendus):
-        return (f"Une clé {fiche['nom']} commence par "
-                + " ou ".join(attendus) + ". Vérifie ce que tu as collé.")
+        debuts = " ou ".join(attendus) if langue != "en" else " or ".join(attendus)
+        return dit(
+            f"Une clé {fiche['nom']} commence par {debuts}. Vérifie ce que "
+            f"tu as collé : c'est peut-être la clé d'un autre service.",
+            f"A {fiche['nom']} key starts with {debuts}. Check what you "
+            f"pasted — it may be the key for another service.")
+    # Chaque client est retenu dans une variable le temps de l'appel. Un
+    # client construit dans l'expression même est ramassé avant que la
+    # requête n'aboutisse, et le SDK répond « Cannot send a request, as
+    # the client has been closed ». Ce n'est pas une subtilité de style :
+    # écrit ainsi, le contrôle de la clé Gemini échouait toujours, donc
+    # aucune clé Gemini ne pouvait être enregistrée — valide ou non.
     try:
         if fournisseur == "groq":
             from groq import Groq
-            Groq(api_key=key).models.list()
+            client = Groq(api_key=key)
+            client.models.list()
         elif fournisseur == "google":
             from google import genai
-            genai.Client(api_key=key).models.generate_content(
+            client = genai.Client(api_key=key)
+            client.models.generate_content(
                 model="gemini-3.5-flash-lite", contents="ok")
         else:
             import anthropic
             # Un appel minuscule : c'est la seule façon de distinguer une
             # clé refusée d'une clé simplement mal recopiée.
-            anthropic.Anthropic(api_key=key).messages.create(
+            client = anthropic.Anthropic(api_key=key)
+            client.messages.create(
                 model="claude-haiku-5-5", max_tokens=1,
                 messages=[{"role": "user", "content": "ok"}])
     except Exception as exc:  # noqa: BLE001
+        from . import fournisseurs
         message = str(exc)
-        if "401" in message or "invalid_api_key" in message or "authentication" in message:
-            return f"Clé refusée par {fiche['nom']}."
+        if fournisseurs.auth_echouee(message):
+            return dit(
+                f"Clé refusée par {fiche['nom']}. Recopie-la depuis "
+                f"{fiche['ou']} — une espace restée au bout suffit à la "
+                f"casser. Si tu l'as supprimée là-bas, il faut en créer "
+                f"une autre.",
+                f"Key refused by {fiche['nom']}. Copy it again from "
+                f"{fiche['ou']} — one space left on the end is enough to "
+                f"break it. If you deleted it there, you need to make a "
+                f"new one.")
         if "credit" in message.lower() or "billing" in message.lower():
-            return (f"Clé valide, mais le compte {fiche['nom']} n'a pas de crédit. "
-                    "Ajouter du crédit, ou choisir un modèle gratuit.")
-        return f"Vérification impossible : {message}"
+            return dit(
+                f"Clé valide, mais le compte {fiche['nom']} n'a pas de "
+                "crédit. Y déposer du crédit, ou choisir un modèle gratuit.",
+                f"The key is valid, but the {fiche['nom']} account has no "
+                "credit. Add credit there, or choose a free model.")
+        return dit(f"Vérification impossible : {message}",
+                   f"Could not verify: {message}")
     return None
