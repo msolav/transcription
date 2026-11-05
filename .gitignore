@@ -19,3 +19,6 @@ __pycache__/
 /build/
 /dist/
 *.part
+
+# Le site est fabriqué, pas écrit à la main
+/site/
