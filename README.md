@@ -1,12 +1,51 @@
 # Transcripteur
 
-Transcrit un enregistrement et sépare les voix. Dépose un fichier, écoute
-chaque voix détectée, donne-lui un nom, récupère le texte.
+Transcrit un enregistrement — audio ou vidéo — et sépare les voix. Dépose
+un fichier, écoute chaque voix détectée, donne-lui un nom, récupère le
+texte. Une vidéo se relit sous-titrée dans la page.
 
 ## Démarrage
 
+### L'application installée
+
+La façon normale, pour qui ne veut rien savoir de Python.
+
+**macOS** — décompresser, glisser `Transcripteur.app` dans Applications.
+À la première ouverture : clic droit sur l'application, **Ouvrir**, puis
+**Ouvrir** de nouveau. Une seule fois. L'application n'est pas signée —
+signer demande un compte Apple à 99 $ US par an — et macOS prévient
+toujours dans ce cas.
+
+**Windows** — décompresser le dossier où l'on veut, lancer
+`Transcripteur.exe`. Si l'écran bleu « Windows a protégé votre
+ordinateur » apparaît : **Informations complémentaires**, puis
+**Exécuter quand même**. Une seule fois également.
+
+L'application s'ouvre dans sa propre fenêtre, sans barre d'adresse et
+sans fenêtre noire à côté. Au premier démarrage elle télécharge une
+trentaine de mégaoctets de modèles, pendant qu'on branche sa clé.
+
+Les paquets se construisent tout seuls à partir d'une étiquette de
+version (`git tag v1.0 && git push --tags`) : voir
+`.github/workflows/paquets.yml`. Localement :
+
+```
+pip install pyinstaller
+pyinstaller --noconfirm Transcripteur.spec
+python outils/eprouver_paquet.py      # le paquet démarre-t-il vraiment
+```
+
+### Depuis les sources
+
 **macOS / Linux** : double-clique sur `Demarrer.command`
 **Windows** : double-clique sur `Demarrer.bat`
+
+Ou, si Python est déjà là :
+
+```
+python lancer.py            la fenêtre, comme l'application installée
+python -m transcripteur     le serveur et le navigateur, avec les options
+```
 
 Le premier lancement installe ce qu'il faut et télécharge 34 Mo de modèles.
 Compte deux ou trois minutes. Les suivants démarrent en quelques secondes.
@@ -21,21 +60,49 @@ seule fois. Si le fichier s'ouvre dans un éditeur de texte au lieu de se
 lancer, ouvre le Terminal, tape `chmod +x ` (avec l'espace), glisse le
 fichier dedans, Entrée, puis double-clique.
 
-## La clé Groq
+## Les clés
 
-À la première ouverture, la page demande une clé. Elle est gratuite :
+L'outil fait deux métiers, et chacun passe par un service différent.
+**Groq** écoute l'enregistrement et écrit ce qui a été dit : sa clé est
+obligatoire, elle est gratuite et ne demande pas de carte bancaire.
+**Une IA**, Gemini par défaut, lit ce texte et en tire un compte rendu :
+sa clé est facultative, gratuite elle aussi. Sans elle on obtient le
+texte brut, ce qui suffit à qui rédige lui-même.
 
-1. https://console.groq.com/keys
-2. Connexion par Google ou e-mail, sans carte bancaire
-3. **Create API Key**, copier, coller dans la page
+À la première ouverture, la page déroule les deux étapes dans l'ordre et
+vérifie chaque clé au moment où elle est collée. Pour en changer plus
+tard : **Clés et services**, au bas de la page.
 
-Elle est enregistrée dans `~/.transcripteur.json` et n'est plus redemandée.
+La marche à suivre complète, en français et en anglais, est servie à
+l'adresse `/aide` pendant que le programme tourne. C'est une page
+autonome : elle s'enregistre, s'envoie par courriel et s'ouvre sans
+serveur — utile pour quelqu'un qui n'a encore rien installé. Pour en
+écrire une copie sans lancer le programme :
+
+```
+python -m transcripteur.guide > aide.html
+```
+
+Un abonnement Claude Pro ou ChatGPT Plus ne donne pas de clé d'API : ce
+sont deux produits distincts, avec deux factures distinctes. Il n'y a
+rien à acheter pour se servir de cet outil.
 
 ## Ce qui part sur le réseau, et ce qui reste
 
 La séparation des voix tourne entièrement sur la machine. Seul l'audio
-compressé en MP3 mono part chez Groq pour la reconnaissance de la parole.
-Rien n'est conservé après la fermeture du programme.
+compressé en MP3 mono part chez Groq pour la reconnaissance de la parole,
+et le texte chez l'IA choisie si l'on demande un compte rendu. Rien n'est
+conservé après la fermeture du programme.
+
+Les clés vont dans le trousseau du système — Trousseau d'accès sur macOS,
+Gestionnaire d'identifiants sur Windows — et non dans un fichier du
+dossier personnel : une clé d'API est un moyen de paiement, elle n'a pas
+sa place en clair dans un JSON que la moindre sauvegarde recopie. Une
+variable d'environnement (`GROQ_API_KEY`, `GEMINI_API_KEY`,
+`ANTHROPIC_API_KEY`) l'emporte sur le trousseau, ce qui est commode pour
+un essai et piégeux ensuite : une clé révoquée oubliée dans un shell
+continue d'être envoyée à la place de la bonne. Le message de refus dit
+d'où venait la clé qu'il a reçue.
 
 ## Si Python manque
 
@@ -247,9 +314,97 @@ donner, un résumé bref ou une synthèse par thème. La consigne interdit
 d'inventer une décision qui ne figure pas dans l'échange, et demande de
 signaler ce qui est resté ambigu plutôt que de trancher.
 
+## Vidéo et sous-titres
+
+Une vidéo se dépose comme un audio : seule la bande-son est traitée,
+l'image est ignorée par la transcription. mp4, mov, m4v, mkv, webm, avi
+et quelques autres.
+
+Une fois le texte écrit, la vidéo se relit dans un cadre au-dessus du
+lecteur, sous-titrée. Le cadre a quatre boutons : couper les sous-titres,
+afficher ou non le nom des voix, agrandir, passer en plein écran. La
+barre de lecture, « Suivre » et les flèches du document commandent la
+vidéo comme elles commandaient l'audio.
+
+Les sous-titres s'enregistrent en `.srt` sous deux formes, depuis
+**Enregistrer** : sans les noms, et avec le nom de la voix en tête de
+réplique. Le nom reparaît toutes les trente secondes dans un tour long,
+pour qui arrive en cours de route.
+
+Ils ne sont pas découpés sur les tours de parole : un tour de réunion
+dure couramment deux minutes, ce qui donnerait un pavé immobile à
+l'écran. Ils sont retaillés depuis les horodatages des mots, deux lignes
+de quarante-deux caractères au plus, une seconde au moins à l'écran et
+six au plus, en coupant de préférence sur une fin de phrase, sinon sur
+un silence, sinon sur une virgule. Une réplique ne franchit jamais un
+changement de voix.
+
+Un transcript rouvert depuis un export ancien, sans horodatage des mots,
+ne peut pas être sous-titré : répartir le texte au prorata des
+caractères donnerait des sous-titres d'aspect normal et faux de
+plusieurs secondes. L'outil refuse plutôt que de les fabriquer.
+
+Un format de vidéo que le navigateur ne sait pas afficher — `.wmv`,
+`.flv` — se transcrit quand même : seule l'image manque, et le cadre le
+dit.
+
+## Ce que le programme retient
+
+Il ne retenait rien : fermer la fenêtre noire effaçait tout, et garder
+une réunion voulait dire penser à enregistrer un `.json`, savoir où il
+était allé, et le rouvrir à la main.
+
+Maintenant les séances restent. Sous la zone de dépôt, la liste des
+transcriptions passées : la date, la durée, le nombre de voix, la place
+occupée. **Rouvrir** rend le texte, les noms donnés aux voix, la
+relecture et — si l'enregistrement est encore là — l'aperçu vidéo et la
+possibilité de séparer les voix après coup. Rien n'est recalculé et rien
+n'est repayé.
+
+Les réglages de la dernière transcription reviennent d'eux-mêmes :
+langue, nombre de voix, modèle, nettoyage du son. Personne n'en change
+d'une réunion à l'autre.
+
+**Jeter le son** libère de la place en gardant le texte — les
+transcripts ne pèsent rien, les enregistrements pèsent tout.
+**Supprimer** efface la séance et ses fichiers, en deux clics.
+
+Tout cela vit dans un fichier SQLite et un dossier de séances, à
+l'endroit où le système range les données d'une application :
+
+| | |
+|---|---|
+| macOS | `~/Library/Application Support/Transcripteur` |
+| Windows | `%APPDATA%\Transcripteur` |
+| Linux | `~/.local/share/transcripteur` ou `$XDG_DATA_HOME` |
+
+`TRANSCRIPTEUR_DONNEES=/un/autre/chemin` les met ailleurs — un disque
+externe, un dossier synchronisé.
+
+Pas de compte, pas de mot de passe, pas de serveur. Ce qu'un compte
+retiendrait ne concerne que cette machine, et le demander à un serveur
+reviendrait à tenir un registre de qui transcrit quoi.
+
+## Voir ce que voit quelqu'un d'autre
+
+Sur la machine où l'outil a été installé, les clés sont là depuis
+longtemps : l'écran qui explique où en prendre une ne s'affiche plus
+jamais, alors que c'est le seul que personne d'autre ne peut éviter.
+
+```
+python -m transcripteur --simulation
+```
+
+Le programme démarre comme chez quelqu'un qui vient de l'installer :
+aucune clé connue, les variables d'environnement ignorées, le trousseau
+du système ni lu ni écrit. Un bandeau le rappelle en haut de la page.
+Les clés saisies pendant la simulation vont dans un fichier jetable, que
+`--oublier-simulation` efface. Les vraies clés ne sont jamais touchées.
+
 ## Formats et limites
 
-m4a, mp3, wav, flac, ogg, mp4, mov. Jusqu'à 2 Go.
+m4a, mp3, wav, flac, ogg, aiff, opus — et côté vidéo mp4, mov, m4v, mkv,
+webm, avi, mpg, wmv, flv, ts, 3gp. Jusqu'à 2 Go.
 
 Les fichiers longs sont découpés automatiquement avant l'envoi, et les
 horodatages sont recalés sur la ligne de temps complète.
@@ -296,8 +451,10 @@ séparé de son « À ») pour une réplique à part entière.
 
 ## Sorties
 
-Texte brut, sous-titres `.srt` avec le nom du locuteur, et `.json` avec les
-mots horodatés pour retraiter ailleurs.
+Texte brut, sous-titres `.srt` — avec ou sans le nom des voix — et
+`.json` avec les mots horodatés pour retraiter ailleurs. Les mêmes
+sous-titres sont servis en WebVTT sur
+`/api/jobs/<id>/soustitres.vtt?noms=1`, pour un lecteur extérieur.
 
 ## Pour les curieux
 
