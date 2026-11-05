@@ -1,33 +1,26 @@
 /* ============================================================
-   Brancher les services : la marche à suivre pour les clés.
+   L'écran des clés : un pas par fenêtre.
+   ============================================================
 
-   Pourquoi ce travail vit dans un fichier à part plutôt que dans
-   index.html. L'interface est en cours de refonte par ailleurs, et une
-   première version de cet écran, écrite dedans, a été effacée par une
-   réécriture du fichier quelques minutes plus tard. Ici, la surface de
-   collision est nulle : le serveur ajoute lui-même la balise qui charge
-   ce fichier, donc même une réécriture complète de la page ne fait rien
-   perdre.
+   Ce que remplace ce fichier : une page dense — quatre étapes en liste
+   numérotée, un champ, deux notes, un lien vers une page plus longue
+   encore. Tout y était vrai et rien n'y était faisable, parce qu'on
+   demandait à quelqu'un qui n'a jamais vu de clé d'API de lire d'abord
+   et d'agir ensuite.
 
-   Ce fichier est un script classique, chargé après celui de la page. Il
-   voit donc ses déclarations de premier niveau — `$`, `api`,
-   `escapeHtml`, `ready`, `vm` — et peut remplacer `askForKey`, qui est
-   une fonction globale. Rien n'est importé, rien n'est exporté.
+   Ici, une seule chose par écran : une phrase, un geste, et un bouton
+   « i » pour qui veut savoir pourquoi. Le reste du parcours est une
+   barre fine qui se remplit. On peut toujours revenir.
 
-   Ce qu'il remplace, et pourquoi. L'écran d'origine ne demandait que la
-   clé Groq, celle qui transcrit. La seconde clé, celle de l'IA qui
-   rédige le compte rendu, n'était accessible que par un lien dans une
-   note du panneau de relecture : l'outil demandait donc à chacun de
-   deviner tout seul qu'il lui fallait un second service, lequel, et
-   comment l'obtenir. C'était le trou le plus sérieux pour quelqu'un à
-   qui on remet l'outil sans pouvoir s'asseoir à côté de lui.
+   Ce fichier vit hors de index-vm.html, qui est engendré : une première
+   version de cet écran, écrite dans la page, a disparu à la
+   régénération suivante, sans erreur et sans trace.
 
-   Le texte des consignes vient du serveur (/api/guide) et non d'ici. Il
-   doit paraître à trois endroits — cet écran, la page autonome /aide
-   qu'on envoie par courriel à quelqu'un qui n'a encore rien installé,
-   et le README — et trois copies divergent en une semaine. Le serveur
-   le rend déjà dans la langue demandée, ce qui nous dispense en plus de
-   faire passer une vingtaine de phrases par le dictionnaire de vm.lang.
+   Il emprunte à la page `$`, `api`, `escapeHtml`, `ready`, `vm`, et
+   remplace `askForKey`. Les textes ne sont pas écrits ici : ils
+   viennent de guide.py par /api/guide, dans la langue demandée. Trois
+   copies d'une marche à suivre divergent en une semaine, et c'est la
+   copie que lit le débutant qui fait le plus de dégâts.
    ============================================================ */
 
 (function () {
@@ -38,294 +31,480 @@
     : String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;',
       '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]));
 
-  /* La feuille de style voyage avec l'écran, pour la même raison que le
-     reste : ne pas disputer le même <style> à deux mains. Elle n'invente
-     pas de couleurs, elle emprunte les variables de la page. */
+  // Sortir : 360 ms, entrer : 440 ms. Ensemble, les 700 à 900 ms de la
+  // charte — assez pour qu'on voie le mouvement, trop court pour qu'on
+  // l'attende.
+  const SORTIE = 360, ENTREE = 440;
+
   const CSS = `
-.setup h2 { margin: 0 0 6px; font: 800 clamp(1.5rem,2.6vw,2.1rem)/1.1 var(--vm-font-display, inherit); letter-spacing: -.03em; }
-.setup .role { font-size: 1.0625rem; color: var(--vm-mute, #6b7280); margin: 0 0 20px; }
-.setup .etiq { display: inline-block; font: 700 .6875rem/1 var(--vm-font-mono, ui-monospace, Menlo, monospace); letter-spacing: .1em; text-transform: uppercase; padding: .5em .6em .45em; border: 1px solid var(--vm-ink, currentColor); margin: 0 0 16px; }
-.setup .etiq.oblig { background: var(--vm-ink, currentColor); color: var(--vm-paper, #fff); }
-.setup .etiq.libre { border-color: var(--vm-accent, #2563eb); color: var(--vm-accent, #2563eb); }
-.setup ol.pas { margin: 18px 0 10px; }
-.setup ol.pas li { margin-bottom: 6px; }
-.setupnav { display: flex; align-items: center; gap: 12px; font: 700 .75rem/1 var(--vm-font-mono, ui-monospace, Menlo, monospace); letter-spacing: .12em; text-transform: uppercase; color: var(--vm-mute, #6b7280); margin: 0 0 26px; }
-.setupnav i { display: block; width: 26px; height: 3px; background: currentColor; opacity: .22; transition: opacity .5s var(--vm-ease, ease); }
-.setupnav i.on { opacity: 1; color: var(--vm-accent, #2563eb); }
-.setupaside { display: flex; gap: 20px; flex-wrap: wrap; align-items: center; margin-top: 24px; font-size: .9375rem; }
-.setupaside button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--vm-mute, #6b7280); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; transition: color .35s var(--vm-ease, ease); }
-.setupaside button:hover { color: var(--vm-accent, #2563eb); }
-.setupmenu { list-style: none; padding: 0; margin: 14px 0 0; border-top: 1px solid var(--vm-ink, currentColor); }
-.setupmenu li { border-bottom: 1px solid var(--vm-mute, #6b7280); }
-.setupmenu button { display: flex; width: 100%; gap: 16px; align-items: baseline; flex-wrap: wrap; text-align: left; background: none; border: 0; padding: 20px 2px; color: inherit; cursor: pointer; font: inherit; transition: padding-left .4s var(--vm-ease, ease), color .4s var(--vm-ease, ease); }
-.setupmenu button:hover { padding-left: 10px; color: var(--vm-accent, #2563eb); }
-.setupmenu .nom { font: 800 1.125rem var(--vm-font-display, inherit); letter-spacing: -.02em; }
-.setupmenu .quoi { flex: 1; min-width: 12ch; color: var(--vm-mute, #6b7280); }
-.setupmenu .etat { font: 700 .75rem/1 var(--vm-font-mono, ui-monospace, Menlo, monospace); letter-spacing: .1em; text-transform: uppercase; color: var(--vm-mute, #6b7280); white-space: nowrap; }
-.setupmenu .etat.oui { color: var(--vm-accent, #2563eb); }
+.setup { display: flex; flex-direction: column; }
+.setupbar { position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: color-mix(in oklab, var(--vm-ink) 12%, transparent); }
+.setupbar i { display: block; height: 100%; background: var(--vm-accent);
+  transform-origin: left center; transform: scaleX(var(--part, 0));
+  transition: transform .8s var(--vm-ease); }
+.setuptop { position: absolute; top: 14px; right: var(--pad); z-index: 2;
+  font: 500 .7rem/1 var(--vm-font-mono); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--vm-mute); }
+
+/* L'écran qui glisse. Rien d'autre ne bouge : la barre, le compteur et
+   le bouton Retour restent en place d'un pas à l'autre, sinon le regard
+   les suit au lieu de lire. */
+.ecran { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 14px; max-width: 640px; opacity: 1; translate: 0 0;
+  transition: opacity ${SORTIE}ms var(--vm-ease), translate ${SORTIE}ms var(--vm-ease); }
+.ecran.part { opacity: 0; translate: -24px 0; }
+.ecran.vient { opacity: 0; translate: 24px 0; transition: none; }
+
+.etiq { font: 700 .7rem/1 var(--vm-font-mono); letter-spacing: .14em;
+  text-transform: uppercase; color: var(--vm-mute); }
+.etiq.oblig { color: var(--vm-accent); }
+.geste { font: 300 clamp(1.2rem, 2.6vw, 1.75rem)/1.25 var(--vm-font-display, inherit);
+  margin: 0; max-width: 22em; }
+.gros { font: 600 1rem/1 var(--vm-font-display, inherit); letter-spacing: -.01em;
+  padding: 1rem 1.5rem; border: 0; cursor: pointer; color: var(--tr-on-accent, #fff);
+  background: var(--vm-accent); transition: filter .4s var(--vm-ease-out); }
+.gros:hover { filter: brightness(1.12); }
+.discret { font: 400 .92rem/1 inherit; color: var(--vm-mute);
+  background: none; border: 0; padding: 4px 0; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; }
+.discret:hover { color: var(--vm-accent); }
+.pastilles { display: flex; gap: 12px; flex-wrap: wrap; }
+.pastille { flex: 1 1 15rem; text-align: left; padding: 1rem 1.2rem; cursor: pointer;
+  background: none; color: inherit; font: inherit;
+  border: 1px solid color-mix(in oklab, var(--vm-ink) 22%, transparent);
+  transition: border-color .4s var(--vm-ease-out), background .4s var(--vm-ease-out); }
+.pastille:hover { border-color: var(--vm-accent);
+  background: color-mix(in oklab, var(--vm-accent) 7%, transparent); }
+.pastille b { display: block; font: 800 1.15rem/1.1 var(--vm-font-display, inherit); }
+.pastille span { color: var(--vm-mute); font-size: .92rem; }
+.pastille em { font-style: normal; color: var(--vm-accent); font: 700 .68rem var(--vm-font-mono);
+  letter-spacing: .12em; text-transform: uppercase; display: block; margin-bottom: 4px; }
+.etat-oui { color: var(--tr-ok, #2c7a3f); }
 `;
+
   function styler() {
-    if (document.getElementById('branchementcss')) return;
+    if (document.getElementById('tr-setup-css')) return;
     const s = document.createElement('style');
-    s.id = 'branchementcss';
+    s.id = 'tr-setup-css';
     s.textContent = CSS;
     document.head.appendChild(s);
   }
 
-  let guide = null, guideLangue = null;
+  let guide = null;
 
   async function charger() {
+    if (guide) return guide;
     const lg = (window.vm && vm.lang ? vm.lang.get() : 'fr');
-    if (guide && guideLangue === lg) return guide;
-    const d = await api('/api/guide?langue=' + lg);
-    guideLangue = lg;
-    guide = d;
-    return d;
+    guide = await api('/api/guide?langue=' + lg);
+    return guide;
   }
 
-  /* `assistant` vrai au premier lancement : les clés se suivent, et la
-     dernière recharge la page. Faux quand on revient par le socle : on
-     montre le sommaire, et on y retourne après chaque enregistrement. */
-  const etat = { assistant: true, pas: 0, presentes: {} };
+  /* `file` est la suite d'écrans à traverser, `i` celui qu'on regarde.
+     Elle se construit au départ et se complète en route : répondre
+     « oui » à « ajouter l'IA ? » y insère quatre pas de plus, ce qui
+     allonge la barre de progrès au lieu de la faire mentir. */
+  const etat = { file: [], i: 0, presentes: {}, sommaire: false };
+
+  function pasDe(c, option) {
+    return c.etapes.map((e, n) => ({ type: 'pas', c, n, e, option }));
+  }
+
+  function construire(o) {
+    const cles = guide.cles;
+    const groq = cles.find(c => c.id === 'groq') || cles[0];
+    if (o.sommaire) return [{ type: 'sommaire' }];
+    const f = [{ type: 'intro' }];
+    if (!etat.presentes.groq) f.push(...pasDe(groq));
+    f.push({ type: 'offre' });
+    return f;
+  }
 
   async function ouvrir(options) {
     styler();
+    const o = options || {};
     const dock = $('#dock');
     if (dock) dock.hidden = false;
+
     let d = null;
     try { d = await charger(); } catch (e) { d = null; }
     if (!d) {
-      $('#stage-area').innerHTML = `<div class="setup"><h1>${L(
-        'Serveur injoignable', 'Server unreachable')}</h1><p>${L(
-        "La page n'a pas pu lire la marche à suivre. Vérifie que la fenêtre "
-        + 'noire du programme est toujours ouverte, puis recharge cette page.',
-        'The page could not load the setup instructions. Check that the '
-        + "program's black window is still open, then reload this page.")
-      }</p></div>`;
+      $('#stage-area').innerHTML = `<div class="setup"><h2>${L(
+        'Serveur injoignable', 'Server unreachable')}</h2><p class="geste">${L(
+        "Cette page n'a pas pu lire la marche à suivre. Vérifier que la "
+        + 'fenêtre noire du programme est toujours ouverte, puis recharger.',
+        'This page could not load the setup instructions. Check that the '
+        + "program's black window is still open, then reload.")}</p></div>`;
       return;
     }
+
     let h = null;
     try { h = await api('/api/health'); } catch (e) { h = null; }
-    const o = options || {};
     etat.presentes = (h && h.cles) || {};
-    /* Trois façons d'arriver ici. `sommaire` depuis le socle, pour
-       changer une clé. `assistant` pour redérouler les étapes dans
-       l'ordre même quand les clés sont déjà là — c'est ce qui permet de
-       refaire la marche à suivre avec quelqu'un au téléphone, et de la
-       vérifier sans vider son trousseau. Sinon, l'état décide : pas de
-       clé Groq, donc premier lancement. */
-    etat.assistant = o.assistant === true
-      || (!o.sommaire && !etat.presentes.groq);
-    etat.pas = 0;
-    peindre();
+    etat.sommaire = o.sommaire === true
+      || (o.assistant !== true && etat.presentes.groq && !o.service);
+
+    if (o.service) {
+      const c = d.cles.find(x => x.id === o.service);
+      etat.file = c ? [...pasDe(c, !c.requis), { type: 'fini', retour: true }]
+        : [{ type: 'sommaire' }];
+    } else {
+      etat.file = construire({ sommaire: etat.sommaire });
+    }
+    etat.i = 0;
+    cadre();
+    peindre(0);
   }
 
-  function peindre() {
-    if (!guide) return;
-    if (!etat.assistant) return sommaire();
-    /* L'assistant ne propose que les deux clés gratuites. Claude demande
-       une carte bancaire : le mettre sur le chemin du premier lancement
-       laisserait croire qu'il faut payer pour commencer, ce qui est faux
-       et suffirait à faire reposer l'outil. */
-    const suite = guide.cles.filter(c => c.requis || c.recommande);
-    const c = suite[etat.pas];
-    if (!c) { location.reload(); return; }
-    ecran(c, {
-      rang: etat.pas + 1,
-      total: suite.length,
-      apres: () => {
-        etat.pas += 1;
-        if (etat.pas >= suite.length) location.reload();
-        else peindre();
-      },
-    });
-  }
-
-  /* Le sommaire : ce qui est branché, ce qui ne l'est pas, et de quoi
-     changer n'importe laquelle sans traverser les autres. */
-  function sommaire() {
-    const lignes = guide.cles.map(c => {
-      const oui = !!etat.presentes[c.id];
-      const etiquette = oui ? L('branché', 'connected')
-        : c.requis ? L('manquante', 'missing')
-          : L('non branché', 'not connected');
-      return `<li><button type="button" data-cle="${esc(c.id)}">
-        <span class="nom">${esc(c.nom)}</span>
-        <span class="quoi">${esc(c.role)}</span>
-        <span class="etat${oui ? ' oui' : ''}">${etiquette}</span>
-      </button></li>`;
-    }).join('');
+  /* Le cadre ne bouge plus ensuite : barre, compteur, Retour. Seul
+     `.ecran` est remplacé, et il glisse. */
+  function cadre() {
     $('#stage-area').innerHTML = `<div class="setup">
-      <h1>${L('Clés et <em>services.</em>', 'Keys and <em>services.</em>')}</h1>
-      <p>${L("L'outil écoute avec un service et rédige avec un autre. "
-        + 'Choisis celui que tu veux brancher ou remplacer.',
-        'The tool listens with one service and writes with another. '
-        + 'Pick the one you want to connect or replace.')}</p>
-      <ul class="setupmenu">${lignes}</ul>
-      <div class="setupaside">
-        <button type="button" id="setupback">${L('Retour', 'Back')}</button>
-        <a href="/aide?langue=${guide.langue}" target="_blank" rel="noopener">${
-          L('Tout lire, en une page', 'Read it all, on one page')}</a>
-      </div>
+      <div class="setupbar"><i></i></div>
+      <button type="button" class="linkbtn backbtn" data-en="Back">${
+        L('Retour', 'Back')}</button>
+      <span class="setuptop" id="setuptop"></span>
+      <div class="ecran" id="ecran"></div>
     </div>`;
-    $('#stage-area').querySelectorAll('[data-cle]').forEach(b => {
-      b.onclick = () => ecran(
-        guide.cles.find(x => x.id === b.dataset.cle),
-        { apres: () => ouvrir({ sommaire: true }) });
-    });
-    $('#setupback').onclick = () => location.reload();
+    $('.backbtn').onclick = reculer;
   }
 
-  /* L'écran d'une clé : à quoi elle sert, ce qu'elle coûte, les pas à
-     suivre, puis le champ. Dans cet ordre — on ne colle pas un secret
-     dans un champ avant d'avoir compris ce qu'il paie. */
-  function ecran(c, o) {
-    if (!c) return;
+  function avancer() {
+    if (etat.i >= etat.file.length - 1) return terminer();
+    glisser(etat.i + 1);
+  }
+
+  function reculer() {
+    if (etat.i > 0) return glisser(etat.i - 1, -1);
+    sortir();
+  }
+
+  /* Quitter l'écran des clés. S'il y a déjà un transcript affiché, on y
+     retourne ; sinon on rouvre l'écran de dépôt. Le même geste que le
+     bouton Retour que la page injecte d'ordinaire. */
+  function sortir() {
+    if (typeof job !== 'undefined' && job && job.blocks && job.blocks.length) {
+      if (typeof render === 'function') { render(); return; }
+    }
+    document.body.classList.add('back');
+    setTimeout(() => {
+      $('#stage-area').innerHTML = '';
+      const dock = $('#dock');
+      if (dock) dock.hidden = true;
+      document.body.classList.remove('back');
+    }, 1100);
+  }
+
+  function terminer() {
+    // Rechargement : les clés nouvelles changent l'état de la page
+    // entière (modèles de relecture, bouton des réglages, bandeau).
+    location.reload();
+  }
+
+  function glisser(vers, sens) {
+    const e = document.getElementById('ecran');
+    if (!e) { etat.i = vers; return peindre(sens || 1); }
+    e.classList.add('part');
+    if ((sens || 1) < 0) e.style.translate = '24px 0';
+    setTimeout(() => { etat.i = vers; peindre(sens || 1); }, SORTIE);
+  }
+
+  function peindre(sens) {
+    const e = document.getElementById('ecran');
+    if (!e) return;
+    const ecran = etat.file[etat.i];
+    if (!ecran) return terminer();
+
+    e.innerHTML = contenu(ecran);
+
+    // Les pas numérotés portent le compteur ; les écrans de bascule
+    // (intro, offre, sommaire) n'en font pas partie et le laissent vide
+    // plutôt que d'annoncer « Étape 1 / 6 » devant une question.
+    const pas = etat.file.filter(x => x.type === 'pas');
+    const rang = pas.indexOf(ecran) + 1;
+    const top = document.getElementById('setuptop');
+    if (top) {
+      top.textContent = rang > 0
+        ? `${L('Étape', 'Step')} ${rang} / ${pas.length}` : '';
+    }
+    const barre = document.querySelector('.setupbar');
+    if (barre) {
+      barre.style.setProperty(
+        '--part', ((etat.i + 1) / Math.max(etat.file.length, 1)).toFixed(3));
+    }
+
+    brancher(ecran);
+
+    // Entrée : on pose l'écran décalé sans transition, on force un
+    // reflow, puis on le relâche. Sans le reflow le navigateur groupe
+    // les deux écritures et l'écran apparaît d'un coup.
+    e.classList.remove('part');
+    e.style.translate = '';
+    e.classList.add('vient');
+    if ((sens || 1) < 0) e.style.translate = '-24px 0';
+    void e.offsetWidth;
+    e.style.transition = `opacity ${ENTREE}ms var(--vm-ease), `
+      + `translate ${ENTREE}ms var(--vm-ease)`;
+    e.classList.remove('vient');
+    e.style.translate = '0 0';
+
+    // Le focus arrive APRÈS la transition : posé avant, le navigateur
+    // fait défiler la page vers le champ, et la page ne doit jamais
+    // défiler. `preventScroll` en plus, par ceinture et bretelles.
+    setTimeout(() => {
+      const champ = document.getElementById('keyinput');
+      if (champ) { try { champ.focus({ preventScroll: true }); } catch (x) { champ.focus(); } }
+    }, ENTREE);
+  }
+
+  function bulle(titre, texte, haut) {
+    if (!texte) return '';
+    return `<span class="tipwrap${haut ? ' up' : ''}"><button class="info"
+      type="button" aria-expanded="false" aria-label="${L('Plus d\'infos',
+      'More info')}">i</button><span class="tipbody">${
+      titre ? `<b>${esc(titre)}</b>` : ''}<span>${esc(texte)}</span></span></span>`;
+  }
+
+  function contenu(s) {
+    if (s.type === 'intro') return vueIntro();
+    if (s.type === 'pas') return vuePas(s);
+    if (s.type === 'offre') return vueOffre();
+    if (s.type === 'fini') return vueFini();
+    return vueSommaire();
+  }
+
+  // ------------------------------------------------------------ écrans
+
+  function vueIntro() {
+    const n = guide.notions || [];
+    const pourquoi = n[0] || {};
+    return `
+      <span class="etiq">${L('Avant de commencer', 'Before we start')}</span>
+      <h2>${L('Deux services', 'Two services')}</h2>
+      <p class="geste">${L(
+        'Un pour écrire le texte, un pour rédiger le compte rendu. Les deux '
+        + 'sont gratuits, et le second est facultatif.',
+        'One to write the text, one to draft the minutes. Both are free, and '
+        + 'the second is optional.')} ${
+      bulle(pourquoi.titre || '', pourquoi.texte || '')}</p>
+      <button type="button" class="gros" data-x="suivant">${
+      L('Commencer', 'Start')}</button>`;
+  }
+
+  function vuePas(s) {
+    const c = s.c;
     const etiq = c.requis
       ? `<span class="etiq oblig">${L('Obligatoire', 'Required')}</span>`
-      : `<span class="etiq libre">${c.recommande
-        ? L('Recommandé', 'Recommended') : L('Facultatif', 'Optional')}</span>`;
-    const compteur = o.total > 1
-      ? `<div class="setupnav">${
-        Array.from({ length: o.total }, (_, i) =>
-          `<i class="${o.rang >= i + 1 ? 'on' : ''}"></i>`).join('')
-      }<span>${L('Étape', 'Step')} ${o.rang} / ${o.total}</span></div>`
-      : '';
-    /* Le premier pas porte l'adresse du fournisseur. La rendre cliquable
-       évite de la recopier à la main, et c'est précisément là que les
-       gens se perdent. */
-    const pas = c.etapes.map((e, i) => {
-      let t = esc(e);
-      if (i === 0 && c.ou) {
-        t = t.replace(esc(c.ou), `<a href="${esc(c.url)}" target="_blank"`
-          + ` rel="noopener">${esc(c.ou)}</a>`);
-      }
-      return `<li>${t}</li>`;
-    }).join('');
+      : `<span class="etiq">${c.recommande ? L('Recommandé', 'Recommended')
+        : L('Facultatif', 'Optional')}</span>`;
 
-    $('#stage-area').innerHTML = `<div class="setup">
-      ${compteur}
-      ${etiq}
+    // Premier pas : le bouton ouvre le site. Dernier pas : le champ.
+    // Entre les deux, rien à faire ici — on confirme et on avance.
+    let acte = '';
+    if (s.n === 0) {
+      acte = `<button type="button" class="gros" data-x="ouvrirsite">${
+        L('Ouvrir', 'Open')} ${esc(c.ou)}</button>
+        <button type="button" class="discret" data-x="suivant">${
+        L("J'y suis déjà", "I'm already there")}</button>`;
+    } else if (s.n === c.etapes.length - 1) {
+      acte = `<div class="keyrow">
+          <input type="password" id="keyinput" spellcheck="false"
+                 autocomplete="off" placeholder="${esc(c.prefixes.join(' / '))}…"
+                 aria-label="${L('Clé', 'Key')} ${esc(c.nom)}">
+          <button id="keysave">${L('Enregistrer', 'Save')}</button>
+        </div>
+        <div class="keyerr" id="keyerr"></div>`;
+    } else {
+      acte = `<button type="button" class="gros" data-x="suivant">${
+        L('C\'est fait', 'Done')}</button>`;
+    }
+
+    return `${etiq}
       <h2>${esc(c.nom)}</h2>
-      <p class="role">${esc(c.role)}</p>
-      <p>${esc(c.pour_quoi)}</p>
-      <p><b>${esc(c.prix)}</b></p>
-      <ol class="pas">${pas}</ol>
-      <div class="keyrow">
-        <input type="password" id="keyinput" spellcheck="false" autocomplete="off"
-               placeholder="${esc(c.prefixes.join(' / '))}…"
-               aria-label="${L('Clé', 'Key')} ${esc(c.nom)}">
-        <button id="keysave">${L('Enregistrer', 'Save')}</button>
-      </div>
-      <div class="keyerr" id="keyerr"></div>
-      <p class="keynote">${esc(c.limites)}</p>
-      <div class="setupaside">
-        ${c.requis ? '' : `<button type="button" id="setupskip">${L(
-          'Plus tard — je rédige moi-même',
-          "Later — I'll write the minutes myself")}</button>`}
-        <a href="/aide?langue=${guide.langue}" target="_blank" rel="noopener">${
-          L('La marche à suivre en détail', 'The setup guide in full')}</a>
-      </div>
-    </div>`;
-
-    const input = $('#keyinput'), save = $('#keysave');
-    input.focus();
-    input.onkeydown = e => { if (e.key === 'Enter') save.click(); };
-    const sauter = $('#setupskip');
-    if (sauter) sauter.onclick = () => location.reload();
-    save.onclick = async () => {
-      $('#keyerr').textContent = '';
-      save.disabled = true;
-      save.textContent = L('Vérification…', 'Checking…');
-      try {
-        /* La langue part avec la clé : c'est le serveur qui rédige le
-           refus, et un refus en français devant quelqu'un qui a mis
-           l'interface en anglais le laisse sur le seul écran qu'il ne
-           peut pas franchir. */
-        await api('/api/key', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            key: input.value, fournisseur: c.id, langue: guide.langue,
-          }),
-        });
-        etat.presentes[c.id] = true;
-        if (c.id === 'groq') {
-          ready = true;                      // liaison globale de la page
-          const b = $('#changekey');
-          if (b) b.hidden = false;
-        }
-        o.apres();
-      } catch (err) {
-        $('#keyerr').textContent = err.message;
-        save.disabled = false;
-        save.textContent = L('Enregistrer', 'Save');
-      }
-    };
+      <p class="geste">${esc(s.e.geste)} ${bulle(c.role, s.e.detail)}</p>
+      ${acte}`;
   }
 
-  // Remplace l'écran d'origine. `askForKey` est une fonction globale de
-  // la page : la réaffecter suffit, les appels se résolvent à l'appel.
+  function vueOffre() {
+    const ia = guide.cles.find(c => c.recommande);
+    if (!ia || etat.presentes[ia.id]) return vueFini();
+    return `
+      <span class="etiq">${L('Facultatif', 'Optional')}</span>
+      <h2>${L('Le compte rendu', 'The minutes')}</h2>
+      <p class="geste">${L(
+        'Une seconde clé, gratuite elle aussi, laisse l\'outil rédiger un '
+        + 'compte rendu à partir du transcript. Sans elle, le texte sort '
+        + 'quand même.',
+        'A second key, also free, lets the tool draft minutes from the '
+        + 'transcript. Without it you still get the text.')} ${
+      bulle(ia.nom, ia.pour_quoi)}</p>
+      <button type="button" class="gros" data-x="ajouter">${
+      L('Ajouter', 'Add')} ${esc(ia.nom)}</button>
+      <button type="button" class="discret" data-x="fini">${
+      L('Plus tard', 'Later')}</button>`;
+  }
+
+  function vueFini() {
+    return `
+      <span class="etiq etat-oui">${L('Prêt', 'Ready')}</span>
+      <h2>${L('C\'est branché', 'All set')}</h2>
+      <p class="geste">${L(
+        'Tout est en place. Le reste se passe sur cette machine.',
+        'Everything is in place. The rest happens on this machine.')}</p>
+      <button type="button" class="gros" data-x="fini">${
+      L('Transcrire un enregistrement', 'Transcribe a recording')}</button>`;
+  }
+
+  function vueSommaire() {
+    const lignes = guide.cles.map(c => {
+      const oui = !!etat.presentes[c.id];
+      return `<button type="button" class="pastille" data-service="${esc(c.id)}">
+        <em>${c.requis ? L('Obligatoire', 'Required')
+        : c.recommande ? L('Recommandé', 'Recommended')
+          : L('Facultatif', 'Optional')}</em>
+        <b>${esc(c.nom)}</b>
+        <span class="${oui ? 'etat-oui' : ''}">${oui
+        ? L('branché — changer la clé', 'connected — change the key')
+        : esc(c.role)}</span></button>`;
+    }).join('');
+    return `
+      <span class="etiq">${L('Services', 'Services')}</span>
+      <h2>${L('Clés', 'Keys')}</h2>
+      <div class="pastilles">${lignes}</div>`;
+  }
+
+  // ------------------------------------------------------- les actions
+
+  function brancher(s) {
+    const e = document.getElementById('ecran');
+    if (!e) return;
+
+    e.querySelectorAll('[data-x]').forEach(b => {
+      const quoi = b.dataset.x;
+      b.onclick = () => {
+        if (quoi === 'suivant') return avancer();
+        if (quoi === 'fini') return terminer();
+        if (quoi === 'ouvrirsite') {
+          window.open(s.c.url, '_blank', 'noopener');
+          return avancer();
+        }
+        if (quoi === 'ajouter') {
+          const ia = guide.cles.find(c => c.recommande);
+          // Insérés ici même : la barre s'allonge au lieu de mentir.
+          etat.file.splice(etat.i + 1, 0, ...pasDe(ia, true));
+          etat.file.push({ type: 'fini' });
+          return avancer();
+        }
+      };
+    });
+
+    e.querySelectorAll('[data-service]').forEach(b => {
+      b.onclick = () => ouvrir({ service: b.dataset.service });
+    });
+
+    const save = document.getElementById('keysave');
+    if (save) save.onclick = () => enregistrer(s.c, save);
+    const champ = document.getElementById('keyinput');
+    if (champ) champ.onkeydown = ev => { if (ev.key === 'Enter') save.click(); };
+  }
+
+  async function enregistrer(c, save) {
+    const champ = document.getElementById('keyinput');
+    const err = document.getElementById('keyerr');
+    err.textContent = '';
+    save.disabled = true;
+    save.textContent = L('Vérification…', 'Checking…');
+    try {
+      /* La langue part avec la clé : c'est le serveur qui rédige le
+         refus, et un refus en français devant quelqu'un qui a mis
+         l'interface en anglais le laisse sur le seul écran qu'il ne
+         peut pas franchir. */
+      await api('/api/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: champ.value, fournisseur: c.id, langue: guide.langue,
+        }),
+      });
+      etat.presentes[c.id] = true;
+      if (c.id === 'groq') {
+        ready = true;                       // liaison globale de la page
+        const b = $('#changekey');
+        if (b) b.hidden = false;
+      }
+      avancer();
+    } catch (ex) {
+      err.textContent = ex.message;
+      save.disabled = false;
+      save.textContent = L('Enregistrer', 'Save');
+    }
+  }
+
+  // ------------------------------------------------------- le clavier
+
+  document.addEventListener('keydown', ev => {
+    if (!document.querySelector('.setup')) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); return reculer(); }
+    if (ev.key !== 'Enter') return;
+    // Entrée dans le champ : c'est « Enregistrer » qui répond.
+    if (ev.target && ev.target.id === 'keyinput') return;
+    const suite = document.querySelector('#ecran .gros');
+    if (suite) { ev.preventDefault(); suite.click(); }
+  });
+
+  // --------------------------------------------------- les accroches
+
   window.askForKey = ouvrir;
 
-  /* Le bouton du socle ouvrait l'écran de la clé Groq. Il ouvre
-     maintenant le sommaire des trois services — c'est le seul endroit
-     depuis lequel on peut brancher l'IA après coup. Le gestionnaire
-     d'origine a capturé l'ancienne fonction au chargement, d'où la
-     reliaison explicite. */
   const bouton = document.getElementById('changekey');
   if (bouton) {
     bouton.onclick = () => ouvrir({ sommaire: true });
     bouton.textContent = 'Clés et services';
     bouton.setAttribute('data-en', 'Keys and services');
-    bouton.removeAttribute('data-fr');     // laisse vm.lang relire le français
-    /* Il s'affiche même quand la clé Groq vient de l'environnement :
-       celui qui rédige ses comptes rendus a encore une clé d'IA à
-       brancher, et c'est par là qu'il la branche. */
+    bouton.removeAttribute('data-fr');
     api('/api/health').then(h => { if (h.has_key) bouton.hidden = false; })
       .catch(() => {});
   }
 
   /* Le bandeau de simulation.
-     Le programme démarré avec --simulation ne connaît aucune clé, pour
-     montrer ce que voit quelqu'un qui vient de l'installer. Sans le
-     dire, l'écran est indiscernable d'une panne : les clés ont l'air
-     d'avoir disparu, et on va les chercher dans le trousseau — où elles
-     sont, intactes, ce qui achève de brouiller la piste. */
+     Démarré avec --simulation, le programme ne connaît aucune clé, pour
+     montrer ce que voit quelqu'un qui vient d'installer. Sans le dire,
+     l'écran est indiscernable d'une panne : les clés ont l'air d'avoir
+     disparu, et on va les chercher dans le trousseau — où elles sont,
+     intactes, ce qui achève de brouiller la piste. */
   function bandeau() {
+    const dire = () => L(
+      'Simulation de premier démarrage — aucune clé connue, le trousseau n\'est pas touché',
+      'First-run simulation — no key known, the keychain is left alone');
     api('/api/health').then(h => {
       if (!h || !h.vierge || document.getElementById('tr-sim')) return;
       const el = document.createElement('div');
       el.id = 'tr-sim';
       el.setAttribute('role', 'status');
-      el.style.cssText = 'position:fixed;inset:0 0 auto 0;z-index:9999;'
-        + 'padding:.3rem .7rem;text-align:center;background:var(--vm-accent,#ff3d12);'
-        + 'color:var(--tr-on-accent,#fff);font:500 .72rem/1.3 '
-        + 'var(--vm-font-mono,ui-monospace,monospace);letter-spacing:.06em;'
-        + 'text-transform:uppercase;pointer-events:none';
-      el.textContent = L(
-        'Simulation de premier démarrage — aucune clé connue, le trousseau n\'est pas touché',
-        'First-run simulation — no key known, the keychain is left alone');
       el.setAttribute('data-no-i18n', '');
+      // En bas et à droite, en pastille : en bandeau pleine largeur il
+      // recouvrait le titre de la page et la bascule de langue, ce qui
+      // est beaucoup de dégâts pour une mention de service.
+      el.style.cssText = 'position:fixed;right:10px;bottom:10px;z-index:9999;'
+        + 'max-width:min(22rem,70vw);padding:.35rem .6rem;'
+        + 'background:var(--vm-accent,#ff3d12);'
+        + 'color:var(--tr-on-accent,#fff);font:500 .64rem/1.25 '
+        + 'var(--vm-font-mono,ui-monospace,monospace);letter-spacing:.05em;'
+        + 'text-transform:uppercase;pointer-events:none';
+      el.textContent = dire();
       document.body.appendChild(el);
-      if (window.vm && vm.lang) {
-        vm.lang.onChange(() => {
-          el.textContent = L(
-            'Simulation de premier démarrage — aucune clé connue, le trousseau n\'est pas touché',
-            'First-run simulation — no key known, the keychain is left alone');
-        });
-      }
+      if (window.vm && vm.lang) vm.lang.onChange(() => { el.textContent = dire(); });
     }).catch(() => {});
   }
   bandeau();
 
-  // Le guide est rendu par le serveur dans une seule langue : changer de
-  // langue demande de le relire, sinon l'écran reste dans l'ancienne.
+  // Le guide est rendu par le serveur dans une seule langue : changer
+  // de langue demande de le relire, sinon l'écran reste dans l'ancienne.
   if (window.vm && vm.lang) {
     vm.lang.onChange(() => {
       if (!document.querySelector('.setup')) return;
       guide = null;
-      ouvrir({ sommaire: !etat.assistant });
+      ouvrir({ sommaire: etat.sommaire });
     });
   }
 })();

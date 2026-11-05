@@ -155,23 +155,49 @@ CLES = [
         },
         "prix": {"fr": "Gratuit, sans carte bancaire.",
                  "en": "Free, no credit card."},
+        # Chaque pas porte un geste et un détail. Le geste est ce qui
+        # s'affiche en grand, seul à l'écran : une phrase, un verbe, une
+        # chose à faire. Le détail va derrière le bouton « i », pour qui
+        # veut savoir pourquoi — et il n'encombre pas celui qui le sait
+        # déjà. Les séparer ici plutôt que dans l'interface garde les
+        # deux versions linguistiques ensemble, et une seule source.
         "etapes": [
-            {"fr": "Ouvre console.groq.com/keys",
-             "en": "Open console.groq.com/keys"},
-            {"fr": "Connecte-toi avec Google, GitHub ou une adresse "
-                   "courriel. Aucune carte bancaire n'est demandée.",
-             "en": "Sign in with Google, GitHub or an email address. No "
-                   "credit card is asked for."},
-            {"fr": "Cherche le bouton qui crée une clé — « Create API Key ». "
-                   "Donne-lui le nom que tu veux, « Transcripteur » par "
-                   "exemple : ce nom ne sert qu'à t'y retrouver.",
-             "en": "Find the button that creates a key — \"Create API Key\". "
-                   "Give it any name you like, \"Transcripteur\" for "
-                   "instance: the name is only there to help you recognise "
-                   "it later."},
-            {"fr": "Copie la clé affichée, puis reviens ici et colle-la.",
-             "en": "Copy the key it shows you, then come back here and paste "
-                   "it in."},
+            {"geste": {"fr": "Ouvrir la page des clés de Groq.",
+                       "en": "Open the Groq keys page."},
+             "detail": {"fr": "Le bouton ouvre console.groq.com/keys dans "
+                              "un nouvel onglet. Reviens ici ensuite : "
+                              "cette fenêtre t'attend.",
+                        "en": "The button opens console.groq.com/keys in a "
+                              "new tab. Come back here afterwards: this "
+                              "window will wait for you."}},
+            # « GitHub » retiré de la liste : nommer un service de
+            # développeurs à quelqu'un qui n'en est pas donne à croire
+            # qu'il s'est trompé d'endroit.
+            {"geste": {"fr": "Se connecter avec Google ou une adresse courriel.",
+                       "en": "Sign in with Google or an email address."},
+             "detail": {"fr": "Aucune carte bancaire n'est demandée, ni à "
+                              "cette étape ni plus tard.",
+                        "en": "No credit card is asked for, not at this "
+                              "step and not later."}},
+            {"geste": {"fr": "Créer une clé.",
+                       "en": "Create a key."},
+             "detail": {"fr": "Cherche le bouton « Create API Key ». "
+                              "Donne-lui le nom que tu veux, "
+                              "« Transcripteur » par exemple : ce nom ne "
+                              "sert qu'à t'y retrouver plus tard.",
+                        "en": "Look for the button marked \"Create API "
+                              "Key\". Give it any name you like, "
+                              "\"Transcripteur\" for instance: the name "
+                              "only helps you recognise it later."}},
+            {"geste": {"fr": "Copier la clé, puis la coller ici.",
+                       "en": "Copy the key, then paste it here."},
+             "detail": {"fr": "Elle commence par gsk_. Elle ne s'affiche "
+                              "qu'une fois chez Groq : si tu la perds, il "
+                              "faut en créer une autre, ce qui ne coûte "
+                              "rien.",
+                        "en": "It starts with gsk_. Groq shows it only "
+                              "once: if you lose it you have to make "
+                              "another, which costs nothing."}},
         ],
         "limites": {
             "fr": "Le compte gratuit a un plafond quotidien. L'usage normal "
@@ -200,21 +226,30 @@ CLES = [
         "prix": {"fr": "Gratuit, sans carte bancaire.",
                  "en": "Free, no credit card."},
         "etapes": [
-            {"fr": "Ouvre aistudio.google.com/apikey",
-             "en": "Open aistudio.google.com/apikey"},
-            {"fr": "Connecte-toi avec un compte Google. Aucune carte "
-                   "bancaire n'est demandée.",
-             "en": "Sign in with a Google account. No credit card is asked "
-                   "for."},
-            {"fr": "Cherche le bouton qui crée une clé — « Create API key ». "
-                   "Si on te demande de choisir un projet, celui qui est "
-                   "proposé convient.",
-             "en": "Find the button that creates a key — \"Create API key\". "
-                   "If you are asked to pick a project, the one it suggests "
-                   "will do."},
-            {"fr": "Copie la clé affichée, puis reviens ici et colle-la.",
-             "en": "Copy the key it shows you, then come back here and paste "
-                   "it in."},
+            {"geste": {"fr": "Ouvrir la page des clés de Google.",
+                       "en": "Open the Google keys page."},
+             "detail": {"fr": "Le bouton ouvre aistudio.google.com/apikey "
+                              "dans un nouvel onglet.",
+                        "en": "The button opens aistudio.google.com/apikey "
+                              "in a new tab."}},
+            {"geste": {"fr": "Se connecter avec un compte Google.",
+                       "en": "Sign in with a Google account."},
+             "detail": {"fr": "Aucune carte bancaire n'est demandée.",
+                        "en": "No credit card is asked for."}},
+            {"geste": {"fr": "Créer une clé.",
+                       "en": "Create a key."},
+             "detail": {"fr": "Cherche le bouton « Create API key ». Si on "
+                              "te demande de choisir un projet, celui qui "
+                              "est proposé convient.",
+                        "en": "Look for the button marked \"Create API "
+                              "key\". If you are asked to pick a project, "
+                              "the one it suggests will do."}},
+            {"geste": {"fr": "Copier la clé, puis la coller ici.",
+                       "en": "Copy the key, then paste it here."},
+             "detail": {"fr": "Elle commence par AIza ou par AQ. — les deux "
+                              "formats sont acceptés.",
+                        "en": "It starts with AIza or with AQ. — both "
+                              "formats are accepted."}},
         ],
         "limites": {
             "fr": "Le compte gratuit limite le nombre de requêtes par jour, "
@@ -251,17 +286,30 @@ CLES = [
                   "costing a few tens of cents at most.",
         },
         "etapes": [
-            {"fr": "Ouvre console.anthropic.com/settings/keys",
-             "en": "Open console.anthropic.com/settings/keys"},
-            {"fr": "Crée un compte, puis dépose du crédit : sans crédit, la "
-                   "clé existe mais chaque demande est refusée.",
-             "en": "Create an account, then add credit: with no credit the "
-                   "key exists but every request is refused."},
-            {"fr": "Cherche le bouton qui crée une clé — « Create Key ».",
-             "en": "Find the button that creates a key — \"Create Key\"."},
-            {"fr": "Copie la clé affichée, puis reviens ici et colle-la.",
-             "en": "Copy the key it shows you, then come back here and paste "
-                   "it in."},
+            {"geste": {"fr": "Ouvrir la page des clés d'Anthropic.",
+                       "en": "Open the Anthropic keys page."},
+             "detail": {"fr": "Le bouton ouvre "
+                              "console.anthropic.com/settings/keys dans un "
+                              "nouvel onglet.",
+                        "en": "The button opens "
+                              "console.anthropic.com/settings/keys in a new "
+                              "tab."}},
+            {"geste": {"fr": "Créer un compte, puis y déposer du crédit.",
+                       "en": "Create an account, then add credit to it."},
+             "detail": {"fr": "Sans crédit, la clé existe mais chaque "
+                              "demande est refusée. Une dizaine de dollars "
+                              "durent très longtemps.",
+                        "en": "With no credit the key exists but every "
+                              "request is refused. Ten dollars or so lasts "
+                              "a very long time."}},
+            {"geste": {"fr": "Créer une clé.",
+                       "en": "Create a key."},
+             "detail": {"fr": "Cherche le bouton « Create Key ».",
+                        "en": "Look for the button marked \"Create Key\"."}},
+            {"geste": {"fr": "Copier la clé, puis la coller ici.",
+                       "en": "Copy the key, then paste it here."},
+             "detail": {"fr": "Elle commence par sk-ant-.",
+                        "en": "It starts with sk-ant-."}},
         ],
         "limites": {
             "fr": "Pas de plafond quotidien : tu paies ce que tu consommes, "
@@ -345,7 +393,13 @@ def pour_interface(langue: str = "fr") -> dict:
             "pour_quoi": t(c["pour_quoi"], langue),
             "prix": t(c["prix"], langue),
             "limites": t(c["limites"], langue),
-            "etapes": [t(e, langue) for e in c["etapes"]],
+            # Le geste et le détail séparés : l'interface affiche l'un en
+            # grand et range l'autre derrière un « i ». Rendus ensemble,
+            # ils obligeraient l'interface à redécouper une phrase, ce
+            # qu'elle ferait mal et dans une seule langue.
+            "etapes": [{"geste": t(e["geste"], langue),
+                        "detail": t(e["detail"], langue)}
+                       for e in c["etapes"]],
             "url": "https://" + fiche.get("ou", ""),
             "ou": fiche.get("ou", ""),
             "prefixes": prefixes,
@@ -502,13 +556,17 @@ def page_html(langue: str = "fr") -> str:
         for lg in LANGUES:
             pas = []
             for i, e in enumerate(c["etapes"]):
-                texte = escape(t(e, lg))
+                geste = escape(t(e["geste"], lg))
+                detail = escape(t(e["detail"], lg))
                 if i == 0 and adresse:
-                    texte = texte.replace(
-                        escape(adresse),
-                        f'<a href="https://{escape(adresse)}" target="_blank"'
-                        f' rel="noopener">{escape(adresse)}</a>')
-                pas.append(f"<li>{texte}</li>")
+                    # L'adresse n'est plus dans le geste, qui dit
+                    # seulement quoi faire ; on la pose à la fin, en
+                    # lien, puisque sur une page imprimée ou envoyée par
+                    # courriel il n'y a pas de bouton pour l'ouvrir.
+                    detail += (f' <a href="https://{escape(adresse)}" '
+                               f'target="_blank" rel="noopener">'
+                               f'{escape(adresse)}</a>')
+                pas.append(f"<li><b>{geste}</b> {detail}</li>")
             morceaux.append(f'<ol class="{lg}" lang="{lg}">{"".join(pas)}</ol>')
         morceaux.append(
             f"<p>{_bl_ligne(_TITRES['debut'])} "

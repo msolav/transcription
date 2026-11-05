@@ -79,6 +79,14 @@ for c in guide.CLES:
     ok(f"{c['id']} : connu de config", c["id"] in config.FOURNISSEURS)
     ok(f"{c['id']} : au moins trois pas", len(c.get("etapes", [])) >= 3)
 
+# Personne ne doit être envoyé chez GitHub. Quelqu'un qui n'est pas
+# développeur y arrive sur une page de versions en anglais, avec une
+# liste de fichiers pour tous les systèmes, et conclut qu'il s'est
+# trompé d'endroit. Le mot n'a donc rien à faire dans une marche à
+# suivre — pas même comme façon de se connecter à Groq.
+github = [c["id"] for c in guide.CLES if "github" in str(c).lower()]
+ok("aucune fiche n'envoie chez GitHub", not github, ", ".join(github))
+
 ok("une seule clé obligatoire",
    sum(1 for c in guide.CLES if c["requis"]) == 1)
 ok("une seule clé recommandée",
@@ -93,10 +101,26 @@ for langue in guide.LANGUES:
         ok(f"{c['id']} ({langue}) : adresse tirée de config",
            c["ou"] == attendu and c["url"] == "https://" + attendu,
            f"{c['url']} au lieu de https://{attendu}")
-        # Le premier pas doit nommer l'adresse : « ouvre la console » sans
-        # dire laquelle laisse chercher dans un menu qu'on ne connaît pas.
+        # Le premier pas doit nommer l'adresse quelque part : « ouvrir la
+        # console » sans dire laquelle laisse chercher dans un menu qu'on
+        # ne connaît pas. Elle a quitté le geste, qui ne dit plus que
+        # l'action, pour le détail — c'est là qu'il faut la trouver.
+        premier = c["etapes"][0]
         ok(f"{c['id']} ({langue}) : le premier pas donne l'adresse",
-           attendu in c["etapes"][0], c["etapes"][0])
+           attendu in (premier["geste"] + " " + premier["detail"]),
+           str(premier)[:120])
+
+        # Le geste s'affiche seul, en grand, au milieu de l'écran : une
+        # phrase qui déborde y casse la mise en page et fait défiler une
+        # page qui ne doit jamais défiler. Le détail, lui, vit derrière
+        # un bouton « i » et peut s'étendre.
+        for n, pas in enumerate(c["etapes"]):
+            manque = [ch for ch in ("geste", "detail") if not pas.get(ch)]
+            ok(f"{c['id']} ({langue}) : pas {n + 1} complet", not manque,
+               ", ".join(manque))
+            ok(f"{c['id']} ({langue}) : pas {n + 1}, geste assez court",
+               len(pas.get("geste", "")) <= 64,
+               f"{len(pas.get('geste', ''))} caractères : « {pas.get('geste')} »")
         prefixes = config.FOURNISSEURS[c["id"]]["prefixe"]
         prefixes = list(prefixes) if isinstance(prefixes, tuple) else [prefixes]
         ok(f"{c['id']} ({langue}) : préfixes tirés de config",

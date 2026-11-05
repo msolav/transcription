@@ -718,8 +718,8 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
   transition: font-weight 1.1s var(--vm-ease-out), font-stretch 1.1s var(--vm-ease-out); }
 .setup h1 em { display: block; font-style: normal; font-weight: 100; font-stretch: 75%; font-size: .6em; line-height: 1; margin-top: .06em; font-variation-settings: normal; color: var(--vm-accent);
   transition: font-weight 1.1s var(--vm-ease-out), font-stretch 1.1s var(--vm-ease-out); }
-.setup:hover h1 { font-weight: 100; font-stretch: 75%; }
-.setup:hover h1 em { font-weight: 900; font-stretch: 62%; }
+.setup .ecran:hover h1, .setup:not(:has(.ecran)):hover h1 { font-weight: 100; font-stretch: 75%; }
+.setup .ecran:hover h1 em, .setup:not(:has(.ecran)):hover h1 em { font-weight: 900; font-stretch: 62%; }
 .backbtn { position: absolute; top: 14px; left: calc(var(--pad) - .85rem); }
 @media (max-width: 700px) { .numchips button { min-width: 34px; height: 36px; padding: 0 6px; } }
 
@@ -728,9 +728,9 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 .settings .more > .vm-fold { overflow: visible; }
 .setup h2 { font: 900 clamp(2.6rem, min(8vw, 11svh), 6.5rem)/.9 var(--vm-font-display); font-stretch: 62%; text-transform: uppercase; letter-spacing: -.02em; margin: 0 0 8px;
   transition: font-weight 1.1s var(--vm-ease-out), font-stretch 1.1s var(--vm-ease-out); }
-.setup:hover h2 { font-weight: 100; font-stretch: 75%; }
+.setup .ecran:hover h2 { font-weight: 100; font-stretch: 75%; }
 .setup .role { font-weight: 300; margin-bottom: 14px; transition: font-weight 1.1s var(--vm-ease-out); }
-.setup:hover .role { font-weight: 700; }
+.setup .ecran:hover .role { font-weight: 700; }
 .backbtn { z-index: 2; }
 .giant { transition: opacity .8s var(--vm-ease), font-size .9s var(--vm-ease); }
 .capture:has(.more[data-open]) .giant.ask { font-size: clamp(3rem, min(11vw, 13svh), 10rem); }
