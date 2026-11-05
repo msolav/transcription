@@ -461,6 +461,7 @@ button{cursor:pointer;border:none;background:none}
       <button data-x="copy">Copier le texte</button>
       <button data-x="txt">Enregistrer .txt</button>
       <button data-x="srt">Sous-titres .srt</button>
+      <button data-x="srt-noms">Sous-titres nommés .srt</button>
       <button data-x="json">Données .json</button>
       <button id="reread">Relire</button>
       <button id="sum">Résumer</button>
@@ -492,7 +493,10 @@ button{cursor:pointer;border:none;background:none}
 </div>
 
 
-<audio id="player" hidden></audio>
+<!-- Un <video> même pour un audio : même API, donc le code de lecture
+     ne change pas, et apercu.js peut le rendre visible quand le fichier
+     déposé est une vidéo. -->
+<video id="player" hidden playsinline></video>
 <audio id="sampler" hidden></audio>
 
 <script>
