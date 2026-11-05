@@ -17,6 +17,18 @@
 on:
   push:
     tags: ["v*"]
+  # Sur proposition de fusion, parce que c'est le seul moment où l'on
+  # peut encore corriger avant que le paquet parte chez quelqu'un. Et
+  # parce que workflow_dispatch ne s'offre que depuis la branche
+  # principale : tant qu'un travail vit sur sa branche, c'est la seule
+  # façon de l'éprouver sur les deux systèmes.
+  pull_request:
+    paths:
+      - "transcripteur/**"
+      - "outils/**"
+      - "Transcripteur.spec"
+      - "lancer.py"
+      - ".github/workflows/paquets.yml"
   workflow_dispatch:
 
 permissions:
