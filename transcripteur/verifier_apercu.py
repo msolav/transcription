@@ -53,6 +53,23 @@ code = sans_commentaires(js)
 # ------------------------------------------------- la pose par le serveur
 
 ok("apercu.js est dans la liste des greffes", "apercu.js" in server._GREFFES)
+
+# index-vm.html est un fichier ENGENDRÉ, par outils/vm-build/build2.py.
+# Une correction qu'on y porte à la main disparaît à la régénération
+# suivante — sans erreur, sans trace, et seulement la fois d'après.
+# C'est arrivé : le lecteur était redevenu un <audio>, et l'aperçu vidéo
+# ne s'affichait plus. Les points d'appui doivent donc exister dans la
+# SOURCE, et pas seulement dans le résultat.
+SOURCE = Path(__file__).parent.parent / "outils" / "vm-build" / "body2.html"
+if SOURCE.exists():
+    src = SOURCE.read_text(encoding="utf-8")
+    ok("la source du balisage déclare #player en <video>",
+       re.search(r"<video[^>]*id=\"player\"", src) is not None,
+       "la régénération ramènerait un <audio>, et l'image disparaîtrait")
+    ok("la source accepte la vidéo au dépôt",
+       re.search(r'id="file"[^>]*accept="[^"]*video/', src) is not None)
+else:
+    ok("la source du balisage est là où le relais l'annonce", False, str(SOURCE))
 for nom in ("index.html", "index-vm.html"):
     page = STATIC / nom
     if not page.exists():

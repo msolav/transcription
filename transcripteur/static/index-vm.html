@@ -898,10 +898,9 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 </div>
 
 <!-- Un <video> même pour un fichier audio : l'API est celle de tout
-     élément média, donc le code de lecture ne change pas, et il n'y a
-     pas deux lecteurs à tenir en accord. apercu.js le déplace dans un
-     cadre visible quand le fichier déposé est une vidéo ; sur un audio
-     il reste caché et se comporte exactement comme avant. -->
+     élément média, donc le code de lecture ne change pas, et apercu.js
+     peut le rendre visible quand le fichier déposé est une vidéo. En
+     <audio>, l'image ne s'afficherait jamais, sans erreur. -->
 <video id="player" hidden playsinline></video>
 <audio id="sampler" hidden></audio>
 

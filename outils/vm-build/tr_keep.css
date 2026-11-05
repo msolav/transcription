@@ -1,0 +1,45 @@
+/* ---------- first launch: the key ---------- */
+.setup { max-width: 620px; padding: 64px clamp(24px, 5vw, 80px); min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+.setup h1 { margin: 0 0 18px; font: 800 clamp(2.2rem, 4.2vw, 3.4rem)/1.05 var(--vm-font-display); letter-spacing: -.04em; }
+.setup h1 em { font-style: normal; color: var(--vm-accent); font-variation-settings: "wght" var(--vm-wmin); }
+.setup p { font-size: 1.0625rem; line-height: 1.6; margin: 0 0 8px; }
+.setup ol { font-size: 1.0625rem; line-height: 1.8; padding-left: 22px; margin: 14px 0 26px; }
+.setup a { color: var(--vm-accent); font-weight: 600; text-underline-offset: 3px; }
+.keyrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.keyrow input { flex: 1; min-width: 240px; font: 400 1rem var(--vm-font-mono); padding: 12px 14px; min-height: 50px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); border-radius: 0; }
+.keyrow input:focus { outline: 2px solid var(--vm-accent); outline-offset: 2px; }
+.keyrow button { background: var(--vm-accent); color: var(--tr-on-accent); padding: 0 26px; min-height: 50px; font-weight: 800; font-size: 1.0625rem; transition: background-color .4s var(--vm-ease), color .4s var(--vm-ease); }
+.keyrow button:not(:disabled):hover { background: var(--vm-ink); color: var(--vm-paper); }
+.keyrow button:disabled { opacity: .5; cursor: not-allowed; }
+.keynote { font-size: .9375rem; color: var(--vm-mute); margin-top: 14px; line-height: 1.6; }
+.keyerr { color: var(--tr-warn); font-size: 1rem; margin-top: 12px; font-weight: 600; min-height: 1.4em; }
+
+/* ---------- panels (review, summary) ---------- */
+.panneau { border-top: 1px solid var(--vm-ink); padding: 18px clamp(20px, 4vw, 44px); max-height: 48vh; overflow-y: auto; background: var(--vm-paper); font-size: 1rem; }
+.panneau h4 { font: 800 1.15rem var(--vm-font-display); letter-spacing: -.02em; margin: 0 0 12px; text-transform: none; color: var(--vm-ink); }
+.panneau .row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid color-mix(in oklab, var(--vm-ink) 24%, transparent); }
+.panneau .row:last-child { border-bottom: 0; }
+.panneau .ap { color: var(--vm-ink); }
+.panneau label { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--vm-ink); margin: 0; }
+.panneau .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.panneau .opts button, .panneau .keyrow button { border: 1px solid var(--vm-ink); padding: 0 16px; min-height: 44px; font-weight: 600; font-size: .9375rem; transition: background-color .35s, color .35s; }
+.panneau .opts button:hover, .panneau .keyrow button:hover { background: var(--vm-ink); color: var(--vm-paper); }
+.panneau .opts button:disabled { opacity: .45; }
+.panneau .opts .vm-sel { min-width: 220px; flex: 1; }
+.panneau .opts .vm-sel-btn { min-height: 44px; font-size: .9375rem; }
+.panneau pre { white-space: pre-wrap; font: inherit; margin: 0; line-height: 1.6; }
+.panneau textarea { width: 100%; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); font: inherit; font-size: .9375rem; resize: vertical; border-radius: 0; }
+.panneau .keyrow { display: flex; gap: 8px; margin: 8px 0; }
+.panneau .keyrow input { flex: 1; padding: 10px 12px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); font: inherit; min-height: 44px; border-radius: 0; }
+.panneau .keyerr { color: var(--tr-warn); }
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
+.cmp p { margin: 3px 0 0; line-height: 1.6; font-family: var(--serif); font-size: 1.0625rem; }
+.cmph { font-size: .8125rem; font-weight: 700; color: var(--vm-mute); }
+.cmp mark { background: none; padding: 0; color: inherit; }
+.cmp mark.ote { background: color-mix(in oklab, var(--tr-warn) 20%, transparent); text-decoration: line-through; text-decoration-color: var(--tr-warn); }
+.cmp mark.mis { background: color-mix(in oklab, var(--tr-ok) 24%, transparent); }
+.panneau .extrait { margin: 6px 0 0; color: var(--vm-mute); line-height: 1.5; font-family: var(--serif); }
+.apercu { margin-top: 12px; border: 1px solid var(--vm-ink); padding: 12px 14px; max-height: 260px; overflow: auto; }
+.apercu-tete { font-size: .8125rem; font-weight: 700; color: var(--vm-mute); margin-bottom: 6px; }
+.apercu pre { font-size: .9375rem; color: var(--vm-ink); }
+
