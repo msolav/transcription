@@ -1,0 +1,130 @@
+/* Le site public : une fenêtre, un geste à la fois.
+   Mêmes polices, même couleur de signal et même grain que
+   l'application — un site en police système avec un autre accent se lit
+   comme un autre produit. */
+
+/* Sans cela, le remplissage de .scene s'ajoute à sa hauteur calculée et
+   la page dépasse d'exactement la hauteur du bandeau : elle défile. */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body { overflow: clip; }          /* clip et non hidden : hidden se
+                                           laisse encore défiler au focus */
+/* padding et non une marge sur .scene : la marge d'un premier enfant
+   s'échappe du corps au lieu de le remplir, et la page dépassait alors
+   d'exactement la hauteur du bandeau. */
+body { margin: 0; height: 100svh; padding-top: var(--top);
+  background: var(--vm-paper); color: var(--vm-ink);
+  font-family: "Archivo", system-ui, sans-serif; font-size: 16px; }
+
+:root { --pad: clamp(1.1rem, 4vw, 3.2rem); --top: 58px; }
+
+.bar { position: fixed; inset: 0 0 auto 0; height: var(--top); z-index: 5;
+  display: flex; align-items: center; gap: 1rem; padding: 0 var(--pad);
+  border-bottom: 1px solid color-mix(in oklab, var(--vm-ink) 16%, transparent);
+  background: var(--vm-paper); }
+.marque { font: 900 1.05rem/1 "Archivo", sans-serif; font-stretch: 62%;
+  text-transform: uppercase; letter-spacing: -.01em; text-decoration: none;
+  color: var(--vm-ink); }
+.outils { margin-left: auto; display: flex; align-items: center; gap: .9rem; }
+
+.scene { position: relative; height: 100%;
+  padding: 2rem var(--pad); display: flex;
+  flex-direction: column; justify-content: center; overflow: clip; }
+.scene > * { zoom: var(--fit, 1); }
+
+.jauge { position: absolute; inset: 0 0 auto 0; height: 2px;
+  background: color-mix(in oklab, var(--vm-ink) 12%, transparent); }
+.jauge i { display: block; height: 100%; background: var(--vm-accent);
+  transform-origin: left center; transform: scaleX(var(--part, 0));
+  transition: transform .8s var(--vm-ease); }
+
+.retour { position: absolute; top: 1rem; left: var(--pad); z-index: 2;
+  font: 500 .9rem/1 inherit; color: var(--vm-ink); background: none;
+  border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 4px; opacity: 1;
+  transition: opacity .5s var(--vm-ease), color .3s var(--vm-ease); }
+.retour[hidden] { display: none; }
+.retour:hover { color: var(--vm-accent); }
+.compte { position: absolute; top: 1rem; right: var(--pad); z-index: 2;
+  font: 500 .7rem/1 "IBM Plex Mono", monospace; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--vm-mute); }
+
+/* La vue glisse ; le cadre ne bouge pas. */
+.vue { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 1.1rem; max-width: 46rem; opacity: 1; translate: 0 0;
+  transition: opacity .36s var(--vm-ease), translate .36s var(--vm-ease); }
+.vue.part { opacity: 0; translate: -24px 0; }
+.vue.vient { opacity: 0; translate: 24px 0; transition: none; }
+
+h1 { margin: 0; font: 900 clamp(2.8rem, min(12vw, 18svh), 9rem)/.88 "Archivo", sans-serif;
+  font-stretch: 62%; text-transform: uppercase; letter-spacing: -.03em; }
+h2 { margin: 0; font: 900 clamp(1.8rem, min(6vw, 9svh), 3.6rem)/.95 "Archivo", sans-serif;
+  font-stretch: 62%; text-transform: uppercase; letter-spacing: -.02em; }
+.etiq { font: 600 .7rem/1 "IBM Plex Mono", monospace; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--vm-mute); }
+.dit { margin: 0; font: 300 clamp(1rem, 1.7vw, 1.2rem)/1.45 "Archivo", sans-serif;
+  max-width: 34em; }
+.dit b { font-weight: 600; }
+
+.gros { font: 600 1.05rem/1 "Archivo", sans-serif; letter-spacing: -.01em;
+  padding: 1.05rem 1.6rem; border: 0; cursor: pointer; text-decoration: none;
+  display: inline-flex; align-items: center; gap: .7rem;
+  color: var(--tr-on-accent, #fff); background: var(--vm-accent);
+  transition: filter .35s var(--vm-ease-out); }
+.gros:hover { filter: brightness(1.12); }
+.gros svg { width: 1.05em; height: 1.05em; fill: none; stroke: currentColor;
+  stroke-width: 2.2; stroke-linecap: square; }
+.discret { font: 400 .95rem/1 inherit; color: var(--vm-mute); background: none;
+  border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline;
+  text-underline-offset: 3px; }
+.discret:hover { color: var(--vm-accent); }
+
+.choix { display: flex; gap: .9rem; flex-wrap: wrap; }
+.puce { flex: 1 1 13rem; text-align: left; padding: 1.1rem 1.3rem; cursor: pointer;
+  background: none; color: inherit; font: inherit;
+  border: 1px solid color-mix(in oklab, var(--vm-ink) 22%, transparent);
+  transition: border-color .35s var(--vm-ease-out), background .35s var(--vm-ease-out); }
+.puce:hover { border-color: var(--vm-accent);
+  background: color-mix(in oklab, var(--vm-accent) 7%, transparent); }
+.puce b { display: block; font: 800 1.1rem/1.15 "Archivo", sans-serif; }
+.puce span { color: var(--vm-mute); font-size: .9rem; }
+
+dl.spec { margin: 0; display: grid; grid-template-columns: auto 1fr;
+  gap: .55rem 1.4rem; font-size: .98rem; max-width: 40em; }
+dl.spec dt { font: 500 .7rem/1.5 "IBM Plex Mono", monospace; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--vm-mute); }
+dl.spec dd { margin: 0; }
+
+/* Le « i » : même composant que l'application. */
+.tipwrap { position: relative; display: inline-flex; vertical-align: middle; }
+.info { width: 24px; height: 24px; flex: none; border: 1px solid currentColor;
+  border-radius: 50%; font: 500 .75rem/1 "IBM Plex Mono", monospace;
+  display: grid; place-items: center; color: var(--vm-mute); background: none;
+  cursor: pointer; transition: background .3s var(--vm-ease), color .3s var(--vm-ease); }
+.info:hover, .info[aria-expanded="true"] { background: var(--vm-ink);
+  color: var(--vm-paper); border-color: var(--vm-ink); }
+.tipbody { position: absolute; z-index: 50; top: calc(100% + 12px); left: 0;
+  width: min(330px, 78vw); padding: 1rem 1.1rem; font-size: .92rem;
+  line-height: 1.45; background: var(--vm-paper-2);
+  border: 1px solid color-mix(in oklab, var(--vm-ink) 18%, transparent);
+  opacity: 0; translate: 0 -6px; pointer-events: none;
+  transition: opacity .35s var(--vm-ease), translate .35s var(--vm-ease); }
+.info[aria-expanded="true"] + .tipbody { opacity: 1; translate: 0 0;
+  pointer-events: auto; }
+
+@media (max-width: 640px) {
+  .choix { flex-direction: column; }
+  .gros { width: 100%; justify-content: center; }
+}
+
+/* Le kit pose la bascule de thème et celle de langue en position fixe,
+   à sa propre distance du bord : elles tombaient à cheval sur le filet
+   du bandeau. On les recale dans la hauteur du bandeau plutôt que de
+   déplacer le bandeau autour d'elles. */
+.vm-theme { top: 12px; right: var(--pad); }
+.vm-lang { top: 15px; right: calc(var(--pad) + 46px); }
+
+/* Sur le premier écran, le nom est déjà en grand au milieu : le
+   répéter dans le bandeau le fait lire deux fois. */
+.marque { opacity: 1; transition: opacity .5s var(--vm-ease); }
+body[data-ecran="accueil"] .marque { opacity: 0; pointer-events: none; }

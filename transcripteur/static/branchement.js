@@ -282,10 +282,10 @@
       <span class="etiq">${L('Avant de commencer', 'Before we start')}</span>
       <h2>${L('Deux services', 'Two services')}</h2>
       <p class="geste">${L(
-        'Un pour écrire le texte, un pour rédiger le compte rendu. Les deux '
-        + 'sont gratuits, et le second est facultatif.',
-        'One to write the text, one to draft the minutes. Both are free, and '
-        + 'the second is optional.')} ${
+        'Groq transcrit la parole. Un second service, facultatif, rédige le '
+        + 'compte rendu. Les deux sont gratuits.',
+        'Groq transcribes speech. A second service, optional, drafts the '
+        + 'minutes. Both are free.')} ${
       bulle(pourquoi.titre || '', pourquoi.texte || '')}</p>
       <button type="button" class="gros" data-x="suivant">${
       L('Commencer', 'Start')}</button>`;
@@ -332,11 +332,10 @@
       <span class="etiq">${L('Facultatif', 'Optional')}</span>
       <h2>${L('Le compte rendu', 'The minutes')}</h2>
       <p class="geste">${L(
-        'Une seconde clé, gratuite elle aussi, laisse l\'outil rédiger un '
-        + 'compte rendu à partir du transcript. Sans elle, le texte sort '
-        + 'quand même.',
-        'A second key, also free, lets the tool draft minutes from the '
-        + 'transcript. Without it you still get the text.')} ${
+        'Avec cette clé, l\'outil rédige un compte rendu à partir du '
+        + 'transcript. Sans elle, la transcription fonctionne quand même.',
+        'With this key the tool drafts minutes from the transcript. '
+        + 'Without it, transcription still works.')} ${
       bulle(ia.nom, ia.pour_quoi)}</p>
       <button type="button" class="gros" data-x="ajouter">${
       L('Ajouter', 'Add')} ${esc(ia.nom)}</button>
@@ -349,8 +348,8 @@
       <span class="etiq etat-oui">${L('Prêt', 'Ready')}</span>
       <h2>${L('C\'est branché', 'All set')}</h2>
       <p class="geste">${L(
-        'Tout est en place. Le reste se passe sur cette machine.',
-        'Everything is in place. The rest happens on this machine.')}</p>
+        'Les clés sont enregistrées dans le trousseau du système.',
+        'The keys are stored in the system keychain.')}</p>
       <button type="button" class="gros" data-x="fini">${
       L('Transcrire un enregistrement', 'Transcribe a recording')}</button>`;
   }

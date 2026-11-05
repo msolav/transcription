@@ -1,23 +1,28 @@
 {
-  // Le petit site public : deux pages fabriquées par
-  // outils/batir_site.py, et rien d'autre. Aucun code ne tourne ici —
-  // le programme, lui, tourne sur la machine de chacun.
+  // Le site public : deux pages fabriquées par outils/batir_site.py, et
+  // les chemins de téléchargement.
   //
   //     python outils/batir_site.py && npx wrangler deploy
+  //
+  // Le Worker ne sert qu'à une chose de plus que des fichiers : rendre
+  // /telecharger/<plateforme>, pour que personne ne soit envoyé sur une
+  // page de versions GitHub. Le programme, lui, tourne sur la machine
+  // de chacun ; rien ne s'exécute ici.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "transcripteur",
+  "main": "outils/site/worker.js",
   "compatibility_date": "2026-11-04",
   "observability": {
     "enabled": true
   },
   "assets": {
     "directory": "site",
-    // Réglage par défaut : « /aide/ » sert aide/index.html, comme le
-    // fait un serveur local. Le mode d'emploi est donc un dossier et
-    // non un fichier .html — autrement Cloudflare renvoie /aide.html
-    // vers /aide par une redirection, et l'aperçu local cesse de
-    // ressembler à ce qui est en ligne, ce qui est la meilleure façon
-    // de ne pas voir une page cassée avant les autres.
+    "binding": "ASSETS",
+    // « /aide/ » sert aide/index.html, comme le fait un serveur local.
+    // Le mode d'emploi est donc un dossier et non un fichier .html —
+    // autrement Cloudflare renvoie /aide.html vers /aide par une
+    // redirection, et l'aperçu local cesse de ressembler à ce qui est
+    // en ligne.
     "not_found_handling": "404-page"
   }
 }

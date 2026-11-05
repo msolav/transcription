@@ -164,21 +164,17 @@ CLES = [
         "etapes": [
             {"geste": {"fr": "Ouvrir la page des clés de Groq.",
                        "en": "Open the Groq keys page."},
-             "detail": {"fr": "Le bouton ouvre console.groq.com/keys dans "
-                              "un nouvel onglet. Reviens ici ensuite : "
-                              "cette fenêtre t'attend.",
-                        "en": "The button opens console.groq.com/keys in a "
-                              "new tab. Come back here afterwards: this "
-                              "window will wait for you."}},
+             "detail": {"fr": "Ouvre console.groq.com/keys dans un "
+                              "nouvel onglet.",
+                        "en": "Opens console.groq.com/keys in a new "
+                              "tab."}},
             # « GitHub » retiré de la liste : nommer un service de
             # développeurs à quelqu'un qui n'en est pas donne à croire
             # qu'il s'est trompé d'endroit.
             {"geste": {"fr": "Se connecter avec Google ou une adresse courriel.",
                        "en": "Sign in with Google or an email address."},
-             "detail": {"fr": "Aucune carte bancaire n'est demandée, ni à "
-                              "cette étape ni plus tard.",
-                        "en": "No credit card is asked for, not at this "
-                              "step and not later."}},
+             "detail": {"fr": "Aucune carte bancaire n'est demandée.",
+                        "en": "No credit card is required."}},
             {"geste": {"fr": "Créer une clé.",
                        "en": "Create a key."},
              "detail": {"fr": "Cherche le bouton « Create API Key ». "
@@ -191,13 +187,11 @@ CLES = [
                               "only helps you recognise it later."}},
             {"geste": {"fr": "Copier la clé, puis la coller ici.",
                        "en": "Copy the key, then paste it here."},
-             "detail": {"fr": "Elle commence par gsk_. Elle ne s'affiche "
-                              "qu'une fois chez Groq : si tu la perds, il "
-                              "faut en créer une autre, ce qui ne coûte "
-                              "rien.",
-                        "en": "It starts with gsk_. Groq shows it only "
-                              "once: if you lose it you have to make "
-                              "another, which costs nothing."}},
+             "detail": {"fr": "Format : gsk_… Groq ne l'affiche "
+                              "qu'une fois. En cas de perte, en créer "
+                              "une autre.",
+                        "en": "Format: gsk_… Groq displays it once "
+                              "only. If lost, create another."}},
         ],
         "limites": {
             "fr": "Le compte gratuit a un plafond quotidien. L'usage normal "
@@ -559,13 +553,18 @@ def page_html(langue: str = "fr") -> str:
                 geste = escape(t(e["geste"], lg))
                 detail = escape(t(e["detail"], lg))
                 if i == 0 and adresse:
-                    # L'adresse n'est plus dans le geste, qui dit
-                    # seulement quoi faire ; on la pose à la fin, en
-                    # lien, puisque sur une page imprimée ou envoyée par
-                    # courriel il n'y a pas de bouton pour l'ouvrir.
-                    detail += (f' <a href="https://{escape(adresse)}" '
-                               f'target="_blank" rel="noopener">'
-                               f'{escape(adresse)}</a>')
+                    # Sur une page imprimée ou envoyée par courriel il
+                    # n'y a pas de bouton pour ouvrir le site : il faut
+                    # donc l'adresse, et cliquable. Quand le détail la
+                    # nomme déjà, on rend ce mot-là cliquable au lieu de
+                    # l'ajouter une seconde fois à la suite.
+                    lien = (f'<a href="https://{escape(adresse)}" '
+                            f'target="_blank" rel="noopener">'
+                            f'{escape(adresse)}</a>')
+                    if escape(adresse) in detail:
+                        detail = detail.replace(escape(adresse), lien, 1)
+                    else:
+                        detail += " " + lien
                 pas.append(f"<li><b>{geste}</b> {detail}</li>")
             morceaux.append(f'<ol class="{lg}" lang="{lg}">{"".join(pas)}</ol>')
         morceaux.append(
