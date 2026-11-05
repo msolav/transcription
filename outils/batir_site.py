@@ -128,11 +128,11 @@ GABARIT = """<!doctype html>
   <p class="fr">La reconnaissance de la parole passe par un service extérieur,
     Groq, dont l'offre gratuite suffit largement. Il faut y créer une clé —
     c'est gratuit, sans carte bancaire, et cela prend cinq minutes.
-    <a href="aide.html">La marche à suivre, pas à pas</a>.</p>
+    <a href="aide/">La marche à suivre, pas à pas</a>.</p>
   <p class="en">Speech recognition goes through an outside service, Groq, whose
     free tier is more than enough. You need to create a key there — free, no
     credit card, about five minutes.
-    <a href="aide.html">Step-by-step instructions</a>.</p>
+    <a href="aide/">Step-by-step instructions</a>.</p>
 
   <h2><span class="fr">Ce qui reste chez vous</span><span class="en">What stays with you</span></h2>
 
@@ -192,7 +192,12 @@ def batir() -> Path:
         GABARIT.format(depot=DEPOT, sorties=sorties), encoding="utf-8")
 
     # La page d'aide vient du même endroit que l'assistant du programme.
-    (SORTIE / "aide.html").write_text(guide.page_html("fr"), encoding="utf-8")
+    # Un dossier plutôt qu'un fichier .html : « /aide/ » se sert alors
+    # pareil ici et sur Cloudflare, sans redirection sur le seul lien
+    # qui compte vraiment.
+    aide = SORTIE / "aide"
+    aide.mkdir()
+    (aide / "index.html").write_text(guide.page_html("fr"), encoding="utf-8")
 
     # Rien à indexer de plus, et surtout pas les archives de versions.
     (SORTIE / "robots.txt").write_text(
