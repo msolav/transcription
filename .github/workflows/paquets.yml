@@ -84,8 +84,14 @@ jobs:
         # arrivent en roues compilées par architecture : un paquet
         # universel demanderait des roues universelles, que sherpa-onnx
         # ne publie pas.
+        #
+        # macos-15-intel est le dernier coureur Intel, et il est
+        # lui-même annoncé pour disparaître à l'été 2027 — Apple ayant
+        # cessé de faire des Mac x86_64, GitHub suivra. Ce jour-là, il
+        # faudra soit construire la version Intel à la main sur un Mac
+        # Intel, soit cesser de la publier.
         include:
-          - os: macos-13           # le dernier coureur Intel
+          - os: macos-15-intel
             nom: macOS-Intel
           - os: macos-latest       # Apple Silicon
             nom: macOS-AppleSilicon
