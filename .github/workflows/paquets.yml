@@ -66,9 +66,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Deux paquets Mac, et ce n'est pas un luxe. Un exécutable
+        # construit sur Apple Silicon ne s'ouvre pas sur un Mac Intel —
+        # il n'y a pas de message, l'application refuse simplement de
+        # démarrer. L'inverse marche, par Rosetta, à condition qu'il
+        # soit installé et au prix de la vitesse. Les modèles de voix
+        # arrivent en roues compilées par architecture : un paquet
+        # universel demanderait des roues universelles, que sherpa-onnx
+        # ne publie pas.
         include:
-          - os: macos-latest
-            nom: macOS
+          - os: macos-13           # le dernier coureur Intel
+            nom: macOS-Intel
+          - os: macos-latest       # Apple Silicon
+            nom: macOS-AppleSilicon
           - os: windows-latest
             nom: Windows
     runs-on: ${{ matrix.os }}
@@ -96,11 +106,11 @@ jobs:
         run: |
           cd dist
           ditto -c -k --sequesterRsrc --keepParent Transcripteur.app \
-                Transcripteur-macOS.zip
+                "Transcripteur-${{ matrix.nom }}.zip"
 
       - name: Emballer (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/Transcripteur/* -DestinationPath dist/Transcripteur-Windows.zip
+        run: Compress-Archive -Path dist/Transcripteur/* -DestinationPath "dist/Transcripteur-${{ matrix.nom }}.zip"
 
       # Le paquet doit au moins démarrer et répondre. Une construction
       # qui réussit ne prouve rien : les pannes d'empaquetage — un
@@ -131,7 +141,13 @@ jobs:
           body: |
             ## Installer
 
-            **macOS** — décompresser, glisser `Transcripteur.app` dans
+            **macOS** — deux paquets, et il faut le bon. Menu Pomme →
+            À propos de ce Mac : si la puce est une **Apple M1, M2, M3
+            ou M4**, prendre `AppleSilicon` ; s'il y est écrit
+            **Intel**, prendre `Intel`. Le mauvais ne s'ouvrira pas, et
+            sans rien expliquer.
+
+            Décompresser, glisser `Transcripteur.app` dans
             Applications. À la première ouverture : clic droit sur
             l'application, puis **Ouvrir**, puis **Ouvrir** de nouveau.
             C'est à faire une seule fois ; l'application n'est pas

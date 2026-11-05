@@ -13,7 +13,7 @@ l'interface et enveloppe une fonction. Les renommer de l'autre côté ne
 lèverait rien : la liste resterait vide, les réglages ne reviendraient
 pas, et rien ne le dirait.
 """
-import json
+import os
 import re
 import sys
 import tempfile
@@ -139,7 +139,6 @@ ok("les données vivent hors du dépôt",
 ok("le dossier porte un nom reconnaissable",
    memoire.dossier().name == "Transcripteur", str(memoire.dossier()))
 
-import os
 os.environ["TRANSCRIPTEUR_DONNEES"] = "/tmp/essai-donnees"
 ok("la variable d'environnement passe devant",
    str(memoire.dossier()) == "/tmp/essai-donnees", str(memoire.dossier()))
