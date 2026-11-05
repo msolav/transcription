@@ -204,19 +204,28 @@ def greffe_js(nom: str) -> FileResponse:
 
 @app.get("/", response_class=HTMLResponse)
 def index() -> HTMLResponse:
+    """La refonte, terminée, est maintenant l'interface.
+
+    Elle vivait à /vm le temps qu'on puisse comparer, et l'ancienne
+    tenait la racine. L'application empaquetée ouvrait déjà /vm : on
+    livrait donc une interface aux gens et on en voyait une autre en
+    développant, ce qui est la meilleure façon de ne pas remarquer ce
+    qui s'y casse. L'ancienne reste à /classique, le temps qu'on soit
+    sûr de ne rien regretter."""
+    if (STATIC_DIR / "index-vm.html").exists():
+        return _page("index-vm.html")
     return _page("index.html")
 
 
 @app.get("/vm", response_class=HTMLResponse)
 def index_vm() -> HTMLResponse:
-    """L'interface en cours de refonte, servie à côté de l'actuelle.
+    """Gardée : des essais et des signets pointent ici."""
+    return index()
 
-    Elle a besoin du serveur pour tout ce qu'elle montre, donc l'ouvrir
-    en fichier local n'apprend rien. Les deux adresses cohabitent le
-    temps de la refonte : on compare au lieu de basculer à l'aveugle."""
-    if not (STATIC_DIR / "index-vm.html").exists():
-        raise HTTPException(404, "Pas de refonte en cours.")
-    return _page("index-vm.html")
+
+@app.get("/classique", response_class=HTMLResponse)
+def index_classique() -> HTMLResponse:
+    return _page("index.html")
 
 
 def _expliquer_cle(exc: Exception, fournisseur: str) -> str:

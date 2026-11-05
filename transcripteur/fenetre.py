@@ -125,7 +125,7 @@ def main() -> None:
     port = int(impose) if impose.isdigit() else port_libre()
     sans_fenetre = os.environ.get("TRANSCRIPTEUR_SANS_FENETRE", "").strip() not in ("", "0")
 
-    url = f"http://127.0.0.1:{port}/vm"
+    url = f"http://127.0.0.1:{port}/"
     servir(port)
 
     if not attendre(port):
