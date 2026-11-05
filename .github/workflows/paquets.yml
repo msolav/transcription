@@ -34,6 +34,16 @@ on:
 permissions:
   contents: write
 
+# Une poussée de plus sur la même branche annule la construction
+# précédente : son résultat ne valait plus pour le code d'après, et
+# trois versions d'un même travail se disputaient les coureurs — dont
+# celui d'Intel, le seul qui reste et le plus long à obtenir. Les
+# étiquettes de version sont hors du lot : une publication qu'on
+# annulerait à mi-chemin laisserait des paquets dépareillés.
+concurrency:
+  group: paquets-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
   controles:
     # Les contrôles d'abord, et une seule fois : construire deux paquets
