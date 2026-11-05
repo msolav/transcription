@@ -17,7 +17,25 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-MODELS_DIR = Path(__file__).parent.parent / "models"
+def _dossier_modeles() -> Path:
+    """Où vivent les modèles ONNX.
+
+    À côté du code quand on travaille depuis les sources — c'est là
+    qu'ils sont déjà, et rien ne justifie de retélécharger 300 Mo.
+
+    Mais dans le dossier de données dès que l'application est empaquetée.
+    Un programme installé est en lecture seule : sous Applications sur
+    un Mac, sous Program Files sur un Windows. Écrire dedans échoue, et
+    cela échouerait au pire endroit — au premier démarrage, chez
+    quelqu'un qui vient d'installer, avec pour seul symptôme un
+    téléchargement qui n'aboutit jamais."""
+    if getattr(sys, "frozen", False):
+        from . import memoire
+        return memoire.dossier() / "models"
+    return Path(__file__).parent.parent / "models"
+
+
+MODELS_DIR = _dossier_modeles()
 
 SEG_URL = ("https://github.com/k2-fsa/sherpa-onnx/releases/download/"
            "speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2")
@@ -229,6 +247,30 @@ def ffmpeg_exe() -> str:
         ) from exc
 
 
+def _ecrire(texte: str) -> None:
+    """Écrit sur la sortie standard, s'il y en a une.
+
+    Une application empaquetée sans console — c'est le cas de la version
+    installée, qui ouvre une fenêtre et pas un terminal — a `sys.stdout`
+    à None. `print()` le sait et ne fait rien ; `sys.stdout.write` lève
+    une AttributeError.
+
+    Ce qui ne plantait pas l'application, mais pire : le téléchargement
+    des modèles échouait en silence au premier démarrage, et la
+    séparation des voix ne marchait plus jamais, avec pour seule trace
+    un « 'NoneType' object has no attribute 'write' » au milieu d'un
+    traitement. La barre de progression ne sert qu'à décorer une
+    attente ; elle n'a pas à décider si le programme fonctionne."""
+    flux = sys.stdout
+    if flux is None:
+        return
+    try:
+        flux.write(texte)
+        flux.flush()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _download(url: str, dst: Path, label: str) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(dst.suffix + ".part")
@@ -248,15 +290,12 @@ def _download(url: str, dst: Path, label: str) -> None:
         dernier[0] = cent
         width = 28
         filled = int(width * done / total)
-        sys.stdout.write(
-            f"\r  {label:22s} [{'█' * filled}{'·' * (width - filled)}] "
-            f"{done / 1048576:5.1f}/{total / 1048576:.1f} Mo"
-        )
-        sys.stdout.flush()
+        _ecrire(f"\r  {label:22s} [{'█' * filled}{'·' * (width - filled)}] "
+                f"{done / 1048576:5.1f}/{total / 1048576:.1f} Mo")
 
     urllib.request.urlretrieve(url, tmp, reporthook=hook)
     tmp.replace(dst)
-    sys.stdout.write("\n")
+    _ecrire("\n")
 
 
 def ensure_models(embedding: str = DEFAULT_EMBEDDING,

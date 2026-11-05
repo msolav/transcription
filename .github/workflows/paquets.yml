@@ -1,0 +1,181 @@
+﻿name: Paquets
+
+# Construit l'application pour Mac et pour Windows.
+#
+# Sur étiquette (v1.0, v1.1…) : les paquets sont joints à une
+# publication. Sur demande : on peut construire pour essayer, sans rien
+# publier. Jamais à chaque poussée — une construction prend une dizaine
+# de minutes par système et personne n'attend ce résultat-là.
+#
+# Les paquets ne sont pas signés. Au premier démarrage, macOS répond
+# « développeur non identifié » (clic droit → Ouvrir, une seule fois) et
+# Windows affiche SmartScreen (Informations complémentaires → Exécuter
+# quand même). Les signer demande un compte Apple à 99 $ US par an et un
+# certificat Windows ; le jour où on les prend, il n'y a que deux étapes
+# à ajouter ici.
+
+on:
+  push:
+    tags: ["v*"]
+  # Sur proposition de fusion, parce que c'est le seul moment où l'on
+  # peut encore corriger avant que le paquet parte chez quelqu'un. Et
+  # parce que workflow_dispatch ne s'offre que depuis la branche
+  # principale : tant qu'un travail vit sur sa branche, c'est la seule
+  # façon de l'éprouver sur les deux systèmes.
+  pull_request:
+    paths:
+      - "transcripteur/**"
+      - "outils/**"
+      - "Transcripteur.spec"
+      - "lancer.py"
+      - ".github/workflows/paquets.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Une poussée de plus sur la même branche annule la construction
+# précédente : son résultat ne valait plus pour le code d'après, et
+# trois versions d'un même travail se disputaient les coureurs — dont
+# celui d'Intel, le seul qui reste et le plus long à obtenir. Les
+# étiquettes de version sont hors du lot : une publication qu'on
+# annulerait à mi-chemin laisserait des paquets dépareillés.
+concurrency:
+  group: paquets-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  controles:
+    # Les contrôles d'abord, et une seule fois : construire deux paquets
+    # d'un code qui ne passe pas ses propres vérifications revient à
+    # distribuer la panne plus vite.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installer
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r transcripteur/requirements.txt
+          pip install anthropic google-genai keyring pyflakes
+      - name: Vérifier
+        # Les contrôles qui ne demandent ni modèle téléchargé, ni clé
+        # d'API, ni serveur en marche.
+        run: |
+          for m in verifier_memoire verifier_apercu verifier_soustitres \
+                   verifier_guide verifier_fournisseurs verifier_interface \
+                   verifier_relecture verifier_tranches verifier_troncature; do
+            echo "--- $m"
+            python -m transcripteur.$m
+          done
+
+  paquet:
+    needs: controles
+    strategy:
+      fail-fast: false
+      matrix:
+        # Deux paquets Mac, et ce n'est pas un luxe. Un exécutable
+        # construit sur Apple Silicon ne s'ouvre pas sur un Mac Intel —
+        # il n'y a pas de message, l'application refuse simplement de
+        # démarrer. L'inverse marche, par Rosetta, à condition qu'il
+        # soit installé et au prix de la vitesse. Les modèles de voix
+        # arrivent en roues compilées par architecture : un paquet
+        # universel demanderait des roues universelles, que sherpa-onnx
+        # ne publie pas.
+        #
+        # macos-15-intel est le dernier coureur Intel, et il est
+        # lui-même annoncé pour disparaître à l'été 2027 — Apple ayant
+        # cessé de faire des Mac x86_64, GitHub suivra. Ce jour-là, il
+        # faudra soit construire la version Intel à la main sur un Mac
+        # Intel, soit cesser de la publier.
+        include:
+          - os: macos-15-intel
+            nom: macOS-Intel
+          - os: macos-latest       # Apple Silicon
+            nom: macOS-AppleSilicon
+          - os: windows-latest
+            nom: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r transcripteur/requirements.txt
+          pip install anthropic google-genai keyring pyinstaller
+
+      - name: Construire
+        run: pyinstaller --noconfirm --clean Transcripteur.spec
+
+      # ditto plutôt que zip : il préserve les attributs étendus et les
+      # liens symboliques du paquet .app, qu'un zip ordinaire aplatit —
+      # l'application arrive alors de l'autre côté sans pouvoir s'ouvrir.
+      - name: Emballer (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent Transcripteur.app \
+                "Transcripteur-${{ matrix.nom }}.zip"
+
+      - name: Emballer (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/Transcripteur/* -DestinationPath "dist/Transcripteur-${{ matrix.nom }}.zip"
+
+      # Le paquet doit au moins démarrer et répondre. Une construction
+      # qui réussit ne prouve rien : les pannes d'empaquetage — un
+      # fichier oublié, une bibliothèque native absente — n'apparaissent
+      # qu'au démarrage, chez celui qui vient d'installer.
+      - name: Éprouver le paquet
+        shell: bash
+        run: python outils/eprouver_paquet.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Transcripteur-${{ matrix.nom }}
+          path: dist/Transcripteur-*.zip
+          if-no-files-found: error
+
+  publier:
+    needs: paquet
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: paquets
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: paquets/**/*.zip
+          draft: true
+          body: |
+            ## Installer
+
+            **macOS** — deux paquets, et il faut le bon. Menu Pomme →
+            À propos de ce Mac : si la puce est une **Apple M1, M2, M3
+            ou M4**, prendre `AppleSilicon` ; s'il y est écrit
+            **Intel**, prendre `Intel`. Le mauvais ne s'ouvrira pas, et
+            sans rien expliquer.
+
+            Décompresser, glisser `Transcripteur.app` dans
+            Applications. À la première ouverture : clic droit sur
+            l'application, puis **Ouvrir**, puis **Ouvrir** de nouveau.
+            C'est à faire une seule fois ; l'application n'est pas
+            signée, et macOS prévient toujours dans ce cas.
+
+            **Windows** — décompresser le dossier où l'on veut, puis
+            lancer `Transcripteur.exe`. Si Windows affiche un écran
+            bleu « Windows a protégé votre ordinateur » :
+            **Informations complémentaires**, puis **Exécuter quand
+            même**. Là encore, une seule fois.
+
+            Au premier démarrage, l'application télécharge une
+            trentaine de mégaoctets de modèles et demande une clé Groq.
+            La marche à suivre est dans l'application, et sur la page
+            d'aide.

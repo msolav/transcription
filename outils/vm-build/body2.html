@@ -1,0 +1,163 @@
+<body>
+<div class="perime" id="perime" hidden role="alert" data-en="The program changed after it started. Stop and restart the server so the fixes take effect.">Le programme a changé depuis son démarrage. Arrêter puis relancer le serveur pour appliquer les corrections.</div>
+
+<header class="bar" id="bar">
+  <a class="wordmark" href="/"><b>Transcripteur</b></a>
+    <span class="tipwrap">
+      <button class="info" type="button" aria-expanded="false" aria-label="Confidentialité" data-en-aria-label="Privacy">i</button>
+      <span class="tipbody">
+        <b data-en="Stays on this computer">Reste sur cet ordinateur</b>
+        <span data-en="Voices are separated here. Only the audio, compressed to mono MP3, goes to Groq for speech recognition. Nothing is kept once the program is closed.">La séparation des voix se fait ici. Seul l'audio, compressé en MP3 mono, part chez Groq pour la reconnaissance de la parole. Rien n'est conservé après la fermeture du programme.</span>
+        <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
+      </span>
+    </span>
+  <nav class="exportbar" aria-label="Actions">
+    <button data-x="copy" data-en="Copy">Copier</button>
+    <span class="savewrap">
+      <button type="button" id="savemenu" aria-expanded="false" data-en="Save">Enregistrer</button>
+      <span class="savegroup"><span class="sg">
+        <button data-x="txt" data-en="Text">Texte</button>
+        <button data-x="srt" data-en="Subtitles">Sous-titres</button>
+        <button data-x="json" data-en="Data" title="Pour rouvrir plus tard" data-en-title="To reopen later">Données</button>
+      </span></span>
+    </span>
+    <button id="reread" data-en="Proofread">Relire</button>
+    <button id="sum" data-en="Summarize">Résumer</button>
+    <button id="asread" hidden>Version relue</button>
+    <span class="said" id="said" role="status"></span>
+    <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to notes">Retour aux notes</span></button>
+  </nav>
+  <div class="tools">
+    <div class="vm-lang"></div>
+    <button class="vm-theme" type="button" aria-label="Changer de thème" data-en-aria-label="Switch light / dark"></button>
+  </div>
+</header>
+
+<section class="capture" id="capture">
+  <div id="alerts" role="alert"></div>
+
+  <div id="dropzone" class="drop">
+    <div class="hero" id="hero">
+      <div class="stampline"><div class="stamp" data-en="Audio or video">Audio ou vidéo</div></div>
+      <h1 class="giant ask"><span class="a" data-en="Drop">Déposer</span><span class="b" data-en="a file.">un fichier.</span></h1>
+      <h1 class="giant got" aria-live="polite"><span class="a" id="fname" data-no-i18n></span><span class="b" id="fmeta" data-no-i18n></span></h1>
+      <div class="pctwrap" aria-hidden="true"><em id="pct">0 %</em></div>
+    </div>
+    <div class="pickrow">
+      <button type="button" id="pick" class="big"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M12 18L24 6l12 12M6 32v10h36V32"/></svg><span data-en="Choose a file">Choisir un fichier</span></button>
+      <a href="#" id="reopen" data-en="Reopen a .json">Rouvrir un .json</a>
+      <button type="button" id="clear" class="linkbtn" data-en="Change file">Changer de fichier</button>
+      <p class="working" id="working" hidden data-en="Keep this page open.">Garder cette page ouverte.</p>
+      <input type="file" id="jsonfile" accept=".json,application/json" hidden>
+      <input type="file" id="file" accept="audio/*,video/*" hidden>
+    </div>
+  </div>
+
+  <div class="settings">
+    <div class="field">
+      <div class="lab"><span class="no">01</span><label for="lang" data-en="Language">Langue</label></div>
+      <select id="lang">
+        <option value="" selected>Détection automatique</option>
+        <option value="fr">Français</option>
+        <option value="en">Anglais</option>
+        <option value="es">Espagnol</option>
+        <option value="de">Allemand</option>
+        <option value="it">Italien</option>
+        <option value="pt">Portugais</option>
+        <option value="nl">Néerlandais</option>
+        <option value="zh">Chinois (mandarin)</option>
+        <option value="ja">Japonais</option>
+        <option value="ko">Coréen</option>
+        <option value="ru">Russe</option>
+        <option value="uk">Ukrainien</option>
+        <option value="pl">Polonais</option>
+        <option value="cs">Tchèque</option>
+        <option value="ro">Roumain</option>
+        <option value="el">Grec</option>
+        <option value="tr">Turc</option>
+        <option value="ar">Arabe</option>
+        <option value="he">Hébreu</option>
+        <option value="hi">Hindi</option>
+        <option value="id">Indonésien</option>
+        <option value="vi">Vietnamien</option>
+        <option value="sv">Suédois</option>
+        <option value="da">Danois</option>
+        <option value="no">Norvégien</option>
+        <option value="fi">Finnois</option>
+      </select>
+    </div>
+    <div class="field voices">
+      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Separate voices">Séparer les voix</label>
+        <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="counthint"></span><span data-en="If you know how many people speak, say so: the separation is much more reliable.">Si le nombre de personnes est connu, l'indiquer : la séparation est bien plus fiable.</span></span></span>
+      </div>
+      <div class="sepline">
+        <button type="button" class="tgl" id="sep" role="switch" aria-checked="false" aria-labelledby="seplab"><i></i></button>
+        <div class="numchips" id="numchips" role="radiogroup" aria-label="Nombre de voix" data-en-aria-label="Number of voices">
+          <button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button>
+        </div>
+      </div>
+      <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
+    </div>
+    <details class="vm-acc more">
+      <summary data-en="More options">Plus d'options</summary>
+      <div class="two">
+        <div class="field">
+          <div class="lab"><span class="no">03</span><label for="emb" data-en="Voice model">Modèle de voix</label>
+            <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="embnote"></span></span></span></div>
+          <select id="emb"></select>
+        </div>
+        <div class="field">
+          <div class="lab"><span class="no">04</span><label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
+            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span></div>
+          <select id="clean"></select>
+        </div>
+      </div>
+    </details>
+  </div>
+
+  <div class="launch">
+    <button class="go" id="go" disabled data-en="Transcribe">Transcrire</button>
+    <div id="busyHost"></div><p id="gohint" hidden></p>
+  </div>
+
+  <div class="status" id="status" hidden>
+    <span id="stage" aria-live="polite">En attente</span>
+    <span id="elapsed"></span>
+    <button class="stop" id="stop" hidden data-en="Stop">Arrêter</button>
+    <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Détails techniques" data-en-aria-label="Technical details">i</button><span class="tipbody wide"><div class="journal" id="journal" data-no-i18n lang="fr"></div></span></span>
+  </div>
+</section>
+
+<main class="stage" id="stage-area"></main>
+
+<div class="dock" id="dock" hidden>
+<div class="panneau" id="panneau" hidden></div>
+<div class="deck" id="deck" hidden>
+  <div class="scrub" id="scrub" role="slider" aria-label="Position de lecture" data-en-aria-label="Playback position" tabindex="0">
+    <div class="track"><i id="played"></i></div>
+    <div class="head" id="head"></div>
+  </div>
+  <div class="line">
+    <button class="main" id="pp" aria-label="Lecture" data-en-aria-label="Play">
+      <svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>
+    </button>
+    <span class="clock" id="clock" data-no-i18n>0:00 / 0:00</span>
+    <span class="grp">
+      <button class="skip" id="prev" aria-label="Réplique précédente" data-en-aria-label="Previous passage" data-en="Previous">Précédent</button>
+      <button class="skip" id="next" aria-label="Réplique suivante" data-en-aria-label="Next passage" data-en="Next">Suivant</button>
+      <button class="skip" id="back" aria-label="Reculer de 10 secondes" data-en-aria-label="Back 10 seconds">−10 s</button>
+      <button class="skip" id="fwd" aria-label="Avancer de 10 secondes" data-en-aria-label="Forward 10 seconds">+10 s</button>
+      <button class="rate" id="rate" aria-label="Vitesse de lecture" data-en-aria-label="Playback speed">1×</button>
+      <button class="follow on" id="follow" aria-pressed="true"><i></i><span data-en="Follow">Suivre</span></button>
+    </span>
+    <span class="who" id="nowwho"></span>
+  </div>
+</div>
+</div>
+
+<!-- Un <video> même pour un fichier audio : l'API est celle de tout
+     élément média, donc le code de lecture ne change pas, et apercu.js
+     peut le rendre visible quand le fichier déposé est une vidéo. En
+     <audio>, l'image ne s'afficherait jamais, sans erreur. -->
+<video id="player" hidden playsinline></video>
+<audio id="sampler" hidden></audio>

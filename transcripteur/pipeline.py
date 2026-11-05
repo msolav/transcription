@@ -39,6 +39,10 @@ BOUNDARY_DRIFT_COST = 0.06
 SHIFT_RESOLUTION = 0.05
 SHIFT_STEPS = 12          # ±0,6 s explorées
 CLUSTER_THRESHOLD = 0.65
+# Écart toléré entre la durée d'un enregistrement et celle que couvre un
+# transcript, quand on sépare les voix après coup. Deux secondes laissent
+# passer un ré-encodage, pas un autre montage.
+TOLERANCE_DUREE = 2.0
 MAX_AUTO_SPEAKERS = 10    # au-delà, la détection automatique a déraillé
 AUTO_RETRIES = 3
 AUTO_THRESHOLD_STEP = 0.08
@@ -135,6 +139,26 @@ def _run(args: list[str]) -> None:
     if proc.returncode != 0:
         tail = (stderr or "").strip().splitlines()
         raise PipelineError(f"ffmpeg : {tail[-1] if tail else 'conversion impossible'}")
+
+
+# Une vidéo n'a jamais eu besoin d'un traitement particulier : ffmpeg
+# prend la piste audio et ignore l'image, donc la transcription d'un .mp4
+# marchait déjà. Ce qui manquait, c'était de le savoir — pour proposer la
+# relecture dans l'image, et pour ne pas jeter le fichier d'origine.
+#
+# La reconnaissance se fait sur l'extension, et non en interrogeant le
+# fichier. ffprobe n'est pas garanti présent : ffmpeg_exe() rend parfois
+# le binaire livré avec imageio-ffmpeg, qui vient seul. Et l'erreur
+# possible ne coûte rien : au pire on propose un aperçu vidéo d'un
+# fichier qui n'a pas d'image, et le lecteur affiche un cadre noir avec
+# le son — pendant qu'une vidéo prise pour de l'audio se transcrit
+# exactement pareil.
+EXTENSIONS_VIDEO = {".mp4", ".mov", ".m4v", ".mkv", ".webm", ".avi",
+                    ".mpg", ".mpeg", ".wmv", ".flv", ".ts", ".3gp", ".ogv"}
+
+
+def est_video(src: Path | str) -> bool:
+    return Path(src).suffix.lower() in EXTENSIONS_VIDEO
 
 
 def to_wav16k(src: Path, dst: Path) -> None:
@@ -464,7 +488,46 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}") for r in result]
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
-    log(f"{len({t[2] for t in turns})} voix trouvées, {len(turns)} tours")
+    trouvees = len({t[2] for t in turns})
+    log(f"{trouvees} voix trouvées, {len(turns)} tours")
+
+    # Un effondrement : on a demandé plusieurs voix et il n'en ressort
+    # qu'une. Ce n'est pas une séparation imparfaite, c'est l'absence de
+    # séparation — le transcript sort d'un seul bloc, et la personne qui
+    # vient précisément d'annoncer le nombre de participants reçoit le
+    # pire résultat possible.
+    #
+    # Mesuré sur deux enregistrements à la vérité connue : avec un
+    # nombre imposé, « VoxCeleb CAM++ » — le modèle par défaut — rend
+    # une seule voix là où il en trouve 2 et 3 en détection libre. Les
+    # trois autres modèles ne font pas cela ; eux, le nombre imposé les
+    # aide. Le défaut est donc dans un modèle, pas dans la consigne.
+    #
+    # Plutôt que d'écarter ce modèle, on rattrape le cas général :
+    # quelle qu'en soit la cause, une voix pour plusieurs demandées est
+    # un échec, et la détection libre vaut mieux que rien.
+    if num_speakers and num_speakers > 1 and trouvees == 1:
+        log(f"une seule voix pour {num_speakers} demandées : le modèle "
+            f"« {assets.PAR_CLE[assets.resoudre(embedding)].nom} » a "
+            f"regroupé tout le monde. Reprise en détection libre.")
+        if _notify:
+            _notify(f"Le modèle n'a pas su séparer {num_speakers} voix en "
+                    f"les imposant. Reprise sans imposer le nombre.")
+        libre = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+            segmentation=config.segmentation, embedding=config.embedding,
+            clustering=sherpa_onnx.FastClusteringConfig(
+                num_clusters=-1, threshold=threshold),
+            min_duration_on=0.3, min_duration_off=0.5)
+        secours = (sherpa_onnx.OfflineSpeakerDiarization(libre)
+                   .process(audio, callback=report).sort_by_start_time())
+        repris = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}")
+                  for r in secours]
+        if len({t[2] for t in repris}) > 1:
+            log(f"{len({t[2] for t in repris})} voix en détection libre, "
+                f"{len(repris)} tours")
+            return repris
+        log("la détection libre ne trouve pas mieux : une seule voix")
+
     return turns
 
 
@@ -984,6 +1047,118 @@ class Result:
     duration: float = 0.0
     blocks: list = field(default_factory=list)
     speakers: list = field(default_factory=list)
+
+
+def mots_des_blocs(blocs: list[dict]) -> list[dict]:
+    """Remet bout à bout les mots horodatés d'un transcript."""
+    mots: list[dict] = []
+    for b in blocs:
+        mots.extend(b.get("words") or [])
+    return mots
+
+
+def separer_voix(src: Path, work_dir: Path, options: Options,
+                 mots: list[dict], duree_attendue: float = 0.0,
+                 progress: Progress = _noop, notify=None, stop=None) -> Result:
+    """Sépare les voix d'un transcript déjà écrit, sans le réécrire.
+
+    Transcrire sans séparer les voix prend quelques minutes ; séparer les
+    voix en prend trois quarts d'heure sur une réunion de deux heures et
+    demie. Il est donc normal de commencer par le texte seul, puis de
+    vouloir savoir qui parle — et recommencer de zéro reviendrait à
+    repayer la transcription, c'est-à-dire la seule partie qui coûte un
+    appel au fournisseur et consomme un quota.
+
+    Tout ce qu'il faut est déjà dans l'export : chaque mot y porte son
+    début et sa fin. La séparation ne lit que le son, l'attribution ne
+    fait que rapprocher deux séries d'horodatages. On rejoue donc la
+    moitié locale du traitement et on garde les mots tels quels.
+
+    D'où la vérification de durée, qui n'est pas une précaution de
+    principe. Si le fichier fourni n'est pas l'enregistrement d'origine —
+    une version recoupée, un autre montage, la bonne réunion mais le
+    mauvais jour — les horodatages ne désignent plus les mêmes instants.
+    Rien ne planterait : on obtiendrait un transcript entièrement
+    attribué, d'aspect normal, et faux d'un bout à l'autre. Mieux vaut
+    refuser."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+
+    if not mots:
+        raise PipelineError(
+            "Ce transcript ne contient pas les horodatages des mots, qui "
+            "sont ce dont la séparation des voix a besoin. Les exports "
+            "produits par une version ancienne peuvent en manquer : "
+            "il faut alors repartir de l'audio.")
+
+    progress("Conversion", 0.02)
+    wav = work_dir / "audio16k.wav"
+    to_wav16k(src, wav)
+    audio = read_wav16k(wav)
+    duration = len(audio) / 16000.0
+    log(f"durée : {duration / 60:.1f} min — conversion faite")
+
+    fin_des_mots = max(m["end"] for m in mots)
+    repere = duree_attendue or fin_des_mots
+    ecart = abs(duration - repere)
+    if ecart > TOLERANCE_DUREE or fin_des_mots > duration + TOLERANCE_DUREE:
+        wav.unlink(missing_ok=True)
+        raise PipelineError(
+            f"Cet enregistrement dure {duration / 60:.1f} min, le transcript "
+            f"en couvre {repere / 60:.1f}. Pour attribuer les répliques, il "
+            "faut exactement le fichier qui a servi à la transcription : "
+            "sur un autre montage, les horodatages ne désignent plus les "
+            "mêmes instants et toute l'attribution serait fausse.")
+
+    checkpoint()
+    if options.denoise:
+        audio = denoise(audio, options.denoise, progress, (0.03, 0.08))
+
+    checkpoint()
+    embedding = options.embedding
+    if embedding == "auto":
+        # Sans clé Groq, la reconnaissance de la langue est hors de
+        # portée — et elle n'a rien d'indispensable ici, puisque le texte
+        # existe déjà. On prend le modèle polyvalent plutôt que d'exiger
+        # une clé pour un traitement qui, lui, est entièrement local.
+        langue = options.language
+        if not langue and options.api_key:
+            progress("Reconnaissance de la langue", 0.08)
+            langue = detect_language(audio, options.api_key)
+            log(f"langue détectée : {langue or 'indéterminée'}")
+        embedding = assets.resoudre_pour_langue(langue)
+        log(f"modèle choisi : {assets.PAR_CLE[embedding].nom}")
+
+    progress("Séparation des voix", 0.10)
+    if options.num_speakers:
+        log(f"séparation des voix, {options.num_speakers} demandées "
+            f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
+        turns = diarize(audio, options.num_speakers, progress, (0.10, 0.90),
+                        CLUSTER_THRESHOLD, embedding)
+    else:
+        log("séparation des voix, nombre à déterminer")
+        turns = diarize_auto(audio, progress, (0.10, 0.90),
+                             CLUSTER_THRESHOLD, embedding)
+    del audio
+    wav.unlink(missing_ok=True)
+    checkpoint()
+
+    if not turns:
+        raise PipelineError(
+            "Aucune voix n'a pu être isolée dans cet enregistrement. "
+            "Le transcript est conservé tel quel.")
+
+    progress("Assemblage", 0.92)
+    blocks = build_blocks(mots, turns)
+    log(f"{len(blocks)} passages attribués")
+    progress("Extraits d'écoute", 0.97)
+    profiles = speaker_profiles(turns, blocks, src, work_dir)
+    log(f"extraits d'écoute prêts pour {len(profiles)} voix")
+
+    log("terminé")
+    progress("Terminé", 1.0)
+    return Result(duration=duration, blocks=blocks, speakers=profiles)
 
 
 def process(src: Path, work_dir: Path, options: Options,

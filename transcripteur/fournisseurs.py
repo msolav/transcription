@@ -308,8 +308,11 @@ def _groq(cle: str, f: dict, systeme: str, requete: str,
     if schema:
         params["response_format"] = {"type": "json_object"}
 
+    # Retenu dans une variable, comme pour Gemini : un client construit
+    # dans l'expression peut être ramassé avant la fin de la requête.
+    client = Groq(api_key=cle)
     try:
-        reponse = Groq(api_key=cle).chat.completions.create(**params)
+        reponse = client.chat.completions.create(**params)
     except Exception as exc:  # noqa: BLE001
         raise _traduire(exc) from exc
     return (reponse.choices[0].message.content or "").strip()
@@ -317,10 +320,23 @@ def _groq(cle: str, f: dict, systeme: str, requete: str,
 
 # --------------------------------------------------------------- erreurs
 
-def _auth_echouee(texte: str) -> bool:
+def auth_echouee(texte: str) -> bool:
+    """La panne décrite est-elle un refus de clé ?
+
+    Publique, et c'est voulu : `config.check_key` en avait sa propre
+    version, plus courte, qui ne connaissait pas « API key not valid ».
+    Google refuse une clé par un 400 et non par un 401, donc une clé
+    Gemini invalide y était classée « vérification impossible » et
+    l'utilisateur recevait la trace brute du SDK au lieu d'une consigne.
+    Deux listes de symptômes pour la même question finissent toujours
+    par ne plus dire la même chose."""
     return ("401" in texte or "UNAUTHENTICATED" in texte
             or "invalid_api_key" in texte or "API key not valid" in texte
+            or "API_KEY_INVALID" in texte
             or "authentication" in texte.lower())
+
+
+_auth_echouee = auth_echouee   # ancien nom, encore lu ailleurs
 
 
 def _traduire(exc: Exception) -> Exception:

@@ -1,0 +1,2452 @@
+<!DOCTYPE html>
+<html lang="fr" data-vm-voice="calm" data-vm-accent="cobalt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcripteur</title>
+<script>try{var t=localStorage.getItem('vm-theme');if(t?t==='ink':matchMedia('(prefers-color-scheme: dark)').matches)document.documentElement.dataset.vm='ink'}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wdth,wght@12..96,75..100,200..800&family=DM+Mono:wght@400;500&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&display=swap" rel="stylesheet">
+<style>
+/* ==========================================================================
+   VM UI KIT: Vincent Marsolais mini-apps (vincentmarsolais.com/app/*)
+   Drop-in. Per app override ONLY: --vm-accent (or data-vm-accent), font (or data-vm-type).
+   HARD RULE: nothing ever jumps. Every state change eases. See SKILL.md "No jumps".
+   ========================================================================== */
+
+/* Registered colours: the theme switch animates ALL of them in sync (no per-element transitions). */
+@property --vm-paper   { syntax: '<color>';  inherits: true; initial-value: #f1efe9; }
+@property --vm-paper-2 { syntax: '<color>';  inherits: true; initial-value: #e6e3da; }
+@property --vm-ink     { syntax: '<color>';  inherits: true; initial-value: #0c0c0b; }
+@property --vm-ink-2   { syntax: '<color>';  inherits: true; initial-value: #1a1a18; }
+@property --vm-accent  { syntax: '<color>';  inherits: true; initial-value: #ff3d12; }
+@property --vm-fade { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --vm-grain-dark  { syntax: '<number>'; inherits: true; initial-value: .14; }
+@property --vm-grain-light { syntax: '<number>'; inherits: true; initial-value: 0; }
+
+:root {
+  --vm-paper: #f1efe9; --vm-paper-2: #e6e3da;     /* quasi-white / quasi-black: never #fff / #000 */
+  --vm-ink: #0c0c0b;   --vm-ink-2: #1a1a18;
+  --vm-mute: color-mix(in oklab, var(--vm-ink) 52%, var(--vm-paper));
+  --vm-accent: #ff3d12;                            /* ONE signal colour per app */
+  --vm-grain-dark: .14; --vm-grain-light: 0;
+
+  --vm-font-display: "Bricolage Grotesque", "Inter Tight", system-ui, sans-serif;
+  --vm-font-mono: "DM Mono", ui-monospace, "SF Mono", monospace;
+  --vm-font-accent: "Instrument Serif", Georgia, serif;
+  --vm-wmin: 200; --vm-wmax: 800;                  /* weight range of the display font */
+  --vm-track: -.045em; --vm-stretch: 100%;
+
+  --vm-xxl: clamp(5rem, 24vw, 30rem);
+  --vm-xl:  clamp(3.5rem, 14vw, 16rem);
+  --vm-l:   clamp(2rem, 6vw, 6rem);
+  --vm-s:   clamp(.7rem, .9vw, .8rem);
+  --vm-pad: clamp(1rem, 3vw, 2.5rem);
+
+  /* ---- SIGNATURE CURVES (each has a personality; use by name). Default motion = "reel": a stepped, frame-skipping
+     feel (about 10-12 fps) baked into the curves. <html data-vm-motion="smooth"> = fluid, ="choppy" = about 6 fps. ---- */
+  --vm-d-open: .7s; --vm-d-shut: .42s; --vm-theme-dur: .7s; --vm-grain-t: 2.4s;
+  /* ease: decisive expo in-out | ease-out: fast, long calm tail | ease-bloom: a held breath, then it blooms (OPEN)
+     ease-shut: quick soft slam (CLOSE) | spring: overshoots 9%, one rebound (content arrival) */
+  --vm-ease: linear(0.014 0.0% 14.3%, 0.075 14.3% 28.6%, 0.289 28.6% 42.9%, 0.794 42.9% 57.1%, 0.939 57.1% 71.4%, 0.988 71.4% 85.7%, 1.000 85.7% 100.0%);
+  --vm-ease-out: linear(0.533 0.0% 11.1%, 0.788 11.1% 22.2%, 0.903 22.2% 33.3%, 0.957 33.3% 44.4%, 0.982 44.4% 55.6%, 0.994 55.6% 66.7%, 0.998 66.7% 77.8%, 1.000 77.8% 88.9%, 1.000 88.9% 100.0%);
+  --vm-ease-bloom: linear(0.021 0.0% 12.5%, 0.109 12.5% 25.0%, 0.485 25.0% 37.5%, 0.806 37.5% 50.0%, 0.917 50.0% 62.5%, 0.970 62.5% 75.0%, 0.993 75.0% 87.5%, 1.000 87.5% 100.0%);
+  --vm-ease-shut: linear(0.024 0.0% 20.0%, 0.163 20.0% 40.0%, 0.853 40.0% 60.0%, 0.977 60.0% 80.0%, 1.000 80.0% 100.0%);
+  --vm-spring: linear(0.422 0.0% 10.0%, 0.914 10.0% 20.0%, 1.089 20.0% 30.0%, 1.070 30.0% 40.0%, 1.018 40.0% 50.0%, 0.993 50.0% 60.0%, 0.992 60.0% 70.0%, 0.997 70.0% 80.0%, 1.000 80.0% 90.0%, 1.000 90.0% 100.0%);
+  --vm-loop: steps(14);
+  transition: --vm-paper var(--vm-theme-dur) var(--vm-ease), --vm-paper-2 var(--vm-theme-dur) var(--vm-ease),
+              --vm-ink var(--vm-theme-dur) var(--vm-ease),   --vm-ink-2 var(--vm-theme-dur) var(--vm-ease),
+              --vm-accent .59s var(--vm-ease),
+              --vm-grain-dark var(--vm-theme-dur) var(--vm-ease), --vm-grain-light var(--vm-theme-dur) var(--vm-ease);
+}
+:root[data-vm="ink"] {
+  --vm-paper: #0c0c0b; --vm-paper-2: #161614; --vm-ink: #f1efe9; --vm-ink-2: #d8d5cc;
+  --vm-grain-dark: 0; --vm-grain-light: .2;
+}
+:root[data-vm-motion="smooth"], :root[data-vm-voice="calm"]:not([data-vm-motion]) {   /* calm voice = fluid motion */
+  --vm-grain-t: 2s;
+  --vm-ease: cubic-bezier(.77, 0, .175, 1);
+  --vm-ease-out: cubic-bezier(.16, 1, .3, 1);
+  --vm-ease-bloom: cubic-bezier(.62, .02, .06, 1);
+  --vm-ease-shut: cubic-bezier(.86, 0, .12, 1);
+  --vm-spring: linear(0, 0.048, 0.167, 0.322, 0.488, 0.645, 0.783, 0.895, 0.98, 1.038, 1.074, 1.091, 1.095, 1.088, 1.076, 1.061, 1.045, 1.031, 1.018, 1.008, 1.001, 0.995, 0.992, 0.991, 0.991, 0.992, 0.993, 0.995, 0.996, 0.997, 0.999, 0.999, 1, 1.001, 1.001, 1.001, 1);
+  --vm-loop: ease-in-out;
+}
+:root[data-vm-motion="choppy"] {
+  --vm-grain-t: 4s;
+  --vm-ease: linear(0.053 0.0% 25.0%, 0.596 25.0% 50.0%, 0.956 50.0% 75.0%, 1.000 75.0% 100.0%);
+  --vm-ease-out: linear(0.752 0.0% 20.0%, 0.940 20.0% 40.0%, 0.988 40.0% 60.0%, 0.999 60.0% 80.0%, 1.000 80.0% 100.0%);
+  --vm-ease-bloom: linear(0.109 0.0% 25.0%, 0.806 25.0% 50.0%, 0.970 50.0% 75.0%, 1.000 75.0% 100.0%);
+  --vm-ease-shut: linear(0.090 0.0% 33.3%, 0.917 33.3% 66.7%, 1.000 66.7% 100.0%);
+  --vm-spring: linear(0.914 0.0% 20.0%, 1.070 20.0% 40.0%, 0.993 40.0% 60.0%, 0.997 60.0% 80.0%, 1.000 80.0% 100.0%);
+  --vm-loop: steps(8);
+}
+
+
+/* ---------- OPTIONS (set on <html>): accent / type / grain. See assets/options.html ---------- */
+:root[data-vm-accent="cobalt"]  { --vm-accent: #1f3bff; }  :root[data-vm-accent="cobalt"][data-vm="ink"]  { --vm-accent: #6f82ff; }
+:root[data-vm-accent="acid"]    { --vm-accent: #b4dc00; }  :root[data-vm-accent="acid"][data-vm="ink"]    { --vm-accent: #d4ff1a; }
+:root[data-vm-accent="magenta"] { --vm-accent: #ee1c85; }  :root[data-vm-accent="magenta"][data-vm="ink"] { --vm-accent: #ff4fa3; }
+:root[data-vm-accent="mono"]    { --vm-accent: var(--vm-ink); }
+:root[data-vm-type="wide"]      { --vm-font-display: "Anybody", sans-serif; --vm-wmin: 100; --vm-wmax: 900; --vm-stretch: 140%; --vm-track: -.05em; }
+:root[data-vm-type="condensed"] { --vm-font-display: "Big Shoulders Display", sans-serif; --vm-wmin: 100; --vm-wmax: 900; --vm-track: -.01em; }
+:root[data-vm-type="serif"]     { --vm-font-display: "Fraunces", Georgia, serif; --vm-wmin: 100; --vm-wmax: 900; --vm-track: -.04em; }
+:root[data-vm-type="round"]     { --vm-font-display: "Unbounded", sans-serif; --vm-wmin: 200; --vm-wmax: 900; --vm-track: -.06em; }
+:root[data-vm-grain="none"]   { --vm-grain-k: 0; }
+:root[data-vm-grain="soft"]   { --vm-grain-k: .5; }
+:root[data-vm-grain="heavy"]  { --vm-grain-k: 1.9; }
+:root[data-vm-grain="coarse"] { --vm-grain-k: 1.5; --vm-grain-size: 640px; }
+
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: light dark; scroll-behavior: smooth; }
+body {
+  margin: 0; min-height: 100svh; counter-reset: vm;
+  background: var(--vm-paper); color: var(--vm-ink);
+  font-family: var(--vm-font-display); font-stretch: var(--vm-stretch);   /* no fixed wght here: it would override font-weight everywhere */
+  -webkit-font-smoothing: antialiased; overflow-x: hidden;
+}
+
+/* ---------- GRAIN: two fixed layers (dark specks on paper, light specks on ink); theme cross-fades them ---------- */
+body::after, html::before {
+  content: ""; position: fixed; inset: -50%; z-index: 9999; pointer-events: none;
+  background-size: var(--vm-grain-size, 300px); animation: vm-jitter var(--vm-grain-t, 1s) steps(1, end) infinite; will-change: transform;
+}
+body::after  { opacity: calc(var(--vm-grain-dark)  * var(--vm-grain-k, 1));
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 1.4 -.2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+html::before { opacity: calc(var(--vm-grain-light) * var(--vm-grain-k, 1));
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.55' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.4 -.2'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
+@keyframes vm-jitter {   /* 8 frames: each position is held (steps(1) per interval) = film-grain flicker at about 3 fps (reel 2.4s per 8 frames; smooth 4 fps; choppy 2 fps). Grain is never faster than 4 fps */
+  0%{transform:translate(0,0)} 12.5%{transform:translate(-7%,4%)} 25%{transform:translate(5%,-8%)} 37.5%{transform:translate(-4%,-3%)}
+  50%{transform:translate(8%,6%)} 62.5%{transform:translate(-9%,-6%)} 75%{transform:translate(3%,9%)} 87.5%{transform:translate(-2%,-9%)}
+}
+
+/* ---------- GRITTY SURFACES: needs vm.js (injects #vm-grit filter) ---------- */
+.vm-grit { background: var(--c, var(--vm-ink)); filter: url(#vm-grit); }
+
+/* ---------- DISPLAY TYPE: every property that can change is transitioned ---------- */
+.vm-xxl, .vm-xl, .vm-l {
+  margin: 0; line-height: .8; letter-spacing: var(--vm-track); text-transform: lowercase;
+  font-variation-settings: "wght" var(--vm-wmax);
+  transition: font-variation-settings var(--vm-fv-dur, .85s) var(--vm-ease-out),
+              font-size var(--vm-fs-dur, .72s) var(--vm-ease-bloom),
+              letter-spacing .65s var(--vm-ease-out);
+  -webkit-user-select: none; user-select: none;
+}
+.vm-xxl { font-size: var(--vm-xxl); } .vm-xl { font-size: var(--vm-xl); } .vm-l { font-size: var(--vm-l); }
+.vm-thin   { font-variation-settings: "wght" var(--vm-wmin); letter-spacing: calc(var(--vm-track) * .5); }
+.vm-bleed  { margin-inline: calc(var(--vm-pad) * -1); white-space: nowrap; }
+.vm-outline{ -webkit-text-stroke: 1.5px var(--vm-ink); color: transparent; }
+.vm-serif  { font-family: var(--vm-font-accent); font-style: italic; font-weight: 400; letter-spacing: -.02em; }
+
+/* Pointer-follow weight ([data-vm-follow]): CSS does the easing. Slow return, quicker chase. */
+[data-vm-follow].on { --vm-fv-dur: .23s; }
+
+/* Weight morph without layout shift: ghost copy reserves the widest width */
+.vm-morph { display: inline-grid; cursor: default; }
+.vm-morph > * { grid-area: 1 / 1; }
+.vm-morph .ghost { visibility: hidden; font-variation-settings: "wght" var(--vm-wmax); }
+.vm-morph .live  { font-variation-settings: "wght" var(--vm-wmin); transition: font-variation-settings .72s var(--vm-ease-out); }
+.vm-morph:hover .live, .vm-morph:focus-visible .live { font-variation-settings: "wght" var(--vm-wmax); transition-duration: .39s; }
+
+[data-vm-wave] span { display: inline-block; font-variation-settings: "wght" var(--vm-wmin);
+  transition: font-variation-settings .72s var(--vm-ease-out); transition-delay: calc(var(--i) * 28ms); }
+[data-vm-wave]:hover span, [data-vm-wave].on span { font-variation-settings: "wght" var(--vm-wmax); transition-duration: .45s; }
+
+/* ---------- LINES: thick <-> hairline ---------- */
+.vm-rule { display: block; width: 100%; height: var(--h, 1px); background: var(--vm-ink); border: 0; margin: 0;
+  transition: height .78s var(--vm-ease-bloom); }
+.vm-rule.fat  { --h: clamp(1.5rem, 9vw, 9rem); }
+.vm-rule.hair { --h: 1px; }
+.vm-rule.signal { background: var(--vm-accent); }
+@supports (animation-timeline: view()) {
+  .vm-taper { animation: vm-taper linear both; animation-timeline: view(); animation-range: entry 10% cover 70%; }
+  @keyframes vm-taper { from { height: clamp(2rem, 14vw, 14rem); } to { height: 1px; } }
+}
+.vm-vrule { width: var(--w, 1px); align-self: stretch; background: var(--vm-ink); transition: width .78s var(--vm-ease-bloom); }
+
+/* ---------- LANDMARKS ---------- */
+.vm-label { font: 500 var(--vm-s)/1.2 var(--vm-font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--vm-mute); -webkit-user-select: none; user-select: none; }
+.vm-index::before { content: counter(vm) " /"; counter-increment: vm; margin-right: .6em; color: var(--vm-accent); }
+.vm-frame { position: relative; padding: var(--vm-pad); }
+.vm-frame::before, .vm-frame::after { content: ""; position: absolute; width: 14px; height: 14px; border: 0 solid var(--vm-ink); }
+.vm-frame::before { top: 0; left: 0; border-width: 1px 0 0 1px; }
+.vm-frame::after  { bottom: 0; right: 0; border-width: 0 1px 1px 0; }
+.vm-stamp { position: fixed; top: var(--vm-pad); left: var(--vm-pad); z-index: 50; display: flex; gap: .8em; align-items: baseline;
+  mix-blend-mode: difference; color: #f1efe9; text-decoration: none; -webkit-user-select: none; user-select: none; }
+.vm-stamp b { font: 900 1.4rem/1 var(--vm-font-display); letter-spacing: -.06em; }
+
+/* ---------- THEME SWITCH (auto-injected by vm.js): half-filled disc that rolls 180 degrees on a spring ---------- */
+.vm-theme { all: unset; position: fixed; top: var(--vm-pad); right: var(--vm-pad); z-index: 50; width: 34px; height: 34px; cursor: pointer;
+  mix-blend-mode: difference; color: #f1efe9; -webkit-tap-highlight-color: transparent; }
+.vm-theme::before { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid currentColor;
+  background: linear-gradient(90deg, currentColor 50%, transparent 50%); transition: transform .78s var(--vm-spring); }
+.vm-theme[aria-pressed="true"]::before { transform: rotate(180deg); }
+.vm-theme:hover::before { transform: rotate(14deg) scale(1.08); }
+.vm-theme[aria-pressed="true"]:hover::before { transform: rotate(166deg) scale(1.08); }
+.vm-theme::before { transition: transform .78s var(--vm-spring); }
+.vm-theme:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; border-radius: 50%; }
+
+/* ---------- CONTROLS ---------- */
+.vm-btn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: .6em; padding: .9em 1.6em;
+  font: 500 var(--vm-s)/1 var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase;
+  background: var(--vm-ink); color: var(--vm-paper); border-radius: 999px; -webkit-user-select: none; user-select: none;
+  transition: background-color .33s var(--vm-ease), color .33s var(--vm-ease), transform .59s var(--vm-spring), opacity .33s var(--vm-ease), box-shadow .33s var(--vm-ease); }
+.vm-btn:hover { background: var(--vm-accent); color: var(--vm-ink); transform: scale(1.04); }
+.vm-btn:focus-visible { outline: 2px solid var(--vm-accent); outline-offset: 3px; }
+.vm-btn.ghost { background: transparent; color: var(--vm-ink); box-shadow: inset 0 0 0 1px var(--vm-ink); }
+.vm-range { appearance: none; width: 100%; height: 1px; background: var(--vm-ink); outline: 0; }
+.vm-range::-webkit-slider-thumb { appearance: none; width: 18px; height: 18px; background: var(--vm-accent); border-radius: 0; cursor: ew-resize; }
+.vm-range::-moz-range-thumb { width: 18px; height: 18px; background: var(--vm-accent); border: 0; border-radius: 0; }
+
+/* ---------- FOLD: smooth height (and width) reveal. Replaces EVERY display:none / hidden toggle ---------- */
+/* vm.fold(el, show) wraps el's children in .in on first use. Mark initially-closed ones: class="vm-fold off". */
+.vm-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--vm-d-open) var(--vm-ease-bloom); }
+/* the clip region is 8px larger than the content on every side (padding + equal negative margin = no layout change), so hover scales, focus rings and slider thumbs are never cut off */
+.vm-fold > .in { min-height: 0; overflow: hidden; padding: 8px; margin: -8px; }
+.vm-fold > .in > * { transition: opacity .45s var(--vm-ease-out) calc(var(--i, 0) * 55ms + 120ms),
+                                 transform var(--vm-d-open) var(--vm-spring) calc(var(--i, 0) * 55ms + 120ms); }
+.vm-fold.off { grid-template-rows: 0fr; transition-duration: var(--vm-d-shut); transition-timing-function: var(--vm-ease-shut); }
+.vm-fold.off > .in > * { opacity: 0; transform: translateY(-1.1rem); transition: opacity .2s var(--vm-ease-shut), transform var(--vm-d-shut) var(--vm-ease-shut); }
+.vm-foldx { display: grid; grid-template-columns: 1fr; transition: grid-template-columns var(--vm-d-open) var(--vm-ease-bloom), opacity .52s var(--vm-ease-out); }
+.vm-foldx > .in { min-width: 0; overflow: hidden; }
+.vm-foldx.off { grid-template-columns: 0fr; opacity: 0; transition-duration: var(--vm-d-shut), .26s; transition-timing-function: var(--vm-ease-shut); }
+
+/* ---------- ACCORDION: <details class="vm-acc"> (exclusive by default; add data-vm-multi on the parent to allow many) ---------- */
+.vm-acc > summary { list-style: none; cursor: pointer; display: flex; align-items: baseline; gap: .5rem;
+  font-size: 1.9rem; line-height: 1.15; letter-spacing: -.04em; text-transform: lowercase; padding: .45rem 0;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; outline: 0;
+  font-variation-settings: "wght" var(--vm-wmin);
+  transition: font-variation-settings .72s var(--vm-ease-out), letter-spacing .59s var(--vm-ease-out), color .33s var(--vm-ease); }
+.vm-acc > summary::-webkit-details-marker { display: none; }
+.vm-acc > summary::before { content: counter(vm, decimal-leading-zero); counter-increment: vm; font: 500 var(--vm-s)/1 var(--vm-font-mono);
+  letter-spacing: .1em; color: var(--vm-accent); }
+.vm-acc > summary:hover { font-variation-settings: "wght" calc(var(--vm-wmin) + (var(--vm-wmax) - var(--vm-wmin)) * .55); transition-duration: .33s; }
+.vm-acc[data-open] > summary { font-variation-settings: "wght" var(--vm-wmax); letter-spacing: -.05em; transition-duration: .52s; }
+.vm-acc > summary:focus-visible { box-shadow: 0 1px 0 var(--vm-accent); }
+
+.vm-rise { opacity: 0; transform: translateY(18%); animation: vm-rise .8s var(--vm-ease-out) forwards; animation-delay: calc(var(--d, 0) * 90ms); }
+@keyframes vm-rise { to { opacity: 1; transform: none; } }
+
+/* Reduced motion: still never a jump, just shorter and calmer (no spring, no jitter) */
+@media (prefers-reduced-motion: reduce) {
+  :root { --vm-ease: cubic-bezier(.77, 0, .175, 1); --vm-ease-out: cubic-bezier(.16, 1, .3, 1); --vm-ease-bloom: cubic-bezier(.62, .02, .06, 1); --vm-ease-shut: cubic-bezier(.86, 0, .12, 1); --vm-spring: linear(0, 0.048, 0.167, 0.322, 0.488, 0.645, 0.783, 0.895, 0.98, 1.038, 1.074, 1.091, 1.095, 1.088, 1.076, 1.061, 1.045, 1.031, 1.018, 1.008, 1.001, 0.995, 0.992, 0.991, 0.991, 0.992, 0.993, 0.995, 0.996, 0.997, 0.999, 0.999, 1, 1.001, 1.001, 1.001, 1); --vm-loop: ease-in-out; --vm-d-open: .3s; --vm-d-shut: .25s; --vm-theme-dur: .3s; --vm-spring: var(--vm-ease-out); }
+  body::after, html::before { animation: none; }
+  .vm-rise { animation-duration: .01ms; }
+}
+
+/* ---------- DROPDOWN (replaces native <select>; vm.js enhances every select). Opens inline, same curves as accordions ---------- */
+.vm-sel { position: relative; }
+.vm-native { position: absolute; opacity: 0; pointer-events: none; width: 1px; height: 1px; overflow: hidden; }
+.vm-sel-btn { all: unset; box-sizing: border-box; width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: .6rem 0; border-bottom: 1px solid var(--vm-ink); cursor: pointer; font: 500 .8rem/1.3 var(--vm-font-mono);
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  transition: border-color .6s var(--vm-ease), box-shadow .6s var(--vm-ease), letter-spacing .8s var(--vm-ease-out); }
+.vm-sel-btn:hover { letter-spacing: .04em; }
+.vm-sel-btn:focus-visible, .vm-sel.open .vm-sel-btn { border-bottom-color: var(--vm-accent); box-shadow: 0 1px 0 var(--vm-accent); }
+.vm-sel-btn .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vm-sel .chev { flex: none; position: relative; width: 10px; height: 10px; transition: rotate .75s var(--vm-spring), color .35s var(--vm-ease); }
+.vm-sel .chev::before, .vm-sel .chev::after { content: ""; position: absolute; background: currentColor; left: 0; top: 50%; width: 100%; height: 1.5px; margin-top: -.75px; }
+.vm-sel .chev::after { rotate: 90deg; }
+.vm-sel.open .chev { rotate: 135deg; color: var(--vm-accent); }
+/* list: no scrollbars ever (they flashed during the open animation); a bottom fade shows when more is below */
+.vm-sel ul { list-style: none; margin: 0; padding: .35rem 0 .25rem; max-height: min(44vh, 21rem); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: none; --vm-fade: 0px; -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--vm-fade)), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--vm-fade)), transparent);
+  transition: --vm-fade .35s var(--vm-ease); }
+.vm-sel ul::-webkit-scrollbar { display: none; }
+.vm-sel ul[data-more] { --vm-fade: 2.6rem; }
+.vm-sel li { position: relative; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: .62rem .2rem .62rem 1.35rem; cursor: pointer; font: 400 .78rem/1.3 var(--vm-font-mono); color: var(--vm-ink);
+  -webkit-user-select: none; user-select: none;
+  opacity: 0; transform: translateX(-.9rem);
+  transition: opacity .55s var(--vm-ease-out) calc(var(--i, 0) * 26ms + 90ms), transform 1.05s var(--vm-spring) calc(var(--i, 0) * 26ms + 90ms),
+              translate .5s var(--vm-ease-out), color .4s var(--vm-ease); }
+.vm-sel .vm-fold:not(.off) li { opacity: 1; transform: none; }
+.vm-sel .vm-fold.off li { transition: opacity .25s var(--vm-ease-shut), transform .45s var(--vm-ease-shut); }
+.vm-sel li::before { content: ""; position: absolute; left: .15rem; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; background: var(--vm-accent);
+  scale: 0; transition: scale .8s var(--vm-spring); }
+.vm-sel li.act { translate: .5rem 0; }   /* shift with a transform: padding/margin would re-wrap the text mid-animation */
+.vm-sel li.act::before { scale: .55; }
+.vm-sel li[aria-selected="true"] { font-weight: 500; }
+.vm-sel li[aria-selected="true"]::before { scale: 1; }
+.vm-sel li.grp { cursor: default; font: 500 .64rem/1 var(--vm-font-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--vm-mute); padding: 1rem .2rem .35rem; }
+.vm-sel li.grp::before { display: none; }
+
+/* ---------- COMPARE: thick before/after bar that breathes (vm.compare) ---------- */
+@property --vm-amp { syntax: '<number>'; inherits: true; initial-value: 1.3; }
+.vm-compare { position: relative; display: inline-block; max-width: 100%; overflow: hidden;   /* the bar and grip are clipped to the image */ cursor: ew-resize; touch-action: pan-y; outline: 0;
+  -webkit-user-select: none; user-select: none; --pos: 50%; --gy: 50%; --vm-amp: 1.3;
+  transition: --vm-amp 1s var(--vm-spring); }
+.vm-compare:hover { --vm-amp: 1.8; }
+.vm-compare.drag { --vm-amp: 2.4; }
+.vm-compare > :first-child { display: block; max-width: 100%; height: auto; }
+.vm-compare > .top { position: absolute; inset: 0; width: 100%; height: 100%; clip-path: inset(0 calc(100% - var(--pos)) 0 0); }
+.vm-compare::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; box-shadow: inset 0 0 0 1px var(--vm-ink); }   /* contour line sits ABOVE the bar */
+.vm-cmp-bar { z-index: 1; position: absolute; top: 0; bottom: 0; left: var(--pos); width: 0; pointer-events: none; }
+.vm-cmp-line { position: absolute; top: 0; bottom: 0; left: 0; width: 12px; translate: -50% 0; background: #fff; mix-blend-mode: difference;
+  transition: width 1.1s var(--vm-spring); animation: vm-breathe 3.6s var(--vm-loop) infinite; }
+.vm-compare:hover .vm-cmp-line { width: 18px; }
+.vm-compare.drag  .vm-cmp-line { width: 28px; }
+@keyframes vm-breathe { 0%, 100% { scale: 1 1; opacity: .88; } 50% { scale: var(--vm-amp) 1; opacity: 1; } }
+/* grip: a plain accent rectangle on the bar. It thickens with the bar on hover/drag; its inner block squashes with speed */
+.vm-cmp-grip { position: absolute; left: 0; top: var(--gy); width: 24px; height: 84px; margin: -42px 0 0 -12px; display: block; scale: 1 1;
+  transition: scale .7s var(--vm-spring); }
+.vm-compare:hover .vm-cmp-grip { scale: 1.3 1; }
+.vm-compare.drag  .vm-cmp-grip { scale: 1.7 1.06; }
+.vm-cmp-grip i { display: block; width: 100%; height: 100%; background: var(--vm-accent); will-change: transform; transition: background-color .35s var(--vm-ease); }
+.vm-cmp-grip::after { content: ""; position: absolute; inset: 0; border: 1.5px solid var(--vm-accent); animation: vm-ping 3.6s var(--vm-loop) infinite; }
+@keyframes vm-ping { 0% { scale: 1 1; opacity: .8; } 70%, 100% { scale: 1.9 1.35; opacity: 0; } }
+.vm-compare:focus-visible .vm-cmp-grip { box-shadow: 0 0 0 3px var(--vm-paper), 0 0 0 5px var(--vm-ink); }
+.vm-cmp-lab { position: absolute; top: 12px; font: 500 var(--vm-s)/1 var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase;
+  color: #fff; mix-blend-mode: difference; pointer-events: none; z-index: 2; opacity: var(--lo, 1); }
+.vm-cmp-lab.l { left: 14px; } .vm-cmp-lab.r { right: 14px; opacity: var(--ro, 1); }
+@media (prefers-reduced-motion: reduce) { .vm-cmp-line, .vm-cmp-grip::after { animation: none; } }
+
+/* ---------- HALFTONE decoration ---------- */
+.vm-htrule { display: block; height: 9px; background: var(--vm-ink); -webkit-mask: var(--vm-ht-rule) left center / 100% 100% no-repeat; mask: var(--vm-ht-rule) left center / 100% 100% no-repeat; }
+.vm-htrule.flip { scale: -1 1; }
+.vm-theme.nt::before { transition: none; }
+
+/* ---------- BUSY: halftone loading strip (vm.busy) ---------- */
+.vm-busy { position: absolute; left: 0; right: 0; top: -15px; height: 30px; pointer-events: none; z-index: 10001; opacity: 0; scale: 1 .3; --vm-busy-t: 1s;
+  transition: opacity .25s var(--vm-ease), scale .45s var(--vm-spring); }
+.vm-busy.on { opacity: 1; scale: 1 1; }
+:root[data-vm-motion="smooth"] .vm-busy { --vm-busy-t: .6s; } :root[data-vm-motion="choppy"] .vm-busy { --vm-busy-t: 2s; }
+.vm-busy-track { position: relative; height: 30px; overflow: hidden; }
+.vm-busy-track .t { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .35; }
+.vm-busy-clip { position: absolute; inset: 0; overflow: hidden; clip-path: inset(0 0 0 0); transition: clip-path .45s var(--vm-ease-out); }
+.vm-busy-clip .s { display: block; width: 100%; height: 360px; animation: vm-busy-run var(--vm-busy-t) steps(12) infinite; animation-play-state: paused; }
+.vm-busy.on .s { animation-play-state: running; }
+@keyframes vm-busy-run { to { transform: translateY(-100%); } }
+.vm-busy-meta { position: absolute; right: 0; top: calc(100% + .55rem); display: flex; gap: 1.1em; font: 500 var(--vm-s)/1 var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--vm-accent); }
+.vm-busy-p { min-width: 4ch; text-align: right; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .vm-busy-clip .s { animation: none; } }
+
+/* ---------- VOICE: calm (general audiences). <html data-vm-voice="calm"> ----------
+   Same palette/accent/dark-light/grain, but: fluid (not stepped) motion, a quieter and shorter theme flip, stronger muted-text contrast,
+   sentence-case readable labels. Apps pair it with comfortable body sizes (>= 15px) and plain-language copy. */
+:root[data-vm-voice="calm"] { --vm-mute: color-mix(in oklab, var(--vm-ink) 68%, var(--vm-paper)); }
+:root[data-vm-voice="calm"]:not([data-vm-grain]) { --vm-grain-k: .45; }
+:root[data-vm-voice="calm"] .vm-label { font-family: var(--vm-font-display); font-size: .8125rem; letter-spacing: .01em; text-transform: none; font-weight: 500; }
+
+/* ---------- LOADER (generic): thick bar on a hairline ---------- */
+.vm-busy.vm-busy-bar { position: relative; top: auto; left: auto; right: auto; height: auto; max-height: 0; overflow: hidden; scale: 1 1; z-index: auto;
+  transition: opacity .3s var(--vm-ease), max-height .45s var(--vm-ease-bloom); }
+.vm-busy.vm-busy-bar.on { max-height: 4.5rem; }
+.vm-busyb-track { position: relative; height: 3px; overflow: hidden; background: color-mix(in oklab, var(--vm-ink) 24%, transparent); transition: height .5s var(--vm-ease-bloom); }
+.vm-busy-bar.on .vm-busyb-track { height: 12px; }
+.vm-busyb-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--vm-accent); transition: width .5s var(--vm-ease-out); }
+.vm-busyb-sweep { position: absolute; inset: 0 auto 0 0; width: 26%; background: var(--vm-accent); opacity: 0; animation: vm-sweep var(--vm-sweep-t, 1.8s) var(--vm-ease) infinite; animation-play-state: paused; }
+:root[data-vm-motion="reel"] .vm-busyb-sweep, :root:not([data-vm-motion]):not([data-vm-voice="calm"]) .vm-busyb-sweep { animation-timing-function: steps(14); }
+.vm-busy-bar.on.indet .vm-busyb-sweep { opacity: 1; animation-play-state: running; }
+@keyframes vm-sweep { from { transform: translateX(-100%); } to { transform: translateX(385%); } }
+.vm-busy-bar .vm-busy-meta { position: static; margin-top: .55rem; justify-content: space-between; }
+@media (prefers-reduced-motion: reduce) { .vm-busyb-sweep { animation: none; width: 100%; } }
+
+/* ---------- LANGUAGE toggle ---------- */
+body { transition: opacity .2s var(--vm-ease); }
+.vm-lang-fade body { opacity: 0; }
+.vm-lang { position: fixed; top: calc(var(--vm-pad) + 3px); right: calc(var(--vm-pad) + 34px + 14px); z-index: 50; display: flex; gap: 2px; color: #f1efe9; mix-blend-mode: difference; }
+.vm-lang button { all: unset; cursor: pointer; font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .1em; padding: .55em .6em .5em; opacity: .55; box-shadow: inset 0 -2px 0 transparent;
+  transition: opacity .35s var(--vm-ease), box-shadow .35s var(--vm-ease); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+.vm-lang button:hover { opacity: .85; }
+.vm-lang button[aria-pressed="true"] { opacity: 1; box-shadow: inset 0 -2px 0 currentColor; }
+.vm-lang button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+/* ===== Transcripteur: VM kit, calm voice. Audience: non-technical colleagues and clients. =====
+   Comfortable sizes (UI 15-16px, reading text 18px), sentence case, plain words, large targets (44px), strong contrast. */
+:root { --tr-rail: 392px; --tr-on-accent: #fff; --tr-warn: #c93a14; --tr-ok: #2c7a3f; --serif: "Newsreader", Georgia, serif;
+  --vm-font-mono: "DM Mono", ui-monospace, monospace; }
+:root[data-vm="ink"] { --tr-on-accent: #0c0c0b; --tr-warn: #ff7a55; --tr-ok: #7fcf94; }
+html { font-size: 16px; }
+body { font-size: 1rem; line-height: 1.5; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; border: 0; background: none; }
+:focus-visible { outline: 2px solid var(--vm-accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- shell ---------- */
+.shell { display: grid; grid-template-columns: var(--tr-rail) 1fr; min-height: 100vh; }
+.console { background: var(--vm-paper-2); color: var(--vm-ink); padding: 22px 24px 28px; display: flex; flex-direction: column; gap: 22px;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; scrollbar-width: none; border-right: 1px solid var(--vm-ink); }
+.console::-webkit-scrollbar { display: none; }
+.stage { padding: 0; min-width: 0; }
+
+.rail-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 40px; }
+.wordmark { display: flex; align-items: baseline; gap: 10px; text-decoration: none; color: inherit; }
+.wordmark b { font: 800 1.45rem/1 var(--vm-font-display); letter-spacing: -.035em; }
+.wordmark span { font-size: .8125rem; color: var(--vm-mute); }
+.rail-tools { display: flex; align-items: center; gap: 6px; }
+.rail-tools .vm-lang, .rail-tools .vm-theme { position: relative; top: auto; right: auto; mix-blend-mode: normal; color: var(--vm-ink); }
+.rail-tools .vm-theme { width: 34px; height: 34px; flex: none; }
+.rail-tools .vm-lang button { font-size: .8125rem; padding: .7em .7em .55em; opacity: .6; }
+.rail-tools .vm-lang button[aria-pressed="true"] { opacity: 1; }
+
+/* ---------- drop zone: the thick bar, now a clearly labelled button ---------- */
+.drop { position: relative; background: var(--vm-ink); color: var(--vm-paper); padding: 26px 22px 22px; display: flex; flex-direction: column; gap: 14px;
+  transition: background-color .45s var(--vm-ease), color .45s var(--vm-ease); }
+.drop h2 { margin: 0; font: 800 1.55rem/1.1 var(--vm-font-display); letter-spacing: -.03em; }
+.drop p { margin: 0; font-size: .9375rem; line-height: 1.5; opacity: .82; }
+.drop .rouvrir { font-size: .9375rem; }
+.drop .rouvrir a { color: inherit; text-underline-offset: 3px; }
+.drop .big { align-self: flex-start; display: inline-flex; align-items: center; gap: .6em; padding: .8em 1.3em; min-height: 46px; background: var(--vm-accent); color: var(--tr-on-accent);
+  font-weight: 700; font-size: 1rem; transition: background-color .4s var(--vm-ease), color .4s var(--vm-ease), transform .5s var(--vm-spring); }
+.drop .big:hover { background: var(--vm-paper); color: var(--vm-ink); }
+.drop .big svg { width: 1.15em; height: 1.15em; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: square; }
+.drop.hot { background: var(--vm-accent); color: var(--tr-on-accent); }
+.drop.hot .big { background: var(--vm-ink); color: var(--vm-paper); }
+.filetag { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border: 1px solid var(--vm-ink); background: var(--vm-paper); }
+.filetag .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filetag .meta { font: 400 .8125rem var(--vm-font-mono); color: var(--vm-mute); margin-top: 2px; }
+.filetag button { color: var(--vm-ink); text-decoration: underline; text-underline-offset: 3px; font-size: .9375rem; white-space: nowrap; padding: 8px 4px; }
+
+/* ---------- settings ---------- */
+.group { display: flex; flex-direction: column; gap: 16px; }
+.grouplabel { font: 800 1.05rem/1 var(--vm-font-display); letter-spacing: -.02em; display: flex; align-items: center; gap: 12px; }
+.grouplabel::after { content: ""; flex: 1; height: 1px; background: var(--vm-ink); opacity: .4; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label { font-size: .9375rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--vm-ink); margin: 0; }
+.hint { font-size: .875rem; line-height: 1.5; color: var(--vm-mute); margin: 0; }
+.hint:empty { display: none; }
+.console .vm-sel-btn { min-height: 46px; padding: .65rem 0; font: 500 .9375rem/1.3 var(--vm-font-display); }
+.console .vm-sel li { font: 400 .9375rem/1.35 var(--vm-font-display); white-space: normal; }
+.console .vm-sel li.grp { font: 600 .8125rem var(--vm-font-display); }
+.console .vm-sel .vm-fold .in { padding: 8px; }
+
+.go { width: 100%; min-height: 54px; background: var(--vm-accent); color: var(--tr-on-accent); font: 800 1.1rem/1 var(--vm-font-display); letter-spacing: -.01em;
+  transition: background-color .4s var(--vm-ease), color .4s var(--vm-ease), opacity .4s var(--vm-ease); }
+.go:not(:disabled):hover { background: var(--vm-ink); color: var(--vm-paper); }
+.go:disabled { background: color-mix(in oklab, var(--vm-ink) 18%, transparent); color: var(--vm-mute); cursor: not-allowed; }
+.go:disabled::after { content: ""; }
+
+/* advanced settings accordion */
+.console details.vm-acc { border-top: 1px solid var(--vm-ink); padding: 0 0 4px; }
+.console .vm-acc > summary { font: 700 1rem/1.2 var(--vm-font-display); letter-spacing: -.01em; padding: .9rem 0; text-transform: none; align-items: center;
+  font-variation-settings: "wght" 700; justify-content: space-between; }
+.console .vm-acc > summary::before { content: none; }
+.console .vm-acc > summary::after { content: ""; width: 10px; height: 10px; flex: none; background:
+  linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat, linear-gradient(currentColor, currentColor) center / 1.5px 100% no-repeat; transition: rotate .6s var(--vm-spring); }
+.console .vm-acc[data-open] > summary::after { rotate: 135deg; }
+.console .vm-acc > summary:hover, .console .vm-acc[data-open] > summary { font-variation-settings: "wght" 700; letter-spacing: -.01em; }
+.console .vm-acc .field + .field { margin-top: 16px; }
+
+.linkbtn { color: var(--vm-ink); text-decoration: underline; text-underline-offset: 3px; text-align: left; font-size: .9375rem; padding: 6px 0; }
+
+/* ---------- status ---------- */
+.status { border-top: 1px solid var(--vm-ink); padding-top: 18px; display: flex; flex-direction: column; gap: 10px; }
+.status[hidden] { display: none; }
+.status .stagetext { display: flex; justify-content: space-between; gap: 10px; font-size: 1rem; font-weight: 600; }
+.status .stagetext em { font-style: normal; font-family: var(--vm-font-mono); font-weight: 500; font-size: .9375rem; }
+.status .elapsed { font-size: .875rem; color: var(--vm-mute); min-height: 1.3em; }
+.status .vm-busy-meta { display: none; }
+.stop { min-height: 44px; border: 1px solid var(--vm-ink); font-weight: 600; font-size: .9375rem; transition: background-color .35s var(--vm-ease), color .35s var(--vm-ease), border-color .35s var(--vm-ease); }
+.stop:hover { background: var(--vm-ink); color: var(--vm-paper); }
+.stop[hidden] { display: none; }
+.journal { font: 400 .8125rem/1.7 var(--vm-font-mono); color: var(--vm-mute); max-height: 180px; overflow-y: auto; padding-top: 4px; }
+.journal div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.journal div:last-child { color: var(--vm-ink); }
+.alert { border-left: 4px solid var(--tr-warn); padding: 12px 14px; background: color-mix(in oklab, var(--tr-warn) 10%, var(--vm-paper)); font-size: .9375rem; line-height: 1.5; }
+.perime { padding: 12px 24px; background: var(--tr-warn); color: #fff; font-size: .9375rem; }
+.perime[hidden] { display: none; }
+
+/* ---------- empty state ---------- */
+.blank { min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 64px clamp(24px, 5vw, 80px); max-width: 860px; }
+.blank h1 { margin: 0 0 24px; font: 800 clamp(2.5rem, 5.4vw, 4.6rem)/1.02 var(--vm-font-display); letter-spacing: -.045em; font-variation-settings: "wght" var(--vm-wmax); }
+.blank h1 em { font-style: normal; display: block; font-variation-settings: "wght" var(--vm-wmin); color: var(--vm-accent); transition: font-variation-settings .9s var(--vm-ease-out); }
+.blank h1:hover em { font-variation-settings: "wght" var(--vm-wmax); }
+.blank .lead { font-size: 1.1875rem; line-height: 1.6; color: var(--vm-ink); margin: 0 0 30px; max-width: 54ch; }
+.steps { display: flex; flex-direction: column; margin: 0 0 30px; padding: 0; list-style: none; border-top: 1px solid var(--vm-ink); counter-reset: s; }
+.steps li { display: grid; grid-template-columns: 56px 1fr; gap: 16px; align-items: baseline; padding: 16px 0; border-bottom: 1px solid color-mix(in oklab, var(--vm-ink) 28%, transparent); counter-increment: s; font-size: 1.0625rem; line-height: 1.5; }
+.steps li::before { content: counter(s); font: 800 2rem/1 var(--vm-font-display); color: var(--vm-accent); letter-spacing: -.04em; }
+.privacy { border-left: 4px solid var(--vm-accent); padding: 4px 0 4px 18px; max-width: 58ch; }
+.privacy h2 { margin: 0 0 6px; font: 700 1rem var(--vm-font-display); }
+.privacy p { margin: 0; font-size: .9375rem; line-height: 1.6; color: var(--vm-mute); }
+
+/* ---------- first launch: the key ---------- */
+.setup { max-width: 620px; padding: 64px clamp(24px, 5vw, 80px); min-height: 100vh; display: flex; flex-direction: column; justify-content: center; }
+.setup h1 { margin: 0 0 18px; font: 800 clamp(2.2rem, 4.2vw, 3.4rem)/1.05 var(--vm-font-display); letter-spacing: -.04em; }
+.setup h1 em { font-style: normal; color: var(--vm-accent); font-variation-settings: "wght" var(--vm-wmin); }
+.setup p { font-size: 1.0625rem; line-height: 1.6; margin: 0 0 8px; }
+.setup ol { font-size: 1.0625rem; line-height: 1.8; padding-left: 22px; margin: 14px 0 26px; }
+.setup a { color: var(--vm-accent); font-weight: 600; text-underline-offset: 3px; }
+.keyrow { display: flex; gap: 10px; flex-wrap: wrap; }
+.keyrow input { flex: 1; min-width: 240px; font: 400 1rem var(--vm-font-mono); padding: 12px 14px; min-height: 50px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); border-radius: 0; }
+.keyrow input:focus { outline: 2px solid var(--vm-accent); outline-offset: 2px; }
+.keyrow button { background: var(--vm-accent); color: var(--tr-on-accent); padding: 0 26px; min-height: 50px; font-weight: 800; font-size: 1.0625rem; transition: background-color .4s var(--vm-ease), color .4s var(--vm-ease); }
+.keyrow button:not(:disabled):hover { background: var(--vm-ink); color: var(--vm-paper); }
+.keyrow button:disabled { opacity: .5; cursor: not-allowed; }
+.keynote { font-size: .9375rem; color: var(--vm-mute); margin-top: 14px; line-height: 1.6; }
+.keyerr { color: var(--tr-warn); font-size: 1rem; margin-top: 12px; font-weight: 600; min-height: 1.4em; }
+
+/* ---------- voices ---------- */
+.channels { background: var(--vm-paper); border-bottom: 1px solid var(--vm-ink); padding: 22px clamp(20px, 4vw, 44px); position: sticky; top: 0; z-index: 5; }
+.channels header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.channels h2 { font: 800 1.2rem/1.2 var(--vm-font-display); margin: 0; letter-spacing: -.02em; }
+.channels h2 span { color: var(--vm-mute); font-weight: 500; font-size: .9375rem; letter-spacing: 0; }
+.strips { display: grid; grid-template-columns: repeat(auto-fill, minmax(244px, 1fr)); gap: 14px; }
+.strip { background: var(--vm-paper-2); padding: 14px 14px 14px; display: flex; flex-direction: column; gap: 12px; border-top: 5px solid var(--c); }
+.strip .top { display: flex; align-items: center; gap: 12px; }
+.play { width: 46px; height: 46px; flex: none; background: var(--c); color: #fff; display: grid; place-items: center; transition: transform .5s var(--vm-spring), filter .3s; }
+.play:hover:not(:disabled) { transform: scale(1.06); }
+.play:disabled { opacity: .35; cursor: not-allowed; }
+.play svg { width: 14px; height: 14px; fill: currentColor; margin-left: 2px; }
+.play.on svg { margin-left: 0; }
+.strip .who { min-width: 0; flex: 1; }
+.strip .tag { font-size: .8125rem; font-weight: 600; color: var(--vm-mute); }
+.strip input { width: 100%; border: 0; border-bottom: 1px solid var(--vm-ink); background: none; padding: 5px 0; font: 600 1.0625rem var(--vm-font-display); min-height: 36px; border-radius: 0; color: var(--vm-ink);
+  transition: border-color .4s var(--vm-ease), box-shadow .4s var(--vm-ease); }
+.strip input::placeholder { color: var(--vm-mute); font-weight: 400; }
+.strip input:focus { outline: none; border-bottom-color: var(--c); box-shadow: 0 1px 0 var(--c); }
+.share { height: 6px; background: color-mix(in oklab, var(--vm-ink) 14%, transparent); overflow: hidden; }
+.share i { display: block; height: 100%; background: var(--c); width: var(--w); }
+.strip .stat { font-size: .8125rem; color: var(--vm-mute); display: flex; justify-content: space-between; gap: 8px; }
+#expand { font-size: .9375rem; text-decoration: underline; text-underline-offset: 3px; color: var(--vm-ink); padding: 6px 0; }
+
+/* ---------- transcript ---------- */
+.doc { padding: 34px clamp(20px, 4vw, 44px) 210px; max-width: 880px; }
+.turn { display: grid; grid-template-columns: 84px 1fr; gap: 20px; padding: 12px 0 12px 16px; border-left: 4px solid transparent; margin-left: -20px;
+  transition: border-color .4s var(--vm-ease), background-color .4s var(--vm-ease); }
+.turn .tc { font: 400 .875rem var(--vm-font-mono); color: var(--vm-mute); padding-top: 7px; text-align: right; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; transition: color .3s, text-decoration-color .3s; }
+.turn .tc:hover { color: var(--vm-accent); text-decoration-color: currentColor; }
+.turn .said { min-width: 0; }
+.turn .who { font: 700 .9375rem var(--vm-font-display); color: var(--vm-ink); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.turn .who::before { content: ""; width: 10px; height: 10px; background: var(--c); flex: none; }
+.turn p { font: 400 1.1875rem/1.7 var(--serif); margin: 0; }
+.turn.same .who { visibility: hidden; height: 0; margin: 0; }
+.turn.live { border-left-color: var(--vm-accent); background: color-mix(in oklab, var(--vm-accent) 9%, var(--vm-paper)); }
+
+/* ---------- player deck: an inverted block (flips with the theme) ---------- */
+.deck { background: var(--vm-ink); color: var(--vm-paper); padding: 12px clamp(20px, 4vw, 44px) 14px; display: flex; flex-direction: column; gap: 10px; }
+.deck[hidden] { display: none; }
+.deck .line { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.deck button { color: var(--vm-paper); opacity: .85; font-size: .9375rem; min-height: 44px; padding: 0 8px; transition: opacity .3s; }
+.deck button:hover { opacity: 1; text-decoration: underline; text-underline-offset: 3px; }
+.deck .main { width: 48px; height: 48px; flex: none; padding: 0; background: var(--vm-accent); color: var(--tr-on-accent); opacity: 1; display: grid; place-items: center; transition: transform .5s var(--vm-spring); }
+.deck .main:hover { transform: scale(1.06); text-decoration: none; }
+.deck .main svg { width: 15px; height: 15px; fill: currentColor; }
+.deck .clock { font: 400 .9375rem var(--vm-font-mono); opacity: .85; white-space: nowrap; }
+.deck .who { font-size: .9375rem; opacity: .9; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-align: right; }
+.deck .who b { font-weight: 700; }
+.scrub { position: relative; height: 24px; flex: 1; min-width: 140px; cursor: pointer; display: flex; align-items: center; }
+.scrub .track { height: 5px; width: 100%; background: color-mix(in oklab, var(--vm-paper) 28%, transparent); overflow: hidden; }
+.scrub .track i { display: block; height: 100%; background: var(--vm-accent); width: 0; }
+.scrub .head { position: absolute; top: 50%; width: 6px; height: 20px; background: var(--vm-paper); translate: -50% -50%; left: 0; pointer-events: none; }
+.deck .follow { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.deck .follow i { width: 10px; height: 10px; border: 1.5px solid currentColor; display: block; transition: background-color .3s; }
+.deck .follow.on i { background: var(--vm-accent); border-color: var(--vm-accent); }
+.deck .rate { font-family: var(--vm-font-mono); min-width: 52px; text-align: center; }
+.deck .keys { font-size: .8125rem; opacity: .7; }
+
+.dock { position: fixed; bottom: 0; left: 0; right: 0; z-index: 9; }
+.dock[hidden] { display: none; }
+@media (min-width: 901px) { .dock { left: var(--tr-rail); } }
+.exportbar { background: var(--vm-paper); border-top: 1px solid var(--vm-ink); padding: 12px clamp(20px, 4vw, 44px); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.exportbar button { border: 1px solid var(--vm-ink); padding: 0 16px; min-height: 44px; font-size: .9375rem; font-weight: 600; transition: background-color .35s var(--vm-ease), color .35s var(--vm-ease); }
+.exportbar button:hover { background: var(--vm-ink); color: var(--vm-paper); }
+.exportbar .said { font-size: .9375rem; color: var(--vm-mute); align-self: center; }
+
+/* ---------- panels (review, summary) ---------- */
+.panneau { border-top: 1px solid var(--vm-ink); padding: 18px clamp(20px, 4vw, 44px); max-height: 48vh; overflow-y: auto; background: var(--vm-paper); font-size: 1rem; }
+.panneau h4 { font: 800 1.15rem var(--vm-font-display); letter-spacing: -.02em; margin: 0 0 12px; text-transform: none; color: var(--vm-ink); }
+.panneau .row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid color-mix(in oklab, var(--vm-ink) 24%, transparent); }
+.panneau .row:last-child { border-bottom: 0; }
+.panneau .ap { color: var(--vm-ink); }
+.panneau label { display: flex; gap: 8px; align-items: center; cursor: pointer; font-size: 1rem; text-transform: none; letter-spacing: 0; color: var(--vm-ink); margin: 0; }
+.panneau .opts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+.panneau .opts button, .panneau .keyrow button { border: 1px solid var(--vm-ink); padding: 0 16px; min-height: 44px; font-weight: 600; font-size: .9375rem; transition: background-color .35s, color .35s; }
+.panneau .opts button:hover, .panneau .keyrow button:hover { background: var(--vm-ink); color: var(--vm-paper); }
+.panneau .opts button:disabled { opacity: .45; }
+.panneau .opts .vm-sel { min-width: 220px; flex: 1; }
+.panneau .opts .vm-sel-btn { min-height: 44px; font-size: .9375rem; }
+.panneau pre { white-space: pre-wrap; font: inherit; margin: 0; line-height: 1.6; }
+.panneau textarea { width: 100%; margin-top: 12px; padding: 12px 14px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); font: inherit; font-size: .9375rem; resize: vertical; border-radius: 0; }
+.panneau .keyrow { display: flex; gap: 8px; margin: 8px 0; }
+.panneau .keyrow input { flex: 1; padding: 10px 12px; border: 1px solid var(--vm-ink); background: var(--vm-paper); color: var(--vm-ink); font: inherit; min-height: 44px; border-radius: 0; }
+.panneau .keyerr { color: var(--tr-warn); }
+.cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 8px; }
+.cmp p { margin: 3px 0 0; line-height: 1.6; font-family: var(--serif); font-size: 1.0625rem; }
+.cmph { font-size: .8125rem; font-weight: 700; color: var(--vm-mute); }
+.cmp mark { background: none; padding: 0; color: inherit; }
+.cmp mark.ote { background: color-mix(in oklab, var(--tr-warn) 20%, transparent); text-decoration: line-through; text-decoration-color: var(--tr-warn); }
+.cmp mark.mis { background: color-mix(in oklab, var(--tr-ok) 24%, transparent); }
+.panneau .extrait { margin: 6px 0 0; color: var(--vm-mute); line-height: 1.5; font-family: var(--serif); }
+.apercu { margin-top: 12px; border: 1px solid var(--vm-ink); padding: 12px 14px; max-height: 260px; overflow: auto; }
+.apercu-tete { font-size: .8125rem; font-weight: 700; color: var(--vm-mute); margin-bottom: 6px; }
+.apercu pre { font-size: .9375rem; color: var(--vm-ink); }
+
+@media (max-width: 900px) {
+  .shell { grid-template-columns: 1fr; }
+  .console { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--vm-ink); }
+  .channels { position: static; }
+  .turn { grid-template-columns: 1fr; gap: 2px; margin-left: 0; }
+  .turn .tc { text-align: left; padding-top: 0; }
+  .cmp { grid-template-columns: 1fr; }
+  .deck .who, .deck .keys { display: none; }
+  .dock { position: static; }                                   /* export bar flows after the transcript */
+  .deck { position: fixed; left: 0; right: 0; bottom: 0; z-index: 9; padding-top: 8px; padding-bottom: 10px; gap: 4px; }
+  .deck .line { gap: 6px; }
+  .doc { padding-bottom: 150px; }
+}
+@media (prefers-reduced-motion: reduce) { .blank h1 em { transition: none; } }
+
+.working { margin: 0 0 24px; padding: 14px 18px; border-left: 4px solid var(--vm-accent); background: color-mix(in oklab, var(--vm-accent) 9%, var(--vm-paper)); font-size: 1.0625rem; line-height: 1.55; max-width: 58ch; }
+.working[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div class="perime" id="perime" hidden role="alert" data-en="The program was changed after it started. The display is up to date, but the processing is not: <b>stop and restart</b> the server so the fixes take effect.">Le programme a été modifié depuis son
+  démarrage. L'affichage est à jour, le traitement non : <b>arrête et relance</b>
+  le serveur pour que les corrections s'appliquent.</div>
+<div class="shell">
+
+  <aside class="console">
+    <div class="rail-head">
+      <a class="wordmark" href="/"><b>Transcripteur</b></a>
+      <div class="rail-tools"><div class="vm-lang"></div><button class="vm-theme" type="button" aria-label="Changer de thème" data-en-aria-label="Switch light / dark"></button></div>
+    </div>
+
+    <div id="alerts" role="alert"></div>
+
+    <div id="dropzone" class="drop">
+      <h2 data-en="Drop an audio recording">Dépose un enregistrement audio</h2>
+      <p data-en="m4a, mp3, wav, flac, ogg or mp4, up to 2&nbsp;GB">m4a, mp3, wav, flac, ogg ou mp4, jusqu'à 2&nbsp;Go</p>
+      <button type="button" id="pick" class="big"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M12 18L24 6l12 12M6 32v10h36V32"/></svg><span data-en="Choose a file">Choisir un fichier</span></button>
+      <p class="rouvrir"><span data-en="or">ou</span> <a href="#" id="reopen" data-en="reopen a saved transcript (.json)">rouvrir un transcript enregistré (.json)</a></p>
+      <input type="file" id="jsonfile" accept=".json,application/json" hidden>
+      <input type="file" id="file" accept="audio/*,video/mp4,video/quicktime" hidden>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel" data-en="Settings">Réglages</div>
+      <div class="field">
+        <label for="lang" data-en="Language spoken">Langue parlée</label>
+        <select id="lang">
+          <option value="fr" selected>Français</option>
+          <option value="en">Anglais</option>
+          <option value="es">Espagnol</option>
+          <option value="de">Allemand</option>
+          <option value="it">Italien</option>
+          <option value="pt">Portugais</option>
+          <option value="nl">Néerlandais</option>
+          <option value="zh">Chinois (mandarin)</option>
+          <option value="ja">Japonais</option>
+          <option value="ko">Coréen</option>
+          <option value="ru">Russe</option>
+          <option value="uk">Ukrainien</option>
+          <option value="pl">Polonais</option>
+          <option value="cs">Tchèque</option>
+          <option value="ro">Roumain</option>
+          <option value="el">Grec</option>
+          <option value="tr">Turc</option>
+          <option value="ar">Arabe</option>
+          <option value="he">Hébreu</option>
+          <option value="hi">Hindi</option>
+          <option value="id">Indonésien</option>
+          <option value="vi">Vietnamien</option>
+          <option value="sv">Suédois</option>
+          <option value="da">Danois</option>
+          <option value="no">Norvégien</option>
+          <option value="fi">Finnois</option>
+          <option value="">Détection automatique</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="count" data-en="Number of voices">Nombre de voix</label>
+        <select id="count">
+          <option value="auto" selected>Laisser détecter</option>
+          <option value="none">Ne pas séparer — beaucoup plus rapide</option>
+          <option value="1">1 seule personne</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4">4</option>
+          <option value="5">5</option>
+          <option value="6">6</option>
+          <option value="7">7</option>
+          <option value="8">8</option>
+        </select>
+        <p class="hint" id="counthint"></p>
+      </div>
+      <p class="hint" data-en="If you know how many people are speaking, say so: the separation is much more reliable than with automatic detection.">Si tu connais le nombre de personnes présentes, indique-le : la séparation est nettement plus fiable qu'en détection automatique.</p>
+
+      <details class="vm-acc">
+        <summary data-en="Advanced settings">Réglages avancés</summary>
+        <div class="field">
+          <label for="emb" data-en="Voice model">Modèle de voix</label>
+          <select id="emb"></select>
+          <p class="hint" id="embnote"></p>
+        </div>
+        <div class="field">
+          <label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
+          <select id="clean"></select>
+          <p class="hint" id="cleannote"></p>
+        </div>
+      </details>
+
+      <button class="go" id="go" disabled>Transcrire</button>
+      <p class="hint" id="gohint" data-en="Choose an audio file first.">Choisis d'abord un fichier audio.</p>
+    </div>
+
+    <div class="status" id="status" hidden>
+      <div class="stagetext"><span id="stage" aria-live="polite">En attente</span><em id="pct">0 %</em></div>
+      <div class="elapsed" id="elapsed"></div>
+      <div id="busyHost"></div>
+      <button class="stop" id="stop" hidden>Arrêter le traitement</button>
+      <details class="vm-acc">
+        <summary data-en="Technical details">Détails techniques</summary>
+        <div class="journal" id="journal" data-no-i18n lang="fr"></div>
+      </details>
+    </div>
+    <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
+
+  </aside>
+
+  <main class="stage" id="stage-area">
+    <div class="blank">
+      <h1><span data-en="Who said what,">Qui a dit quoi,</span> <em data-en="and at what minute.">et à quelle minute.</em></h1>
+      <p class="lead" data-en="Drop a recording. The tool writes out the text, tells the voices apart and places everything on the timeline. It all stays on this computer, except the audio sent for speech recognition.">Dépose un enregistrement : l'outil écrit le texte, distingue les voix et replace le tout sur la ligne de temps. Tout reste sur cet ordinateur, sauf l'audio envoyé pour la reconnaissance de la parole.</p>
+      <p class="working" id="working" hidden data-en="Processing has started. Keep this page open — you can leave it in the background. A long recording can take several minutes.">Le traitement est lancé. Laisse cette page ouverte : tu peux la mettre en arrière-plan. Un long enregistrement peut prendre plusieurs minutes.</p>
+      <ol class="steps">
+        <li data-en="Drop the recording in the panel on the left.">Dépose l'enregistrement dans le panneau de gauche.</li>
+        <li data-en="The voices are detected and counted for you.">Les voix sont détectées et comptées automatiquement.</li>
+        <li data-en="Listen to a short sample of each voice and give it a name.">Écoute un extrait de chaque voix et donne-lui un nom.</li>
+        <li data-en="Copy the text, or save it as .txt, .srt or .json.">Copie le texte, ou enregistre-le en .txt, .srt ou .json.</li>
+      </ol>
+      <div class="privacy">
+        <h2 data-en="What stays on this computer">Ce qui reste sur cet ordinateur</h2>
+        <p data-en="Separating the voices happens entirely on this machine. Only the audio, compressed to mono MP3, is sent to Groq for speech recognition. Nothing is kept after the program is closed.">La séparation des voix se fait entièrement sur cette machine. Seul l'audio, compressé en MP3 mono, part chez Groq pour la reconnaissance de la parole. Rien n'est conservé après la fermeture du programme.</p>
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<div class="dock" id="dock" hidden>
+<div class="exportbar">
+      <button data-x="copy" data-en="Copy the text">Copier le texte</button>
+      <button data-x="txt" data-en="Save as text (.txt)">Enregistrer en texte (.txt)</button>
+      <button data-x="srt" data-en="Subtitles (.srt)">Sous-titres (.srt)</button>
+      <button data-x="json" data-en="Data (.json)">Données (.json)</button>
+      <button id="reread" data-en="Review">Relire</button>
+      <button id="sum" data-en="Summarize">Résumer</button>
+      <button id="asread" hidden>Voir la version relue</button>
+      <span class="said" id="said" role="status"></span>
+</div>
+<div class="panneau" id="panneau" hidden></div>
+<div class="deck" id="deck" hidden>
+  <div class="line">
+    <button class="skip" id="prev" aria-label="Réplique précédente" data-en-aria-label="Previous passage" data-en="Previous">Précédent</button>
+    <button class="main" id="pp" aria-label="Lecture">
+      <svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>
+    </button>
+    <button class="skip" id="next" aria-label="Réplique suivante" data-en-aria-label="Next passage" data-en="Next">Suivant</button>
+    <button class="skip" id="back" aria-label="Reculer de 10 secondes" data-en-aria-label="Back 10 seconds">−10 s</button>
+    <div class="scrub" id="scrub" role="slider" aria-label="Position de lecture" data-en-aria-label="Playback position" tabindex="0">
+      <div class="track"><i id="played"></i></div>
+      <div class="head" id="head"></div>
+    </div>
+    <button class="skip" id="fwd" aria-label="Avancer de 10 secondes" data-en-aria-label="Forward 10 seconds">+10 s</button>
+    <button class="rate" id="rate" aria-label="Vitesse de lecture" data-en-aria-label="Playback speed">1×</button>
+  </div>
+  <div class="line">
+    <span class="clock" id="clock">0:00 / 0:00</span>
+    <button class="follow on" id="follow" aria-pressed="true"><i></i><span data-en="Follow the text">Suivre le texte</span></button>
+    <span class="keys" data-en="Space: play or pause">Espace : lecture ou pause</span>
+    <span class="who" id="nowwho"></span>
+  </div>
+</div>
+</div>
+
+
+<audio id="player" hidden></audio>
+<audio id="sampler" hidden></audio>
+
+<script>
+/* VM UI kit JS: zero deps. Inline at end of <body> (or script defer). Exposes window.vm.
+   Provides: theme switch (persisted, shared across /app/*), fold, exclusive accordions, custom dropdowns,
+   pointer-follow weight, letter wave, grit filter, before/after compare bar. Nothing here ever snaps. */
+(() => {
+  const root = document.documentElement, KEY = 'vm-theme';
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const vm = window.vm = {};
+  const raf = requestAnimationFrame;
+
+  /* ---------- 1. THEME: chessboard (default) / halftone bloom (data-vm-subject="halftone") ----------
+     Old and new pages are captured (View Transitions); the new one is revealed through a grid of tiles that each
+     narrow to a line and widen as the other mode, alternating axis, starting at random moments across the whole screen.
+     A crossfade is never used: it passes through mid-grey where text and background are the same colour.
+     For no first-paint flash, add the pre-paint snippet from SKILL.md (Light / dark) in <head>. */
+  const stored = () => { try { return localStorage.getItem(KEY); } catch (e) { return null; } };
+  const wantInk = () => { const s = stored(); return s ? s === 'ink' : matchMedia('(prefers-color-scheme: dark)').matches; };
+  const setAttr = ink => { ink ? root.dataset.vm = 'ink' : delete root.dataset.vm; };
+  const mode = () => root.dataset.vmMotion || 'reel';
+  let btn = document.querySelector('.vm-theme'), flipping = false;
+  if (!btn) { btn = document.createElement('button'); btn.className = 'vm-theme'; btn.type = 'button';
+    btn.setAttribute('aria-label', 'Switch light / dark'); btn.setAttribute('aria-pressed', wantInk()); document.body.appendChild(btn); }
+  root.style.setProperty('--vm-theme-dur', '0s'); setAttr(wantInk()); btn.setAttribute('aria-pressed', wantInk());
+  raf(() => raf(() => root.style.removeProperty('--vm-theme-dur')));
+  btn.classList.add('nt'); raf(() => raf(() => btn.classList.remove('nt')));     // no roll-in on first paint
+  const origin = () => { const r = btn.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+
+  const flip = (apply, ox, oy) => new Promise(done => {
+    if (!document.startViewTransition) { apply(); return done(); }
+    if (reduce) { document.startViewTransition(apply).finished.finally(done); return; }     // calm default crossfade
+    const calm = root.dataset.vmVoice === 'calm', m = calm ? 'smooth' : mode(), fps = m === 'smooth' ? 0 : (m === 'choppy' ? 6 : 12);
+    const fx = root.dataset.vmFx || (root.dataset.vmSubject === 'halftone' ? 'halftone' : 'tiles');
+    const vw = innerWidth, vh = innerHeight, TOTAL = calm ? 1500 : 2600, TD = (fx === 'tiles' ? .3 : .4) * TOTAL;
+    const R = (x, y, w, h) => `M${x.toFixed(1)} ${y.toFixed(1)}h${w.toFixed(1)}v${h.toFixed(1)}h${(-w).toFixed(1)}Z`;
+    const wrapCss = clip => `::view-transition-group(root){animation-duration:${TOTAL + 250}ms}` +
+      `::view-transition-old(root),::view-transition-new(root){animation:none;mix-blend-mode:normal}` + clip;
+    let css;
+    if (fx === 'halftone') {
+      // SUBJECT FX (halftone apps only): the new page shows through a 45 degree AM screen; each dot grows until the dots merge.
+      // When a dot starts follows a smooth random tonal field, so a true halftone gradient of dot sizes is on screen at every instant.
+      const S = Math.max(18, Math.round(Math.max(vw, vh) / 56)), RMAX = S * .74, ca = Math.SQRT1_2, sa = Math.SQRT1_2;
+      const ph = [0, 1, 2, 3].map(() => Math.random() * 6.283), n = Math.ceil(Math.hypot(vw, vh) / S / 2) + 2;
+      const field = (x, y) => { const f = (Math.sin(x / 260 + ph[0]) * Math.sin(y / 210 + ph[1]) + .8 * Math.sin((x + y) / 330 + ph[2]) + .6 * Math.sin((x - y) / 290 + ph[3])) / 2.4;
+        return Math.min(1, Math.max(0, .5 + f * .75)); };
+      const dots = [];
+      for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+        const x = vw / 2 + (i * ca - j * sa) * S, y = vh / 2 + (i * sa + j * ca) * S;
+        if (x < -RMAX || x > vw + RMAX || y < -RMAX || y > vh + RMAX) continue;
+        dots.push({ x, y, d: Math.max(0, Math.min(TOTAL - TD, field(x, y) * (TOTAL - TD) + (Math.random() - .5) * .04 * TOTAL)) }); }
+      css = t => { let d = '';
+        for (const k of dots) { let p = Math.min(1, (t - k.d) / TD); if (p <= 0) continue; p = p * p * (3 - 2 * p);
+          const r = RMAX * p; if (r < .5) continue; const rr = r.toFixed(1);
+          d += `M${(k.x + r).toFixed(1)} ${k.y.toFixed(1)}a${rr} ${rr} 0 1 0 ${(-2 * r).toFixed(1)} 0a${rr} ${rr} 0 1 0 ${(2 * r).toFixed(1)} 0z`; }
+        return wrapCss(`::view-transition-new(root){clip-path:${d ? `path('${d}')` : 'inset(100%)'}}`); };
+    } else {
+      // DEFAULT FX: chessboard. A grid of tiles; each narrows to a line and widens as the other mode, alternating axis by checker colour,
+      // starting at a random moment across the whole screen. Tiles overlap by 0.6px to hide anti-alias seams.
+      const S = Math.max(72, Math.round(Math.max(vw, vh) / 13)), cols = Math.ceil(vw / S), rows = Math.ceil(vh / S), tiles = [];
+      for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) tiles.push({ x: i * S, y: j * S, ax: (i + j) & 1, delay: Math.random() * (TOTAL - TD) });
+      css = t => { let o = '', n = '';
+        for (const k of tiles) { let p = Math.min(1, Math.max(0, (t - k.delay) / TD)); p = p * p * (3 - 2 * p);
+          if (p <= 0) { o += R(k.x - .6, k.y - .6, S + 1.2, S + 1.2); continue; } if (p >= 1) { n += R(k.x - .6, k.y - .6, S + 1.2, S + 1.2); continue; }
+          const s = p < .5 ? 1 - 2 * p : 2 * p - 1, w = k.ax ? S : S * s, h = k.ax ? S * s : S, r = R(k.x + (S - w) / 2, k.y + (S - h) / 2, w, h);
+          p < .5 ? o += r : n += r; }
+        const clip = d => d ? `path('${d}')` : 'inset(100%)';
+        return wrapCss(`::view-transition-old(root){clip-path:${clip(o)}}::view-transition-new(root){clip-path:${clip(n)}}`); };
+    }
+    const st = document.createElement('style'); st.textContent = css(0); document.head.appendChild(st);
+    const vt = document.startViewTransition(() => { root.style.setProperty('--vm-theme-dur', '0s'); apply(); });
+    vt.ready.then(() => { const t0 = performance.now(); let lastQ = -1;
+      const loop = () => { const t = performance.now() - t0, q = fps ? Math.floor(t / (1000 / fps)) : t;
+        if (q !== lastQ) { lastQ = q; st.textContent = css(fps ? q * (1000 / fps) : t); }
+        if (t < TOTAL + 60) raf(loop); else st.textContent = css(TOTAL + 100); };
+      loop(); }).catch(() => {});
+    vt.finished.finally(() => { st.remove(); root.style.removeProperty('--vm-theme-dur'); done(); });
+  });
+
+  vm.theme = { get: () => root.dataset.vm === 'ink' ? 'ink' : 'paper',
+    set(t, at) { if (flipping || t === this.get()) return; try { localStorage.setItem(KEY, t); } catch (e) {}
+      const [x, y] = at || origin(); flipping = true;
+      flip(() => setAttr(t === 'ink'), x, y).then(() => { flipping = false; btn.setAttribute('aria-pressed', t === 'ink'); }); },
+    toggle(at) { this.set(this.get() === 'ink' ? 'paper' : 'ink', at); } };
+  btn.addEventListener('click', () => vm.theme.toggle());
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => { if (!stored()) vm.theme.set(e.matches ? 'ink' : 'paper'); });
+  addEventListener('keydown', e => { if (e.key === 'i' && !e.metaKey && !e.ctrlKey && !/input|textarea|select/i.test(e.target.tagName) && !e.target.closest('.vm-sel')) vm.theme.toggle(); });
+
+  /* ---------- 2. FOLD: the ONLY way to show/hide things. Animated, personality curves from CSS ---------- */
+  const wrap = el => {
+    let inn = el.firstElementChild && el.firstElementChild.classList.contains('in') ? el.firstElementChild : null;
+    if (!inn) { el.classList.add('vm-fold'); inn = document.createElement('div'); inn.className = 'in';
+      while (el.firstChild) inn.appendChild(el.firstChild); el.appendChild(inn); }
+    [...inn.children].forEach((c, i) => c.style.setProperty('--i', Math.min(i, 9)));
+    return inn;
+  };
+  vm.fold = (el, show) => { const inn = wrap(el); el.classList.toggle('off', !show); inn.inert = !show; };
+  document.querySelectorAll('.vm-fold').forEach(el => { const inn = wrap(el); inn.inert = el.classList.contains('off'); });
+
+  /* ---------- 3. ACCORDION: <details class="vm-acc">; exclusive unless parent has data-vm-multi ---------- */
+  const setAcc = (d, show) => { d.toggleAttribute('data-open', show); vm.fold(d.querySelector(':scope > .vm-acc-body'), show);
+    d.querySelector(':scope > summary').setAttribute('aria-expanded', show); };
+  document.querySelectorAll('details.vm-acc').forEach(d => {
+    const open0 = d.hasAttribute('open'); d.open = true;
+    const sum = d.querySelector(':scope > summary'), body = document.createElement('div'); body.className = 'vm-acc-body';
+    [...d.childNodes].filter(n => n !== sum).forEach(n => body.appendChild(n)); d.appendChild(body);
+    sum.setAttribute('role', 'button'); sum.tabIndex = 0; setAcc(d, open0);
+    sum.addEventListener('click', e => { e.preventDefault();
+      const show = !d.hasAttribute('data-open');
+      if (show && !d.parentElement.hasAttribute('data-vm-multi'))
+        d.parentElement.querySelectorAll(':scope > details.vm-acc[data-open]').forEach(o => o !== d && setAcc(o, false));
+      setAcc(d, show); });
+    sum.addEventListener('mousedown', e => { if (e.detail > 1) e.preventDefault(); });   // no text highlight on repeated clicks
+  });
+
+  /* ---------- 4. DROPDOWNS: every <select> becomes a styled, inline-opening listbox (opt out: data-vm-native) ---------- */
+  const selDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+  const openSels = new Set();
+  const enhance = s => {
+    if (s.dataset.vmSel || s.hasAttribute('data-vm-native')) return; s.dataset.vmSel = '1';
+    const w = document.createElement('div'); w.className = 'vm-sel';
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'vm-sel-btn'; b.setAttribute('aria-haspopup', 'listbox'); b.setAttribute('aria-expanded', 'false');
+    b.innerHTML = '<span class="t"></span><i class="chev"></i>';
+    const f = document.createElement('div'); f.className = 'vm-fold off'; f.innerHTML = '<div class="in"><ul role="listbox" tabindex="-1"></ul></div>';
+    s.parentNode.insertBefore(w, s); w.append(b, f, s); s.classList.add('vm-native'); s.tabIndex = -1;
+    const ul = f.querySelector('ul'), inn = f.firstElementChild; inn.inert = true;
+    const lab = s.id && document.querySelector(`label[for="${s.id}"]`);
+    if (lab) { lab.id = lab.id || s.id + '-l'; b.setAttribute('aria-labelledby', lab.id); }
+    s.addEventListener('focus', () => b.focus());
+    let act = -1, typed = '', tt = 0;
+    const label = () => { const o = s.options[s.selectedIndex], g = o && s.hasAttribute('data-vm-showgroup') && o.parentElement.tagName === 'OPTGROUP' ? o.parentElement.label + ' / ' : '';
+      b.querySelector('.t').textContent = o ? g + o.text : ''; };
+    const more = () => ul.toggleAttribute('data-more', ul.scrollHeight - ul.clientHeight - ul.scrollTop > 2);
+    ul.addEventListener('scroll', more);
+    const build = () => { ul.innerHTML = ''; let n = 0;
+      const add = (o, i) => { const li = document.createElement('li'); li.textContent = o.text; li.setAttribute('role', 'option'); li.dataset.i = i;
+        li.setAttribute('aria-selected', i === s.selectedIndex); li.style.setProperty('--i', Math.min(n++, 14)); ul.appendChild(li); };
+      [...s.children].forEach(c => { if (c.tagName === 'OPTGROUP') { const g = document.createElement('li'); g.className = 'grp'; g.textContent = c.label; g.style.setProperty('--i', Math.min(n++, 14)); ul.appendChild(g);
+          [...c.children].forEach(o => add(o, [...s.options].indexOf(o))); } else add(c, [...s.options].indexOf(c)); }); more(); };
+    const setAct = i => { act = i; ul.querySelectorAll('li.act').forEach(x => x.classList.remove('act'));
+      const li = ul.querySelector(`li[data-i="${i}"]`); if (li) { li.classList.add('act'); li.scrollIntoView({ block: 'nearest' }); } };
+    const open = show => { if (show === w.classList.contains('open')) return;
+      if (show) { openSels.forEach(o => o(false)); build(); setAct(s.selectedIndex); openSels.add(close); } else openSels.delete(close);
+      w.classList.toggle('open', show); b.setAttribute('aria-expanded', show); vm.fold(f, show); };
+    const close = v => open(v);
+    const choose = i => { if (i < 0 || !s.options[i]) return; const changed = i !== s.selectedIndex; s.selectedIndex = i; label();
+      if (changed) { s.dispatchEvent(new Event('input', { bubbles: true })); s.dispatchEvent(new Event('change', { bubbles: true })); } open(false); b.focus(); };
+    const move = d => { const n = s.options.length; let i = act < 0 ? s.selectedIndex : act; i = Math.max(0, Math.min(n - 1, i + d)); setAct(i); };
+    b.addEventListener('click', () => open(!w.classList.contains('open')));
+    b.addEventListener('keydown', e => { const isOpen = w.classList.contains('open');
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!isOpen) open(true); else move(e.key === 'ArrowDown' ? 1 : -1); }
+      else if (e.key === 'Home' || e.key === 'End') { if (isOpen) { e.preventDefault(); setAct(e.key === 'Home' ? 0 : s.options.length - 1); } }
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); isOpen ? choose(act) : open(true); }
+      else if (e.key === 'Escape') { if (isOpen) { e.preventDefault(); open(false); } }
+      else if (e.key === 'Tab') open(false);
+      else if (e.key.length === 1 && !e.metaKey && !e.ctrlKey) { clearTimeout(tt); typed += e.key.toLowerCase(); tt = setTimeout(() => typed = '', 700);
+        const i = [...s.options].findIndex(o => o.text.toLowerCase().startsWith(typed)); if (i >= 0) { if (!isOpen) open(true); setAct(i); } } });
+    ul.addEventListener('click', e => { const li = e.target.closest('li[data-i]'); if (li) choose(+li.dataset.i); });
+    ul.addEventListener('pointerover', e => { const li = e.target.closest('li[data-i]'); if (li && +li.dataset.i !== act) setAct(+li.dataset.i); });
+    ul.addEventListener('mousedown', e => e.preventDefault());
+    addEventListener('pointerdown', e => { if (!w.contains(e.target)) open(false); });
+    Object.defineProperty(s, 'value', { get() { return selDesc.get.call(this); }, set(v) { selDesc.set.call(this, v); label(); }, configurable: true });
+    new MutationObserver(() => { label(); build(); }).observe(s, { childList: true, subtree: true, characterData: true });
+    label();
+  };
+  vm.select = enhance;
+  document.querySelectorAll('select').forEach(enhance);
+
+  /* ---------- 5. GRIT filter, wave letters, pointer-follow weight ---------- */
+  if (!document.getElementById('vm-grit')) document.body.insertAdjacentHTML('beforeend', `
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><filter id="vm-grit" x="-5%" y="-5%" width="110%" height="110%">
+  <feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="2" result="n"/>
+  <feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 9 -4.1" result="mask"/>
+  <feComposite in="SourceGraphic" in2="mask" operator="in" result="speck"/>
+  <feTurbulence type="fractalNoise" baseFrequency=".012" numOctaves="2" result="w"/>
+  <feDisplacementMap in="speck" in2="w" scale="14"/>
+</filter></svg>`);
+  document.querySelectorAll('[data-vm-wave]').forEach(el => {
+    const t = el.textContent; el.setAttribute('aria-label', t); el.textContent = '';
+    [...t].forEach((c, i) => { const s = document.createElement('span'); s.setAttribute('aria-hidden', 'true'); s.style.setProperty('--i', i); s.textContent = c === ' ' ? ' ' : c; el.appendChild(s); }); });
+  // Weight follows the pointer. CSS transitions do ALL the easing (never transition:none): entering ramps up,
+  // moving retargets, leaving glides back to the resting weight over ~1.3s.
+  document.querySelectorAll('[data-vm-follow]').forEach(el => {
+    if (reduce) return; let last = -99;
+    el.addEventListener('pointerenter', () => el.classList.add('on'));
+    el.addEventListener('pointermove', e => {
+      const r = el.getBoundingClientRect(), cs = getComputedStyle(root), lo = +cs.getPropertyValue('--vm-wmin') || 100, hi = +cs.getPropertyValue('--vm-wmax') || 900;
+      const w = Math.round(lo + (hi - lo) * Math.min(1, Math.max(0, 1 - (e.clientX - r.left) / r.width)));   // left = heavy, right = thin
+      if (Math.abs(w - last) < 4) return; last = w; el.style.fontVariationSettings = `"wght" ${w}`; });
+    el.addEventListener('pointerleave', () => { el.classList.remove('on'); last = -99; el.style.fontVariationSettings = ''; });
+  });
+
+  /* ---------- 6. COMPARE: vm.compare(stage, {before, after}) ----------
+     stage = <div class="vm-compare"><canvas/img (after, base)><canvas/img class="top" (before, clipped)></div>
+     The bar eases toward the pointer (never snaps), the grip follows the pointer's Y, squashes with speed, breathes when idle. */
+  vm.compare = (stage, o = {}) => {
+    const bar = document.createElement('div'); bar.className = 'vm-cmp-bar';
+    bar.innerHTML = '<i class="vm-cmp-line"></i><span class="vm-cmp-grip"><i></i></span>';
+    stage.append(bar);
+    [['l', o.before || 'before'], ['r', o.after || 'after']].forEach(([c, t]) => { const l = document.createElement('span'); l.className = 'vm-cmp-lab ' + c; l.textContent = t; stage.append(l); });
+    const squash = bar.querySelector('.vm-cmp-grip i');
+    stage.tabIndex = 0; stage.setAttribute('role', 'slider'); stage.setAttribute('aria-label', 'Compare before and after');
+    stage.setAttribute('aria-valuemin', 0); stage.setAttribute('aria-valuemax', 100);
+    let cur = 50, tgt = 50, gy = 50, gt = 50, drag = false, run = false, t0 = 0;
+    const draw = () => { stage.style.setProperty('--pos', cur.toFixed(3) + '%'); stage.style.setProperty('--gy', gy.toFixed(3) + '%');
+      const sw = stage.clientWidth || 1, bx = cur / 100 * sw;   // labels fade out well before the bar/grip reaches them (pixels, not %)
+      stage.style.setProperty('--lo', Math.min(1, Math.max(0, (bx - 150) / 60)).toFixed(3)); stage.style.setProperty('--ro', Math.min(1, Math.max(0, (sw - bx - 130) / 60)).toFixed(3));
+      stage.setAttribute('aria-valuenow', Math.round(cur)); };
+    // Motion character: reel (default) redraws ~12 fps, choppy ~6, smooth every frame. Physics still runs every frame.
+    const fps = () => ({ smooth: 60, choppy: 6 }[root.dataset.vmMotion] || 12);
+    let acc = 0;
+    const tick = t => { const dt = Math.min(64, t - t0 || 16); t0 = t; acc += dt;
+      const k = 1 - Math.exp(-dt / (drag ? 75 : 300)), prev = cur;
+      cur += (tgt - cur) * k; gy += (gt - gy) * (1 - Math.exp(-dt / 420));
+      const v = (cur - prev) / dt * 1000, settled = Math.abs(tgt - cur) <= .02 && Math.abs(gt - gy) <= .05;
+      if (acc >= 1000 / fps() || settled) { acc = 0;
+        squash.style.transform = settled ? '' : `scale(${(1 - Math.min(.4, Math.abs(v) / 260)).toFixed(3)}, ${(1 + Math.min(.3, Math.abs(v) / 420)).toFixed(3)})`;
+        draw(); }
+      if (!settled) raf(tick); else run = false; };
+    const go = () => { if (!run) { run = true; t0 = 0; raf(tick); } };
+    const px = e => { const r = stage.getBoundingClientRect(); return [Math.min(100, Math.max(0, (e.clientX - r.left) / r.width * 100)), Math.min(94, Math.max(6, (e.clientY - r.top) / r.height * 100))]; };
+    stage.addEventListener('pointerdown', e => { drag = true; stage.classList.add('drag'); stage.setPointerCapture(e.pointerId); [tgt, gt] = px(e); go(); });
+    stage.addEventListener('pointermove', e => { const [x, y] = px(e); gt = y; if (drag) tgt = x; go(); });
+    const up = () => { drag = false; stage.classList.remove('drag'); };
+    stage.addEventListener('pointerup', up); stage.addEventListener('pointercancel', up);
+    stage.addEventListener('keydown', e => { const d = { ArrowLeft: -4, ArrowRight: 4 }[e.key];
+      if (d) { e.preventDefault(); tgt = Math.min(100, Math.max(0, tgt + d)); go(); } else if (e.key === 'Home') { tgt = 0; go(); } else if (e.key === 'End') { tgt = 100; go(); } });
+    draw();
+    return { set(p) { tgt = p; go(); }, intro() { cur = 100; tgt = 50; go(); } };
+  };
+
+  /* ---------- 7. HALFTONE (decoration that is also the subject) ---------- */
+  // Dot-row rule: --vm-ht-rule is a mask; use class .vm-htrule (dots shrink from big to small, left to right).
+  { const n = 40, w = 360, h = 9; let c = '';
+    for (let i = 0; i < n; i++) c += `<circle cx="${((i + .5) * w / n).toFixed(1)}" cy="${h / 2}" r="${(4.4 * Math.pow(1 - i / n, 1.25) + .35).toFixed(2)}"/>`;
+    root.style.setProperty('--vm-ht-rule', `url("data:image/svg+xml,${encodeURIComponent(`<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}' preserveAspectRatio='none'>${c}</svg>`)}")`); }
+
+  // vm.halftone(canvas, {cell, angle, color:'accent'|'ink', active:()=>bool}): a lit AM-dot sphere (45 degree screen),
+  // light follows the pointer with easing, drifts when idle, redraws at the motion fps. Dot size = ink coverage.
+  vm.halftone = (cv, o = {}) => {
+    const cell = o.cell || 11, ang = (o.angle == null ? 45 : o.angle) * Math.PI / 180, ctx = cv.getContext('2d'), TAU = Math.PI * 2;
+    let w = 0, h = 0, dpr = 1, lx = -.45, ly = -.55, tx = lx, ty = ly, last = 0;
+    const fps = () => ({ smooth: 60, choppy: 6 }[root.dataset.vmMotion] || 12);
+    const size = () => { dpr = Math.min(2, devicePixelRatio || 1); const r = cv.getBoundingClientRect(); w = r.width; h = r.height;
+      cv.width = Math.max(1, Math.round(w * dpr)); cv.height = Math.max(1, Math.round(h * dpr)); };
+    const draw = tm => {
+      const cs = getComputedStyle(root); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+      ctx.fillStyle = (o.color === 'ink' ? cs.getPropertyValue('--vm-ink') : cs.getPropertyValue('--vm-accent')).trim() || '#f30';
+      const R = Math.min(w, h) / 2 * .95, cx = w / 2, cy = h / 2;
+      let Lx = lx + Math.sin(tm / 2600) * .16, Ly = ly + Math.cos(tm / 3100) * .12, Lz = .62; const ln = Math.hypot(Lx, Ly, Lz); Lx /= ln; Ly /= ln; Lz /= ln;
+      const ca = Math.cos(ang), sa = Math.sin(ang), n = Math.ceil(R * 1.45 / cell);
+      ctx.beginPath();
+      for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++) {
+        const u = i * cell, v = j * cell, x = cx + u * ca - v * sa, y = cy + u * sa + v * ca, nx = (x - cx) / R, ny = (y - cy) / R, r2 = nx * nx + ny * ny;
+        if (r2 > 1) continue;
+        const d = Math.max(0, nx * Lx + ny * Ly + Math.sqrt(1 - r2) * Lz), cov = Math.min(1, 1.02 - d * .98),   // lit = small dots, shadow = big dots
+          r = Math.min(cell * .74, cell * Math.sqrt(cov / Math.PI) * 1.08);
+        if (r < .4) continue; ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, TAU); }
+      ctx.fill(); };
+    size(); draw(0);
+    new ResizeObserver(() => { size(); draw(performance.now()); }).observe(cv);
+    new MutationObserver(() => draw(performance.now())).observe(root, { attributes: true });
+    if (reduce) return;
+    addEventListener('pointermove', e => { tx = (e.clientX / innerWidth - .5) * 1.7; ty = (e.clientY / innerHeight - .5) * 1.7; });
+    const loop = tm => { const dt = tm - last;
+      if (dt >= 1000 / fps() && (!o.active || o.active())) { last = tm; lx += (tx - lx) * (1 - Math.exp(-dt / 280)); ly += (ty - ly) * (1 - Math.exp(-dt / 280)); draw(tm); }
+      raf(loop); };
+    raf(loop);
+  };
+
+  /* ---------- 8. BUSY: halftone loading strip ----------
+     const busy = vm.busy(hostEl);  busy.start('label'); busy.set(0..1 | null); busy.stop();
+     hostEl must be position:relative (a zero-height anchor on the line works well). A row of 3 staggered dot rows with a wave
+     of growing dots, pre-rendered as 12 sprite frames and stepped with a CSS transform animation, so it keeps moving even while
+     the main thread is busy. set(p) clips the live wave to the progress; set(null) = indeterminate. Never flickers: it stays on >= 450ms. */
+  const busyHalftone = host => {
+    const el = document.createElement('div'); el.className = 'vm-busy'; el.setAttribute('role', 'progressbar'); el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<div class="vm-busy-track"><canvas class="t"></canvas><div class="vm-busy-clip"><canvas class="s"></canvas></div></div><span class="vm-busy-meta"><span class="vm-busy-l"></span><span class="vm-busy-p"></span></span>';
+    host.appendChild(el);
+    const T = el.querySelector('.t'), S = el.querySelector('.s'), clip = el.querySelector('.vm-busy-clip'), L = el.querySelector('.vm-busy-l'), P = el.querySelector('.vm-busy-p');
+    const FR = 12, H = 30, TAU = Math.PI * 2; let drawnW = 0, t0 = 0, hide = 0;
+    const paint = () => {
+      const w = Math.round(host.getBoundingClientRect().width); if (w < 50) return; drawnW = w;
+      const dpr = Math.min(2, devicePixelRatio || 1), cols = Math.round(w / 10), cw = w / cols;
+      const col = (getComputedStyle(root).getPropertyValue('--vm-accent') || '#f30').trim();
+      T.width = S.width = Math.round(w * dpr); T.height = Math.round(H * dpr); S.height = Math.round(H * FR * dpr); S.style.height = H * FR + 'px';
+      const tc = T.getContext('2d'), sc = S.getContext('2d'); tc.setTransform(dpr, 0, 0, dpr, 0, 0); sc.setTransform(dpr, 0, 0, dpr, 0, 0); tc.fillStyle = sc.fillStyle = col;
+      const dots = (ctx, oy, g) => { ctx.beginPath(); for (let r = 0; r < 3; r++) for (let i = 0; i < cols; i++) {
+          const x = (i + .5) * cw + (r & 1 ? cw / 2 : 0), y = oy + H / 2 + (r - 1) * cw * .85, rad = cw * (.13 + .4 * g(x / w, r));
+          if (x < w + cw) { ctx.moveTo(x + rad, y); ctx.arc(x, y, rad, 0, TAU); } } ctx.fill(); };
+      dots(tc, 0, () => 0);
+      for (let k = 0; k < FR; k++) { const c = -.12 + k / (FR - 1) * 1.24; dots(sc, k * H, (x, r) => Math.exp(-Math.pow(x - c - r * .012, 2) / (2 * .075 * .075))); } };
+    new ResizeObserver(paint).observe(host); new MutationObserver(() => { drawnW = 0; paint(); }).observe(root, { attributes: true });
+    const api = {
+      start(label) { clearTimeout(hide); t0 = performance.now(); L.textContent = label || ''; if (Math.abs(host.getBoundingClientRect().width - drawnW) > 2) paint();
+        el.classList.add('on'); el.setAttribute('aria-hidden', 'false'); },
+      set(p) { if (p == null) { clip.style.clipPath = 'inset(0 0 0 0)'; P.textContent = ''; el.removeAttribute('aria-valuenow'); }
+        else { p = Math.min(1, Math.max(0, p)); clip.style.clipPath = `inset(0 ${((1 - p) * 100).toFixed(1)}% 0 0)`; P.textContent = Math.round(p * 100) + '%'; el.setAttribute('aria-valuenow', Math.round(p * 100)); } },
+      stop() { const wait = Math.max(0, 450 - (performance.now() - t0)); clearTimeout(hide);
+        hide = setTimeout(() => { el.classList.remove('on'); el.setAttribute('aria-hidden', 'true'); }, wait); } };
+    paint(); return api;
+  };
+
+  // GENERIC loader: a thick bar on a hairline (the family's fat/thin line). Determinate: the bar fills and shows %.
+  // Indeterminate: a segment sweeps across (compositor transform, so it moves even while the main thread is busy).
+  const busyBar = (host, o = {}) => {
+    const el = document.createElement('div'); el.className = 'vm-busy vm-busy-bar'; el.setAttribute('role', 'progressbar'); el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = '<div class="vm-busyb-track"><i class="vm-busyb-fill"></i><i class="vm-busyb-sweep"></i></div><span class="vm-busy-meta"><span class="vm-busy-l"></span><span class="vm-busy-p"></span></span>';
+    host.appendChild(el);
+    const fill = el.querySelector('.vm-busyb-fill'), L = el.querySelector('.vm-busy-l'), P = el.querySelector('.vm-busy-p'); let t0 = 0, hide = 0;
+    return {
+      start(label) { clearTimeout(hide); t0 = performance.now(); L.textContent = label || ''; el.classList.add('on'); el.setAttribute('aria-hidden', 'false'); },
+      set(p) { if (p == null) { el.classList.add('indet'); fill.style.width = '0'; P.textContent = ''; el.removeAttribute('aria-valuenow'); }
+        else { el.classList.remove('indet'); p = Math.min(1, Math.max(0, p)); fill.style.width = (p * 100).toFixed(1) + '%'; P.textContent = Math.round(p * 100) + ' %'; el.setAttribute('aria-valuenow', Math.round(p * 100)); } },
+      label(text) { L.textContent = text || ''; },
+      stop() { const wait = Math.max(0, 450 - (performance.now() - t0)); clearTimeout(hide);
+        hide = setTimeout(() => { el.classList.remove('on'); el.setAttribute('aria-hidden', 'true'); }, wait); } };
+  };
+  vm.busy = (host, o = {}) => ((o.style || (root.dataset.vmSubject === 'halftone' ? 'halftone' : 'bar')) === 'halftone') ? busyHalftone(host) : busyBar(host, o);
+
+  /* ---------- 9. LANGUAGE (fr / en) ----------
+     Call vm.lang.enable({default:'fr'}). French is the source of truth in the markup; English sits beside it:
+       <h2 data-en="Drop an audio file">Dépose un fichier audio</h2>            (swaps innerHTML; use for static markup)
+       <input placeholder="Nommer" data-en-placeholder="Name">                   (also data-en-aria-label, data-en-title)
+     Text that JS creates (templates, errors, server messages) is translated as it appears by a MutationObserver using
+       vm.lang.add({ exact: { 'Arrêter': 'Stop' }, rules: [[/^(\d+) voix$/, (m, n) => `${n} voices`]] });
+     and restored when switching back. vm.lang.t(fr, en) picks by current language. The change fades (no jump). */
+  vm.lang = (() => {
+    const KEY = 'vm-lang', ATTRS = ['placeholder', 'aria-label', 'title'];
+    let cur = 'fr', exact = {}, rules = [], parts = [], listeners = [], obs = null, enabled = false;
+    const saved = new WeakMap(), savedAttr = new WeakMap();
+    const norm = s => s.replace(/\s+/g, ' ').trim();
+    const tr = s => { const k = norm(s); if (!k) return null; let out = exact[k];
+      if (out == null) for (const [re, fn] of rules) { const m = k.match(re); if (m) { out = typeof fn === 'function' ? fn(...m) : fn; break; } }
+      let res = out == null ? k : out;
+      for (const [p, r] of parts) res = typeof p === 'string' ? res.split(p).join(r) : res.replace(p, r);   // parts: substring / RegExp(g) replacements for composite strings
+      return res === k ? null : s.match(/^\s*/)[0] + res + s.match(/\s*$/)[0]; };
+    const skip = n => n.nodeType === 1 && (/^(SCRIPT|STYLE|TEXTAREA)$/.test(n.tagName) || n.hasAttribute('data-en') || n.closest('[data-no-i18n]'));
+    const fixText = n => { const s = saved.get(n);
+      if (cur === 'en') { if (s && n.nodeValue === s.en) return; const out = tr(n.nodeValue); if (out != null && out !== n.nodeValue) { saved.set(n, { fr: n.nodeValue, en: out }); n.nodeValue = out; } }
+      else if (s && n.nodeValue === s.en) { n.nodeValue = s.fr; saved.delete(n); } };
+    const staticEl = el => {
+      if (el.hasAttribute('data-en')) { if (el.dataset.fr == null) el.dataset.fr = el.innerHTML; const v = cur === 'en' ? el.dataset.en : el.dataset.fr; if (el.innerHTML !== v) el.innerHTML = v; }
+      for (const a of ATTRS) if (el.hasAttribute('data-en-' + a)) { if (el.getAttribute('data-fr-' + a) == null) el.setAttribute('data-fr-' + a, el.getAttribute(a) || '');
+        const v = cur === 'en' ? el.getAttribute('data-en-' + a) : el.getAttribute('data-fr-' + a); if (el.getAttribute(a) !== v) el.setAttribute(a, v); } };
+    const fixAttrs = el => { for (const a of ATTRS) { if (!el.hasAttribute(a) || el.hasAttribute('data-en-' + a)) continue;
+        const v = el.getAttribute(a), m = savedAttr.get(el) || {}, s = m[a];
+        if (cur === 'en') { if (s && v === s.en) continue; const out = tr(v); if (out != null && out !== v) { m[a] = { fr: v, en: out }; savedAttr.set(el, m); el.setAttribute(a, out); } }
+        else if (s && v === s.en) { el.setAttribute(a, s.fr); delete m[a]; } } };
+    const walk = n => { if (n.nodeType === 3) return fixText(n); if (n.nodeType !== 1 || n.closest('[data-no-i18n]')) return;
+      if (n.hasAttribute('data-en') || [...n.attributes].some(a => a.name.startsWith('data-en-'))) staticEl(n);
+      fixAttrs(n);                                  // attributes first: a textarea's placeholder must translate even though its content is skipped
+      if (skip(n)) return; for (const c of [...n.childNodes]) walk(c); };
+    const statics = () => document.querySelectorAll('[data-en],' + ATTRS.map(a => `[data-en-${a}]`).join(',')).forEach(staticEl);
+    const applyAll = () => { if (obs) obs.disconnect(); statics(); walk(document.body); observe(); mark(); };
+    const observe = () => { obs = obs || new MutationObserver(recs => { obs.disconnect();
+        for (const r of recs) { if (r.type === 'characterData') fixText(r.target); else if (r.type === 'attributes') fixAttrs(r.target); else r.addedNodes.forEach(walk); }
+        obs.observe(document.body, cfg); }); obs.observe(document.body, cfg); };
+    const cfg = { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ATTRS };
+    const mark = () => document.querySelectorAll('.vm-lang button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === cur));
+    const mount = () => { let el = document.querySelector('.vm-lang');
+      if (!el) { el = document.createElement('div'); el.className = 'vm-lang'; document.body.appendChild(el); }
+      el.setAttribute('role', 'group'); el.setAttribute('aria-label', 'Langue / Language');
+      el.innerHTML = '<button type="button" data-l="fr" lang="fr">FR</button><button type="button" data-l="en" lang="en">EN</button>';
+      el.addEventListener('click', e => { const b = e.target.closest('button[data-l]'); if (b) api.set(b.dataset.l); }); };
+    const api = {
+      get: () => cur, t: (fr, en) => cur === 'en' ? en : fr,
+      add(d) { Object.assign(exact, d.exact || {}); rules.push(...(d.rules || [])); parts.push(...(d.parts || [])); if (enabled && cur === 'en') applyAll(); },
+      onChange(fn) { listeners.push(fn); },
+      enable(o = {}) { enabled = true; let s = null; try { s = localStorage.getItem(KEY); } catch (e) {}
+        cur = s === 'en' || s === 'fr' ? s : (o.default || 'fr'); root.lang = cur; mount(); applyAll(); },
+      set(l) { if (l === cur || (l !== 'fr' && l !== 'en')) return; try { localStorage.setItem(KEY, l); } catch (e) {}
+        root.classList.add('vm-lang-fade');
+        setTimeout(() => { cur = l; root.lang = l; applyAll(); listeners.forEach(f => f(l)); requestAnimationFrame(() => root.classList.remove('vm-lang-fade')); }, 220); } };
+    return api;
+  })();
+})();
+
+</script>
+<script>
+const $ = s => document.querySelector(s);
+const api = (p, o) => fetch(p, o).then(async r => {
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.detail || `Erreur ${r.status}`);
+  return body;
+});
+
+let picked = null, jobId = null, job = null, objectUrl = null, poll = null;
+let names = {};
+const busy = vm.busy($('#busyHost'));
+function enh(root) { root.querySelectorAll('select').forEach(s => vm.select(s)); }
+
+/* ---------- première ouverture : la clé ---------- */
+let ready = false;
+
+api('/api/health').then(h => {
+  ready = h.has_key;
+  if (h.code_perime) banniereRedemarrer();
+  if (!ready) askForKey();
+  else if (!h.key_from_env) $('#changekey').hidden = false;
+}).catch(() => {});
+
+/* ---------- modèles de voix ----------
+
+   Le catalogue vient du serveur et se réordonne selon la langue choisie :
+   un modèle entraîné sur du mandarin n'a rien à faire en tête de liste
+   pour du français. Le classement traduit la langue d'entraînement, pas
+   une précision mesurée — l'intitulé le dit, pour ne pas laisser croire
+   à un palmarès.
+
+   Rien n'est téléchargé ici. Le poids s'affiche à côté des modèles
+   absents, et le fichier ne part qu'au lancement d'une transcription. */
+let catalogue = [];
+let nettoyeurs = [];
+
+async function loadModels() {
+  const sel = $('#emb'), note = $('#embnote');
+  const wanted = sel.value;
+  try {
+    const data = await api('/api/models?langue=' + encodeURIComponent($('#lang').value));
+    catalogue = data.modeles;
+    nettoyeurs = data.nettoyeurs || [];
+    const vieux = $('#clean').value;
+    $('#clean').innerHTML = nettoyeurs.map(n => {
+      const poids = n.telecharge ? 'sur cet ordinateur' : `${Math.round(n.mo)} Mo à télécharger`;
+      return `<option value="${n.cle}">${escapeHtml(n.nom)} — ${poids}</option>`;
+    }).join('') + '<option value="">Aucun — garder le son tel quel</option>';
+    $('#clean').value = vieux || data.nettoyeur_defaut || '';
+    describeClean();
+    sel.innerHTML = '<option value="auto">Choisir pour moi, selon la langue</option>'
+      + catalogue.map(m => {
+        const poids = m.telecharge ? 'sur cet ordinateur' : `${Math.round(m.mo)} Mo à télécharger`;
+        return `<option value="${m.cle}">${escapeHtml(m.nom)} — ${poids}</option>`;
+      }).join('');
+    sel.value = (wanted && (wanted === 'auto' || catalogue.some(m => m.cle === wanted)))
+      ? wanted : 'auto';
+    describeModel();
+  } catch {
+    note.textContent = '';
+  }
+}
+
+function describeModel() {
+  const note = $('#embnote');
+  if ($('#emb').value === 'auto') {
+    note.textContent = $('#lang').value
+      ? "Le modèle sera choisi d'après la langue indiquée."
+      : "La langue sera reconnue sur une minute d'enregistrement, puis le "
+        + "modèle choisi en conséquence. Si l'enregistrement mêle plusieurs "
+        + "langues, indiquer la langue principale donne un meilleur résultat.";
+    return;
+  }
+  const m = catalogue.find(x => x.cle === $('#emb').value);
+  if (!m) { note.textContent = ''; return; }
+  const lent = m.poids >= 1.8 ? ` Environ ${m.poids.toFixed(1)}× le temps de calcul du plus rapide.` : '';
+  note.textContent = m.note + lent +
+    (m.telecharge ? '' : ' Le téléchargement se fera au lancement, une seule fois.');
+}
+
+function describeClean() {
+  const n = nettoyeurs.find(x => x.cle === $('#clean').value);
+  const note = $('#cleannote');
+  if (!n) {
+    note.textContent = "Le son part tel quel. À essayer si l'enregistrement est "
+      + "déjà propre, ou si le nettoyage dégrade le résultat.";
+    return;
+  }
+  note.textContent = n.note + ` Compter environ une minute de calcul par `
+    + `${Math.round(n.vitesse)} minutes d'enregistrement.`;
+}
+
+$('#clean').onchange = describeClean;
+$('#emb').onchange = describeModel;
+$('#lang').addEventListener('change', loadModels);
+loadModels();
+
+/* ---------- relecture et résumé ---------- */
+let relOpts = null, relTimer = null, corrections = [];
+
+/* Le contexte saisi est retenu d'un panneau à l'autre : les sigles et les
+   rôles valent pour la relecture comme pour le résumé, et personne n'a
+   envie de les retaper. */
+let contexteMemo = '';
+let modelesRelecture = null;
+
+/* Le choix du modèle de relecture n'est pas un réglage de confort : un
+   modèle à grand contexte lit la réunion entière d'un coup, un petit la
+   lit par tranches de dix blocs sans savoir ce qui s'est dit avant. On
+   le montre donc, au lieu de laisser deviner. */
+async function majModeles() {
+  const sel = $('#rmod');
+  if (!sel) return;
+  let d;
+  try { d = await api('/api/relecture/modeles'); } catch { return; }
+  modelesRelecture = d.modeles;
+  const choisi = sel.value || d.defaut;
+  sel.innerHTML = d.modeles.map(m => `<option value="${m.cle}"
+    ${m.dispo ? '' : 'disabled'} ${m.cle === choisi && m.dispo ? 'selected' : ''}>
+    ${m.nom}${m.dispo ? '' : ' — clé manquante'}</option>`).join('');
+  const actuel = d.modeles.find(m => m.cle === sel.value) || {};
+  const manquants = d.modeles.filter(m => !m.dispo && m.gratuit);
+  $('#rmodnote').innerHTML = (actuel.note || '')
+    + (actuel.un_appel
+        ? ' <b>Lit la réunion entière d\'un seul coup.</b>'
+        : ' <b>Lit par tranches de dix blocs</b>, sans voir le reste de la réunion.')
+    + (manquants.length && !actuel.un_appel
+        ? ` <a href="#" id="addkey">Ajouter une clé ${manquants[0].fournisseur === 'google'
+            ? 'Gemini (gratuite)' : manquants[0].nom}</a> pour la lecture d'un seul tenant.`
+        : '');
+  const lien = $('#addkey');
+  if (lien) lien.onclick = (e) => { e.preventDefault(); panneauCle(d.fournisseurs); };
+}
+
+/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau. */
+function panneauCle(fiches) {
+  const f = fiches.google ? 'google' : Object.keys(fiches)[0];
+  const fiche = fiches[f];
+  $('#rmodnote').innerHTML = `<div class="keyrow">
+      <input type="password" id="kin" placeholder="${[].concat(fiche.prefixe).join(' ou ')}…"
+             spellcheck="false" autocomplete="off">
+      <button id="ksave">Enregistrer</button>
+    </div>
+    <span class="hint">Gratuit, sans carte bancaire, sur
+    <a href="https://${fiche.ou}" target="_blank" rel="noopener">${fiche.ou}</a>.
+    La clé est rangée dans le trousseau du système et n'est envoyée qu'à
+    ${fiche.nom}.</span>`;
+  $('#kin').focus();
+  $('#ksave').onclick = async () => {
+    const b = $('#ksave');
+    b.disabled = true; b.textContent = 'Vérification…';
+    try {
+      await api('/api/key', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: $('#kin').value, fournisseur: f }) });
+      majModeles();
+    } catch (err) {
+      $('#rmodnote').innerHTML = `<span class="keyerr">${escapeHtml(err.message)}</span>`;
+      setTimeout(() => majModeles(), 2500);
+    }
+  };
+}
+function ctx() {
+  const champ = $('#rctx') || $('#sctx');
+  contexteMemo = champ ? champ.value.trim() : contexteMemo;
+  return contexteMemo;
+}
+
+/* Ces deux boutons vivent dans le socle, affiché dès l'écran de la clé.
+   Sans ce garde-fou, les cliquer avant d'avoir un transcript lèverait une
+   erreur sur `job.id`. */
+function pret() {
+  if (job && job.status === 'done' && job.blocks && job.blocks.length) return true;
+  flash('Il faut un transcript terminé.');
+  return false;
+}
+
+async function ensureRelOpts() {
+  if (!relOpts) relOpts = await api('/api/relecture');
+  return relOpts;
+}
+
+function closePanel() { $('#panneau').hidden = true; $('#panneau').innerHTML = ''; }
+
+$('#reread').onclick = async () => {
+  if (!pret()) return;
+  const o = await ensureRelOpts();
+  const p = $('#panneau');
+  p.hidden = false;
+  p.innerHTML = `<h4>Relecture</h4>
+    <div class="opts">
+      <label><input type="checkbox" id="ratt" checked> Corriger l'attribution</label>
+      <label><input type="checkbox" id="rtxt" checked> Corriger le texte</label>
+      <select id="rmod">${o.modeles.map(m =>
+        `<option value="${m.cle}"${m.cle === o.defaut ? ' selected' : ''}>${escapeHtml(m.nom)}</option>`).join('')}</select>
+      <button id="rgo">Lancer</button>
+      <button id="rno">Fermer</button>
+    </div>
+    <p class="hint" id="rmodnote">…</p>
+    <textarea id="rctx" rows="3" placeholder="Contexte : sigles, noms propres, rôle de chacun. Par exemple « AEPP = Association des entreprises. Vincent développe le site, Annie dirige, Dominique gère les locaux. »"></textarea>
+    <p class="hint" id="rcout">…</p>
+    <p class="hint">L'original n'est pas modifié : les corrections s'affichent
+    ici une par une et se décochent. L'attribution se juge sur la syntaxe, ce
+    qui répare les phrases coupées en deux — mais une personne qui termine la
+    phrase d'une autre reste indétectable par ce moyen.</p>`;
+  enh(p);
+  const majCout = async () => {
+    const q = `attribution=${$('#ratt').checked ? 1 : 0}&texte=${$('#rtxt').checked ? 1 : 0}`;
+    try {
+      const c = await api(`/api/jobs/${job.id}/cout?${q}`);
+      const milliers = Math.round(c.jetons / 1000);
+      // La note nommait Groq quel que soit le modèle retenu, et annonçait
+      // un quota qui n'est pas celui du fournisseur en service.
+      const m = (modelesRelecture || []).find(x => x.cle === $('#rmod').value) || {};
+      const bloc = c.blocs === 1 ? 'bloc' : 'blocs';
+      $('#rcout').textContent = `Environ ${milliers} 000 jetons pour ${c.blocs} ${bloc}.`
+        + (m.gratuit === false
+            ? ` Facturé à l'usage : quelques dizaines de centimes.`
+            : ` Modèle gratuit, soumis à un quota quotidien — s'il est épuisé,`
+              + ` en choisir un autre dans la liste.`);
+    } catch { $('#rcout').textContent = ''; }
+  };
+  $('#rmod').onchange = () => { majModeles(); majCout(); };
+  $('#ratt').onchange = majCout;
+  $('#rtxt').onchange = majCout;
+  majCout();
+  $('#rctx').value = contexteMemo;
+  majModeles();
+  $('#rno').onclick = closePanel;
+  $('#rgo').onclick = async () => {
+    const body = { attribution: $('#ratt').checked, texte: $('#rtxt').checked,
+                   modele: $('#rmod').value, contexte: ctx() };
+    if (!body.attribution && !body.texte) { flash('Rien à relire'); return; }
+    $('#rgo').disabled = true;
+    try {
+      await api(`/api/jobs/${job.id}/relire`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      pollRelecture();
+    } catch (e) { p.innerHTML = `<h4>Relecture</h4><p>${escapeHtml(String(e))}</p>`; }
+  };
+};
+
+function pollRelecture() {
+  clearInterval(relTimer);
+  relTimer = setInterval(async () => {
+    const fresh = await api(`/api/jobs/${job.id}?light=1`).catch(() => null);
+    const r = fresh && fresh.relecture;
+    if (!r) return;
+    if (r.status === 'running') {
+      $('#panneau').innerHTML = `<h4>Relecture en cours</h4><pre data-no-i18n>${
+        escapeHtml((r.notes || []).join('\n') || 'lecture des premiers blocs…')}</pre>`;
+      return;
+    }
+    clearInterval(relTimer);
+    job.relecture = r;
+    if (r.status === 'error') {
+      $('#panneau').innerHTML = `<h4>Relecture</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
+      return;
+    }
+    corrections = r.corrections || [];
+    showCorrections();
+  }, 1500);
+}
+
+/* Comparaison alignée.
+
+   Les deux versions se lisent côte à côte, à la même hauteur et sur la
+   même portion de texte, sinon l'œil doit chercher ce qui a changé. Les
+   mots retirés sont marqués à gauche, les mots ajoutés à droite ; le
+   reste est identique de part et d'autre et sert de repère. */
+
+const DIFF_MAX_MOTS = 1200;   // au-delà, la table LCS coûte trop cher
+
+function diffMots(a, b) {
+  const A = a.split(/\s+/).filter(Boolean), B = b.split(/\s+/).filter(Boolean);
+  // Un bloc démesuré ferait une table de plusieurs millions de cases et
+  // figerait la page. On renonce alors au mot à mot et on montre les deux
+  // versions entières, ce qui reste comparable puisqu'elles sont alignées.
+  if (A.length > DIFF_MAX_MOTS || B.length > DIFF_MAX_MOTS)
+    return [{ t: '-', mots: A }, { t: '+', mots: B }];
+  // plus longue sous-suite commune, en table
+  const n = A.length, m = B.length;
+  const T = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--)
+    for (let j = m - 1; j >= 0; j--)
+      T[i][j] = A[i] === B[j] ? T[i + 1][j + 1] + 1 : Math.max(T[i + 1][j], T[i][j + 1]);
+  const out = [];
+  let i = 0, j = 0;
+  const pousse = (t, mot) => {
+    const dernier = out[out.length - 1];
+    if (dernier && dernier.t === t) dernier.mots.push(mot);
+    else out.push({ t, mots: [mot] });
+  };
+  while (i < n && j < m) {
+    if (A[i] === B[j]) { pousse('=', A[i]); i++; j++; }
+    else if (T[i + 1][j] >= T[i][j + 1]) { pousse('-', A[i]); i++; }
+    else { pousse('+', B[j]); j++; }
+  }
+  while (i < n) pousse('-', A[i++]);
+  while (j < m) pousse('+', B[j++]);
+  return out;
+}
+
+function peindre(parts, garde) {
+  return parts.filter(p => p.t === '=' || p.t === garde)
+    .map(p => p.t === '='
+      ? escapeHtml(p.mots.join(' '))
+      : `<mark class="${garde === '-' ? 'ote' : 'mis'}">${escapeHtml(p.mots.join(' '))}</mark>`)
+    .join(' ');
+}
+
+function comparer(avant, apres) {
+  const d = diffMots(avant, apres);
+  return `<div class="cmp">
+    <div><span class="cmph">Actuel</span><p data-no-i18n>${peindre(d, '-')}</p></div>
+    <div><span class="cmph">Proposé</span><p data-no-i18n>${peindre(d, '+')}</p></div>
+  </div>`;
+}
+
+/* Pour une frontière, la comparaison ne porte pas sur un bloc mais sur la
+   paire : ce sont les mots qui traversent la limite qu'il faut voir. */
+function pairFrontiere(c) {
+  const b = job.blocks, i = c.bloc, n = c.mots;
+  const voisin = n > 0 ? i - 1 : i + 1;
+  if (!b[i] || !b[voisin]) return null;
+  const mots = (x) => (b[x].words || []).map(w => (w.text || '').trim());
+  const gauche = n > 0 ? voisin : i, droite = n > 0 ? i : voisin;
+  const mg = mots(gauche), md = mots(droite);
+  const bouge = n > 0 ? md.slice(0, n) : mg.slice(n);
+  const avant = `${mg.join(' ')} ⁄ ${md.join(' ')}`;
+  const apres = n > 0
+    ? `${mg.concat(bouge).join(' ')} ⁄ ${md.slice(n).join(' ')}`
+    : `${mg.slice(0, n).join(' ')} ⁄ ${bouge.concat(md).join(' ')}`;
+  return { avant, apres, bouge: bouge.join(' ') };
+}
+
+function describeCorrection(c, i) {
+  if (c.type === 'locuteur') {
+    const b = job.blocks[c.bloc];
+    return `<div><b>${escapeHtml(c.avant)}</b> devient <b class="ap">${escapeHtml(c.apres)}</b>
+      <span class="hint">bloc ${c.bloc}</span></div>
+      <p class="extrait" data-no-i18n>${escapeHtml((b ? b.text : '').slice(0, 300))}</p>`;
+  }
+  if (c.type === 'frontiere') {
+    const p = pairFrontiere(c);
+    const n = c.mots;
+    const sens = n > 0 ? 'rendus au bloc précédent' : 'passés au bloc suivant';
+    const tete = `<div><span class="hint">bloc ${c.bloc} — « ${escapeHtml(p ? p.bouge : '')} »
+      ${sens}</span></div>`;
+    return p ? tete + comparer(p.avant, p.apres) : tete;
+  }
+  return comparer(c.avant, c.apres);
+}
+
+function showCorrections() {
+  const p = $('#panneau');
+  if (!corrections.length) {
+    p.innerHTML = `<h4>Relecture</h4><p>Aucune correction proposée.</p>
+      <div class="opts"><button id="rno">Fermer</button></div>`;
+    $('#rno').onclick = closePanel;
+    return;
+  }
+  p.innerHTML = `<h4>${corrections.length} correction(s) proposée(s)</h4>
+    ${corrections.map((c, i) => `<div class="row">
+      <label><input type="checkbox" class="ck" data-i="${i}" checked></label>
+      <div>${describeCorrection(c, i)}</div></div>`).join('')}
+    <div class="opts" style="margin-top:12px">
+      <button id="rapp">Appliquer la sélection</button>
+      <button id="rno">Fermer</button>
+    </div>`;
+  $('#rno').onclick = closePanel;
+  $('#rapp').onclick = async () => {
+    const gardees = [...p.querySelectorAll('.ck')].filter(c => c.checked)
+      .map(c => corrections[+c.dataset.i]);
+    const out = await api(`/api/jobs/${job.id}/appliquer`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ corrections: gardees }) });
+    job.relecture.blocks = out.blocks;
+    relu = true;
+    $('#asread').hidden = false;
+    $('#asread').textContent = "Voir l'original";
+    render();
+    flash(`${gardees.length} correction(s) appliquée(s)`);
+  };
+  $('#asread').hidden = false;
+}
+
+$('#asread').onclick = () => {
+  relu = !relu;
+  $('#asread').textContent = relu ? "Voir l'original" : 'Voir la version relue';
+  render();
+};
+
+$('#sum').onclick = async () => {
+  if (!pret()) return;
+  const o = await ensureRelOpts();
+  const p = $('#panneau');
+  p.hidden = false;
+  p.innerHTML = `<h4>Résumé</h4>
+    <div class="opts">
+      <select id="sform">${o.resumes.map(r =>
+        `<option value="${r.cle}">${escapeHtml(r.nom)}</option>`).join('')}</select>
+      <select id="smod">${o.modeles.map(m =>
+        `<option value="${m.cle}"${m.cle === o.defaut ? ' selected' : ''}>${escapeHtml(m.nom)}</option>`).join('')}</select>
+      <button id="sgo">Rédiger</button>
+      <button id="rno">Fermer</button>
+    </div>
+    <div class="apercu" id="sapercu"></div>
+    <textarea id="sctx" rows="2" placeholder="Contexte : sigles, noms propres, rôle de chacun."></textarea>`;
+  enh(p);
+  $('#sctx').value = contexteMemo;
+
+  /* L'aperçu montre la forme, pas le contenu : on choisit un format de
+     restitution sans avoir à le payer pour découvrir ce qu'il donne. */
+  const apercus = Object.fromEntries(o.resumes.map(r => [r.cle, r.apercu]));
+  const majApercu = () => {
+    const t = apercus[$('#sform').value] || '';
+    $('#sapercu').innerHTML = `<div class="apercu-tete">Aperçu de la forme</div>`
+      + `<pre data-no-i18n>${escapeHtml(t)}</pre>`;
+  };
+  $('#sform').onchange = majApercu;
+  majApercu();
+  $('#rno').onclick = closePanel;
+  $('#sgo').onclick = async () => {
+    $('#sgo').disabled = true;
+    $('#sgo').textContent = 'Rédaction…';
+    try {
+      const out = await api(`/api/jobs/${job.id}/resume`, { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forme: $('#sform').value, modele: $('#smod').value,
+                               contexte: ctx() }) });
+      p.innerHTML = `<h4>Résumé</h4><pre id="stexte" data-no-i18n>${escapeHtml(out.texte)}</pre>
+        <div class="opts" style="margin-top:12px">
+          <button id="scopy">Copier</button>
+          <button id="ssave">Enregistrer .txt</button>
+          <button id="rno">Fermer</button>
+        </div>`;
+      $('#rno').onclick = closePanel;
+      $('#scopy').onclick = () => {
+        navigator.clipboard.writeText(out.texte); flash('Résumé copié');
+      };
+      $('#ssave').onclick = () => download(out.texte, 'resume.txt');
+    } catch (e) {
+      p.innerHTML = `<h4>Résumé</h4><p>${escapeHtml(String(e))}</p>`;
+    }
+  };
+};
+
+$('#changekey').onclick = askForKey;
+// [data-x] et pas « tous les boutons de la barre » : la barre contient
+// aussi Relire, Résumer et la bascule, dont les gestionnaires étaient
+// écrasés ici, ce qui déclenchait un export « .undefined ».
+document.querySelectorAll('.exportbar button[data-x]').forEach(
+  b => b.onclick = () => exportAs(b.dataset.x));
+
+/* Le serveur tourne du code plus ancien que les fichiers sur le disque.
+   L'interface se recharge du disque à chaque visite, le code Python non :
+   on peut donc voir des réglages tout neufs piloter un traitement
+   périmé. Plutôt que de laisser chercher la panne ailleurs, on le dit. */
+function banniereRedemarrer() {
+  $('#perime').hidden = false;
+}
+
+function askForKey() {
+  $('#dock').hidden = false;
+  $('#stage-area').innerHTML = `<div class="setup">
+    <h1>Une clé, <em>et c'est tout.</em></h1>
+    <p>La reconnaissance de la parole passe par Groq. Il te faut une clé
+    gratuite, à coller une seule fois.</p>
+    <ol>
+      <li>Ouvre <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a></li>
+      <li>Connecte-toi (Google ou e-mail, sans carte bancaire)</li>
+      <li>Clique sur <b>Create API Key</b> et copie ce qui s'affiche</li>
+    </ol>
+    <div class="keyrow">
+      <input type="password" id="keyinput" placeholder="gsk_…" spellcheck="false" autocomplete="off">
+      <button id="keysave">Enregistrer</button>
+    </div>
+    <div class="keyerr" id="keyerr"></div>
+    <p class="keynote">La clé est rangée dans ton dossier personnel, sur cette machine.
+    Elle n'est envoyée qu'à Groq.</p>
+  </div>`;
+
+  const input = $('#keyinput'), save = $('#keysave');
+  input.focus();
+  input.onkeydown = e => { if (e.key === 'Enter') save.click(); };
+  save.onclick = async () => {
+    $('#keyerr').textContent = '';
+    save.disabled = true; save.textContent = 'Vérification…';
+    try {
+      await api('/api/key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: input.value }),
+      });
+      ready = true;
+      $('#changekey').hidden = false;
+      location.reload();
+    } catch (err) {
+      $('#keyerr').textContent = err.message;
+      save.disabled = false; save.textContent = 'Enregistrer';
+    }
+  };
+}
+
+/* ---------- dépôt du fichier ---------- */
+const zone = $('#dropzone');
+/* Séparer les voix est de loin l'étape la plus lente — sur une réunion
+   de deux heures et demie, trois quarts d'heure contre quelques minutes
+   pour le reste — et c'est aussi la moins fiable. Quand on ne cherche
+   qu'un compte rendu, s'en passer n'enlève rien au résultat. Autant le
+   dire là où le choix se fait. */
+function majCount() {
+  const v = $('#count').value;
+  const notes = {
+    none: "Le texte seul, sans chercher qui parle. C'est l'étape la plus "
+        + "longue : sur une réunion de deux heures, quelques minutes au lieu "
+        + "d'une heure. Les comptes rendus et résumés n'en ont pas besoin.",
+    auto: "Le nombre de personnes sera deviné. Moins fiable que de l'indiquer.",
+    1: "Un seul locuteur : rien à séparer, donc aussi rapide que l'option "
+       + "ci-dessus.",
+  };
+  $('#counthint').textContent = notes[v]
+    || "La séparation est nettement plus fiable quand le nombre est indiqué, "
+     + "mais elle reste approximative sur un micro unique dans une salle.";
+}
+$('#count').onchange = majCount;
+majCount();
+
+$('#pick').onclick = () => $('#file').click();
+
+/* Rouvrir un transcript déjà produit.
+
+   Transcrire quatre-vingts minutes coûte une dizaine de minutes de
+   calcul. Les repayer pour rédiger le compte rendu dans une autre forme,
+   ou pour reprendre le travail le lendemain, n'a pas de sens : le
+   transcript exporté contient déjà tout ce dont la rédaction a besoin. */
+$('#reopen').onclick = (e) => { e.preventDefault(); $('#jsonfile').click(); };
+$('#jsonfile').onchange = async () => {
+  const fichier = $('#jsonfile').files[0];
+  if (!fichier) return;
+  const corps = new FormData();
+  corps.append('file', fichier);
+  try {
+    job = await api('/api/jobs/import', { method: 'POST', body: corps });
+    jobId = job.id;
+    names = job.names || {};
+    render();
+  } catch (err) {
+    alert(err.message);
+  }
+};
+$('#file').onchange = e => e.target.files[0] && accept(e.target.files[0]);
+
+['dragenter','dragover'].forEach(ev => zone.addEventListener(ev, e => {
+  e.preventDefault(); zone.classList.add('hot');
+}));
+['dragleave','drop'].forEach(ev => zone.addEventListener(ev, e => {
+  e.preventDefault(); zone.classList.remove('hot');
+}));
+zone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f) accept(f);
+});
+document.addEventListener('dragover', e => e.preventDefault());
+document.addEventListener('drop', e => e.preventDefault());
+
+function accept(file) {
+  picked = file;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = URL.createObjectURL(file);
+  $('#player').src = objectUrl;
+
+  const mb = (file.size / 1048576).toFixed(1);
+  zone.outerHTML = `<div class="filetag" id="dropzone">
+      <div style="min-width:0">
+        <div class="name">${escapeHtml(file.name)}</div>
+        <div class="meta">${mb} Mo</div>
+      </div>
+      <button type="button" id="clear">Changer</button>
+    </div>`;
+  $('#clear').onclick = () => location.reload();
+  $('#go').disabled = false;
+  const gh = $('#gohint'); if (gh) gh.hidden = true;
+}
+
+/* ---------- lancement ---------- */
+$('#go').onclick = async () => {
+  if (!picked) return;
+  if (!ready) { askForKey(); return; }
+  const count = $('#count').value;
+  const form = new FormData();
+  form.append('file', picked);
+  form.append('language', $('#lang').value);
+  const separe = count !== '1' && count !== 'none';
+  form.append('diarize', separe ? 'true' : 'false');
+  form.append('embedding', $('#emb').value);
+  form.append('denoise', $('#clean').value);
+  if (separe && count !== 'auto') form.append('speakers', count);
+
+  $('#go').disabled = true;
+  $('#go').textContent = 'Envoi…';
+  $('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; } $('#status').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  $('#journal').innerHTML = '';
+  $('#alerts').innerHTML = '';
+  startedAt = 0;
+  marks = [];
+  setStage('Envoi du fichier', 0.01);
+
+  try {
+    const created = await api('/api/jobs', { method: 'POST', body: form });
+    jobId = created.id;
+    $('#go').textContent = 'Traitement en cours';
+    $('#stop').hidden = false;
+    poll = setInterval(tick, 1000);
+    tick();
+  } catch (err) {
+    fail(err.message);
+  }
+};
+
+$('#stop').onclick = async () => {
+  $('#stop').textContent = 'Arrêt…';
+  $('#stop').disabled = true;
+  try { await api(`/api/jobs/${jobId}/cancel`, { method: 'POST' }); } catch (e) {}
+};
+
+function idle(label) {
+  clearInterval(poll);
+  busy.stop();
+  { const wk = $('#working'); if (wk) wk.hidden = true; }
+  $('#stop').hidden = true;
+  $('#stop').disabled = false;
+  $('#stop').textContent = 'Arrêter le traitement';
+  $('#go').disabled = false;
+  $('#go').textContent = label;
+}
+
+let startedAt = 0;
+let marks = [];
+
+/* Estimation du temps restant.
+
+   La progression n'avance pas au même rythme selon l'étape : la
+   séparation des voix occupe l'essentiel du temps, la conversion et
+   l'envoi sont rapides. Extrapoler depuis le début donnerait donc un
+   chiffre faux à chaque changement d'étape. On mesure plutôt la vitesse
+   sur la dernière minute, ce qui reflète l'étape en cours.
+
+   Rien n'est affiché tant que la mesure n'est pas assez large pour être
+   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste. */
+function eta(ratio) {
+  const now = Date.now();
+  marks.push([now, ratio]);
+  while (marks.length > 2 && now - marks[0][0] > 60000) marks.shift();
+  if (ratio >= 1) return '';
+  const [t0, r0] = marks[0];
+  const span = (now - t0) / 1000, gained = ratio - r0;
+  if (span < 15 || gained <= 0.002) return '';
+  const left = (1 - ratio) / (gained / span);
+  if (!isFinite(left) || left < 5) return '';
+  if (left > 5400) return ' — plus d\'une heure restante';
+  const mins = Math.round(left / 60);
+  if (mins < 1) return ' — moins d\'une minute restante';
+  return ` — encore ${mins} min environ`;
+}
+
+function setStage(text, ratio) {
+  if (!startedAt) startedAt = Date.now();
+  const secs = Math.round((Date.now() - startedAt) / 1000);
+  const el = $('#elapsed');
+  if (el) el.textContent = secs > 4 ? `${clock(secs)} écoulées${eta(ratio)}` : '';
+  $('#stage').textContent = text;
+  $('#pct').textContent = Math.round(ratio * 100) + ' %';
+  busy.set(ratio);
+}
+
+function fail(message) {
+  setStage('Arrêt', 0);
+  $('#alerts').innerHTML = `<div class="alert">${escapeHtml(message)}</div>`;
+  idle('Réessayer');
+}
+
+function paintJournal(notes) {
+  const box = $('#journal');
+  if (!box || !notes) return;
+  const text = notes.join('\n');
+  if (box.dataset.text === text) return;
+  box.dataset.text = text;
+  box.innerHTML = notes.map(n => `<div>${escapeHtml(n)}</div>`).join('');
+  box.scrollTop = box.scrollHeight;
+}
+
+async function tick() {
+  try {
+    const light = job && job.status === 'done' ? 0 : 1;
+    const data = await api(`/api/jobs/${jobId}?light=${light}`);
+    setStage(data.stage, data.progress);
+    paintJournal(data.notes);
+    if (data.status === 'error') return fail(data.error);
+    if (data.status === 'cancelled') {
+      idle('Relancer');
+      setStage('Arrêté — change les réglages et relance', 0);
+      return;
+    }
+    if (data.status === 'done') {
+      job = await api(`/api/jobs/${jobId}`);
+      names = { ...job.names };
+      idle('Transcrire à nouveau');
+      render();
+      if (matchMedia('(max-width:900px)').matches) $('#stage-area').scrollIntoView({ behavior: 'smooth' });
+    }
+  } catch (err) {
+    fail(err.message);
+  }
+}
+
+/* ---------- rendu ---------- */
+const CARD_LIMIT = 8;
+let expanded = false;
+
+const PLAY_ICON = '<svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>';
+const PAUSE_ICON = '<svg viewBox="0 0 12 12"><path d="M2 1h3v10H2zM7 1h3v10H7z"/></svg>';
+
+function labelOf(id) {
+  const named = (names[id] || '').trim();
+  if (named) return named;
+  const s = job.speakers.find(s => s.id === id);
+  return `${vm.lang.t('Voix', 'Voice')} ${s ? s.index + 1 : '?'}`;
+}
+
+// Deux cartes portant le même nom désignent la même personne : la
+// détection sur-découpe souvent une voix en plusieurs, et les renommer
+// à l'identique est la façon la plus simple de recoller les morceaux.
+function keyOf(id) {
+  const named = (names[id] || '').trim().toLowerCase();
+  return named || `#${id}`;
+}
+
+function colorOf(id) {
+  const key = keyOf(id);
+  const first = job.speakers.find(s => keyOf(s.id) === key);
+  return first ? first.color : '#5F636B';
+}
+
+/* La relecture ne remplace jamais l'original : elle vit à côté, et ce
+   bouton bascule de l'un à l'autre. Tout ce qui lit le transcript passe
+   par ici, donc l'export suit ce qui est affiché. */
+let relu = false;
+
+function sourceBlocks() {
+  const r = job.relecture;
+  return (relu && r && r.blocks && r.blocks.length) ? r.blocks : job.blocks;
+}
+
+function mergedBlocks() {
+  const out = [];
+  for (const b of sourceBlocks()) {
+    const previous = out[out.length - 1];
+    if (previous && keyOf(previous.speaker) === keyOf(b.speaker)) {
+      previous.end = b.end;
+      previous.text += ' ' + b.text;
+      previous.words = previous.words.concat(b.words || []);
+    } else {
+      out.push({ ...b, words: (b.words || []).slice() });
+    }
+  }
+  return out;
+}
+
+function mergeCount() {
+  const keys = new Set(job.speakers.map(s => keyOf(s.id)));
+  return keys.size;
+}
+
+function render() {
+  const multi = job.speakers.length > 1 || job.speakers[0].has_sample;
+  // Les voix les plus bavardes d'abord : sur un découpage qui a déraillé,
+  // les trois vraies personnes se retrouvent en tête et le reste est du
+  // résidu qu'on peut nommer comme elles pour le recoller.
+  const ranked = [...job.speakers].sort((a, b) => b.speaking_seconds - a.speaking_seconds);
+  const strips = (expanded ? ranked : ranked.slice(0, CARD_LIMIT)).map(s => `
+    <div class="strip" style="--c:${s.color}">
+      <div class="top">
+        <button class="play" data-i="${s.index}" ${s.has_sample ? '' : 'disabled'}
+                aria-label="Écouter la voix ${s.index + 1}">${PLAY_ICON}</button>
+        <div class="who">
+          <div class="tag">${vm.lang.t('Voix', 'Voice')} ${s.index + 1}</div>
+          <input type="text" data-id="${s.id}" value="${escapeHtml(names[s.id] || '')}"
+                 placeholder="Nommer" maxlength="60" spellcheck="false">
+        </div>
+      </div>
+      <div class="share"><i style="--w:${(s.share * 100).toFixed(1)}%"></i></div>
+      <div class="stat"><span>${clock(s.speaking_seconds)} de parole</span><span>${s.turns} prises</span></div>
+      ${(s.extraits || []).length > 1 ? `<div class="stat"><span>extraits pris à
+        ${s.extraits.map(t => clock(t)).join(', ')}</span></div>` : ''}
+    </div>`).join('');
+
+  $('#dock').hidden = false;
+  $('#stage-area').innerHTML = `
+    ${multi ? `<section class="channels">
+      <header>
+        <h2>${job.speakers.length} voix détectée${job.speakers.length > 1 ? 's' : ''}
+          <span id="mergenote">· écoute puis nomme, le texte se met à jour</span></h2>
+        ${ranked.length > CARD_LIMIT ? `<button id="expand">${expanded
+            ? 'Ne montrer que les ' + CARD_LIMIT + ' principales'
+            : 'Afficher les ' + ranked.length + ' voix'}</button>` : ''}
+      </header>
+      <div class="strips">${strips}</div>
+    </section>` : ''}
+    <div class="doc" id="doc" data-no-i18n></div>
+    </div>
+
+    </div>`;
+
+  document.querySelectorAll('.strip input').forEach(input => {
+    input.oninput = e => {
+      names[e.target.dataset.id] = e.target.value;
+      paintDoc();
+      queueSave();
+    };
+  });
+  document.querySelectorAll('.play').forEach(b => b.onclick = () => playExcerpt(b));
+  const expandButton = $('#expand');
+  if (expandButton) expandButton.onclick = () => { expanded = !expanded; render(); };
+
+  paintDoc();
+  setupDeck();
+}
+
+let shown = [];
+
+function paintDoc() {
+  shown = mergedBlocks();
+  let previous = null;
+  $('#doc').innerHTML = shown.map((b, i) => {
+    const same = b.speaker === previous;
+    previous = b.speaker;
+    return `<div class="turn ${same ? 'same' : ''}" data-i="${i}" style="--c:${colorOf(b.speaker)}">
+        <button class="tc" data-t="${b.start}">${clock(b.start)}</button>
+        <div class="said">
+          <div class="who">${escapeHtml(labelOf(b.speaker))}</div>
+          <p>${escapeHtml(b.text)}</p>
+        </div>
+      </div>`;
+  }).join('');
+
+  const merged = job.speakers.length - mergeCount();
+  const note = $('#mergenote');
+  if (note) note.textContent = merged > 0
+    ? `${merged} carte${merged > 1 ? 's' : ''} fusionnée${merged > 1 ? 's' : ''} par le nom`
+    : 'Donne le même nom à deux cartes pour les fusionner';
+
+  document.querySelectorAll('.tc').forEach(b => b.onclick = () => {
+    seek(parseFloat(b.dataset.t));
+    play();
+  });
+  paintLive();
+}
+
+/* ---------- lecteur ---------- */
+const player = $('#player');
+let follow = true, limit = null, liveIndex = -1, scrubbing = false;
+const RATES = [1, 1.25, 1.5, 0.75];
+let rateIndex = 0;
+
+function setupDeck() {
+  if (!objectUrl) return;          // sans le fichier d'origine, pas de lecture
+  $('#deck').hidden = false;
+
+  $('#pp').onclick = () => player.paused ? play() : player.pause();
+  $('#prev').onclick = () => jumpReply(-1);
+  $('#next').onclick = () => jumpReply(1);
+  $('#back').onclick = () => seek(player.currentTime - 10);
+  $('#fwd').onclick = () => seek(player.currentTime + 10);
+  $('#rate').onclick = () => {
+    rateIndex = (rateIndex + 1) % RATES.length;
+    player.playbackRate = RATES[rateIndex];
+    $('#rate').textContent = `${RATES[rateIndex]}×`.replace('.', ',');
+  };
+  $('#follow').onclick = () => setFollow(!follow);
+
+  const scrub = $('#scrub');
+  const positionFrom = e => {
+    const box = scrub.getBoundingClientRect();
+    const x = ((e.touches ? e.touches[0].clientX : e.clientX) - box.left) / box.width;
+    return Math.max(0, Math.min(1, x)) * (player.duration || job.duration || 0);
+  };
+  scrub.onpointerdown = e => { scrubbing = true; scrub.setPointerCapture(e.pointerId); seek(positionFrom(e)); };
+  scrub.onpointermove = e => { if (scrubbing) seek(positionFrom(e)); };
+  scrub.onpointerup = () => { scrubbing = false; };
+  scrub.onkeydown = e => {
+    if (e.key === 'ArrowLeft') { seek(player.currentTime - 5); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { seek(player.currentTime + 5); e.preventDefault(); }
+  };
+
+  player.ontimeupdate = tickPlayer;
+  player.onplay = () => paintPlayButton();
+  player.onpause = () => { paintPlayButton(); stopExcerptButton(); };
+  player.onloadedmetadata = tickPlayer;
+  tickPlayer();
+
+  // La barre d'espace met en pause, sauf si on est en train de saisir un nom.
+  document.addEventListener('keydown', e => {
+    if ($('#deck').hidden) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (e.code === 'Space') {
+      e.preventDefault();
+      player.paused ? play() : player.pause();
+    } else if (e.code === 'ArrowDown') {
+      e.preventDefault(); jumpReply(1);
+    } else if (e.code === 'ArrowUp') {
+      e.preventDefault(); jumpReply(-1);
+    }
+  });
+}
+
+function play() {
+  if (!objectUrl) return;
+  player.play().catch(() => {});
+}
+
+function seek(seconds) {
+  if (!objectUrl) return;
+  const span = player.duration || job.duration || 0;
+  player.currentTime = Math.max(0, Math.min(seconds, span ? span - 0.05 : seconds));
+  limit = null;                    // toute navigation manuelle libère la borne
+  stopExcerptButton();
+  tickPlayer();
+}
+
+function jumpReply(direction) {
+  const now = player.currentTime;
+  let target = null;
+
+  if (direction > 0) {
+    target = shown.find(b => b.start > now + 0.15);
+  } else {
+    // Comme sur un lecteur de disques : en arrière, on revient d'abord au
+    // début de la réplique en cours, et seulement ensuite à la précédente.
+    const current = shown[liveIndex];
+    if (current && now - current.start > 1.5) target = current;
+    else target = shown[Math.max(0, liveIndex - 1)] || shown[0];
+  }
+
+  if (!target) return;
+  seek(target.start);
+  setFollow(true);
+  const el = document.querySelector(`.turn[data-i="${shown.indexOf(target)}"]`);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!player.paused) play();
+}
+
+function paintPlayButton() {
+  const svg = player.paused
+    ? '<path d="M2 1l9 5-9 5z"/>'
+    : '<path d="M2 1h3v10H2zM7 1h3v10H7z"/>';
+  $('#pp').innerHTML = `<svg viewBox="0 0 12 12">${svg}</svg>`;
+  $('#pp').setAttribute('aria-label', player.paused ? 'Lecture' : 'Pause');
+}
+
+function tickPlayer() {
+  const now = player.currentTime;
+
+  // Fin d'extrait : on s'arrête pile, au lieu de continuer sur toute la suite.
+  if (limit !== null && now >= limit) {
+    player.pause();
+    limit = null;
+    stopExcerptButton();
+  }
+
+  const span = player.duration || job.duration || 0;
+  const ratio = span ? Math.min(now / span, 1) : 0;
+  $('#played').style.width = `${ratio * 100}%`;
+  $('#head').style.left = `${ratio * 100}%`;
+  $('#clock').textContent = `${clock(now)} / ${clock(span)}`;
+  paintPlayButton();
+  paintLive();
+}
+
+function paintLive() {
+  const now = player.currentTime;
+  let low = 0, high = shown.length - 1, found = -1;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    if (shown[mid].start <= now) { found = mid; low = mid + 1; }
+    else high = mid - 1;
+  }
+
+  if (found !== liveIndex) {
+    document.querySelectorAll('.turn.live').forEach(el => el.classList.remove('live'));
+    liveIndex = found;
+    const el = found >= 0 ? document.querySelector(`.turn[data-i="${found}"]`) : null;
+    if (el) {
+      el.classList.add('live');
+      if (follow && !player.paused) {
+        const box = el.getBoundingClientRect();
+        const comfortable = box.top > 90 && box.bottom < window.innerHeight - 170;
+        if (!comfortable) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }
+
+  const who = $('#nowwho');
+  if (who) {
+    const block = found >= 0 ? shown[found] : null;
+    who.innerHTML = block
+      ? `<b style="--c:${colorOf(block.speaker)}">${escapeHtml(labelOf(block.speaker))}</b>`
+      : '';
+  }
+}
+
+function setFollow(value) {
+  follow = value;
+  const b = $('#follow');
+  b.classList.toggle('on', follow);
+  b.setAttribute('aria-pressed', String(follow));
+}
+
+// Faire défiler à la main coupe le suivi automatique, sinon on se bat avec la page.
+let selfScroll = 0;
+window.addEventListener('scroll', () => {
+  if (Date.now() - selfScroll < 900) return;
+  if (follow && !player.paused) setFollow(false);
+}, { passive: true });
+const realScrollInto = Element.prototype.scrollIntoView;
+Element.prototype.scrollIntoView = function (...args) {
+  selfScroll = Date.now();
+  return realScrollInto.apply(this, args);
+};
+
+/* ---------- extraits d'écoute ---------- */
+let excerptButton = null;
+
+function playExcerpt(button) {
+  const speaker = job.speakers.find(s => s.index === Number(button.dataset.i));
+  if (!speaker) return;
+  if (excerptButton === button && !player.paused) { player.pause(); return; }
+  stopExcerptButton();
+  excerptButton = button;
+  button.classList.add('on');
+  button.innerHTML = PAUSE_ICON;
+  button.setAttribute('aria-label', 'Arrêter l\'écoute');
+
+  if (objectUrl && speaker.sample_seconds > 0 && !speaker.montage) {
+    player.currentTime = speaker.sample_start;
+    limit = speaker.sample_start + speaker.sample_seconds;
+    play();
+  } else {
+    sampler.src = `/api/jobs/${jobId}/sample/${speaker.index}`;
+    sampler.play().catch(stopExcerptButton);
+  }
+}
+
+function stopExcerptButton() {
+  if (excerptButton) {
+    excerptButton.classList.remove('on');
+    excerptButton.innerHTML = PLAY_ICON;
+    excerptButton.setAttribute('aria-label', 'Écouter cette voix');
+  }
+  excerptButton = null;
+}
+
+const sampler = $('#sampler');
+sampler.onended = stopExcerptButton;
+sampler.onpause = stopExcerptButton;
+
+/* ---------- enregistrement des noms ---------- */
+let saveTimer = null;
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    fetch(`/api/jobs/${jobId}/names`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(names),
+    }).catch(() => {});
+  }, 600);
+}
+
+/* ---------- exports ---------- */
+function asText() {
+  let previous = null;
+  return mergedBlocks().map(b => {
+    const head = b.speaker === previous ? '' : `${labelOf(b.speaker)}\n`;
+    previous = b.speaker;
+    return `[${clock(b.start)}] ${head}${b.text}`;
+  }).join('\n\n');
+}
+
+function joinWords(words) {
+  let out = '';
+  for (const w of words) {
+    const t = (w.text || '').trim();
+    if (!t) continue;
+    if (out && !',.;:!?…%)]}'.includes(t[0]) && !'\u2019\'([{'.includes(out.slice(-1))) out += ' ';
+    out += t;
+  }
+  return out.trim();
+}
+
+function asSrt() {
+  const cues = [];
+  for (const block of mergedBlocks()) {
+    let current = null;
+    for (const word of block.words) {
+      const t = (word.text || '').trim();
+      if (!t) continue;
+      if (!current || (current.words.length && joinWords([...current.words, word]).length > 84)) {
+        current = { start: word.start, end: word.end, words: [word], speaker: block.speaker };
+        cues.push(current);
+      } else {
+        current.words.push(word);
+        current.end = word.end;
+      }
+    }
+  }
+  return cues.map((c, i) =>
+    `${i + 1}\n${srtTime(c.start)} --> ${srtTime(c.end)}\n${labelOf(c.speaker)}: ${joinWords(c.words)}\n`
+  ).join('\n');
+}
+
+function exportAs(kind) {
+  const base = job.filename.replace(/\.[^.]+$/, '');
+  if (kind === 'copy') {
+    navigator.clipboard.writeText(asText())
+      .then(() => flash('Texte copié.'))
+      .catch(() => flash('Copie refusée par le navigateur.'));
+    return;
+  }
+  const payload = kind === 'txt' ? asText()
+    : kind === 'srt' ? asSrt()
+    : JSON.stringify({ file: job.filename, duration: job.duration, names,
+        speakers: job.speakers, blocks: mergedBlocks() }, null, 2);
+  const ext = kind === 'json' ? 'json' : kind;
+  download(payload, `${base}.${ext}`);
+  flash(`${base}.${ext} enregistré.`);
+}
+
+function download(text, filename) {
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+let flashTimer = null;
+function flash(message) {
+  const el = $('#said');
+  if (!el) return;
+  el.textContent = message;
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => { el.textContent = ''; }, 3000);
+}
+
+/* ---------- utilitaires ---------- */
+function clock(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  const pad = n => String(n).padStart(2, '0');
+  return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
+}
+function srtTime(seconds) {
+  const ms = Math.floor((seconds % 1) * 1000);
+  const s = Math.floor(seconds);
+  const pad = (n, w = 2) => String(n).padStart(w, '0');
+  return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)},${pad(ms, 3)}`;
+}
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ---------- English (interface chrome is translated in the markup via data-en; these are the strings JS and the server create) ---------- */
+vm.lang.add({
+  exact: {
+    // stages (server)
+    [`En attente`]: `Waiting`, [`Envoi du fichier`]: `Uploading the file`, [`Préparation de l'envoi`]: `Preparing the upload`, [`Nettoyage du son`]: `Cleaning the audio`,
+    [`Conversion`]: `Converting`, [`Reconnaissance de la langue`]: `Detecting the language`, [`Séparation des voix`]: `Separating the voices`, [`Transcription`]: `Transcribing`,
+    [`Assemblage`]: `Putting it together`, [`Extraits d'écoute`]: `Preparing the listening samples`, [`Terminé`]: `Done`, [`Arrêt`]: `Stopped`, [`Arrêté`]: `Stopped`,
+    [`Arrêt en cours…`]: `Stopping…`, [`Arrêté — change les réglages et relance`]: `Stopped. Change the settings and run it again.`,
+    // buttons and states
+    [`Transcrire`]: `Transcribe`, [`Transcrire à nouveau`]: `Transcribe again`, [`Envoi…`]: `Uploading…`, [`Traitement en cours`]: `Processing`, [`Réessayer`]: `Try again`, [`Relancer`]: `Run again`,
+    [`Arrêter le traitement`]: `Stop processing`, [`Arrêt…`]: `Stopping…`, [`Changer`]: `Change`, [`Vérification…`]: `Checking…`, [`Enregistrer`]: `Save`,
+    // languages
+    [`Français`]: `French`, [`Anglais`]: `English`, [`Espagnol`]: `Spanish`, [`Allemand`]: `German`, [`Italien`]: `Italian`, [`Portugais`]: `Portuguese`, [`Néerlandais`]: `Dutch`,
+    [`Chinois (mandarin)`]: `Chinese (Mandarin)`, [`Japonais`]: `Japanese`, [`Coréen`]: `Korean`, [`Russe`]: `Russian`, [`Ukrainien`]: `Ukrainian`, [`Polonais`]: `Polish`,
+    [`Tchèque`]: `Czech`, [`Roumain`]: `Romanian`, [`Grec`]: `Greek`, [`Turc`]: `Turkish`, [`Arabe`]: `Arabic`, [`Hébreu`]: `Hebrew`, [`Indonésien`]: `Indonesian`,
+    [`Vietnamien`]: `Vietnamese`, [`Suédois`]: `Swedish`, [`Danois`]: `Danish`, [`Norvégien`]: `Norwegian`, [`Finnois`]: `Finnish`, [`Détection automatique`]: `Detect automatically`,
+    [`Laisser détecter`]: `Let it detect`, [`Ne pas séparer — beaucoup plus rapide`]: `Do not separate — much faster`, [`1 seule personne`]: `1 person only`,
+    [`Choisir pour moi, selon la langue`]: `Choose for me, based on the language`, [`Aucun — garder le son tel quel`]: `None — keep the audio as it is`,
+    // count / model / cleanup hints
+    [`Le texte seul, sans chercher qui parle. C'est l'étape la plus longue : sur une réunion de deux heures, quelques minutes au lieu d'une heure. Les comptes rendus et résumés n'en ont pas besoin.`]:
+      `Text only, without working out who is speaking. That is the longest step: on a two-hour meeting, a few minutes instead of an hour. Minutes and summaries don't need it.`,
+    [`Le nombre de personnes sera deviné. Moins fiable que de l'indiquer.`]: `The number of people will be guessed. Less reliable than telling it.`,
+    [`Un seul locuteur : rien à séparer, donc aussi rapide que l'option ci-dessus.`]: `A single speaker: nothing to separate, so as fast as the option above.`,
+    [`La séparation est nettement plus fiable quand le nombre est indiqué, mais elle reste approximative sur un micro unique dans une salle.`]:
+      `Separation is much more reliable when the number is given, but it stays approximate with a single microphone in a room.`,
+    [`Le modèle sera choisi d'après la langue indiquée.`]: `The model will be chosen from the language given.`,
+    [`La langue sera reconnue sur une minute d'enregistrement, puis le modèle choisi en conséquence. Si l'enregistrement mêle plusieurs langues, indiquer la langue principale donne un meilleur résultat.`]:
+      `The language will be detected from one minute of the recording, then the model chosen to match. If the recording mixes several languages, giving the main one gives a better result.`,
+    [`Le son part tel quel. À essayer si l'enregistrement est déjà propre, ou si le nettoyage dégrade le résultat.`]:
+      `The audio is used as it is. Worth trying if the recording is already clean, or if cleanup makes the result worse.`,
+    // voice models and cleaners (server notes)
+    [`Entraîné sur VoxCeleb, une centaine de nationalités. Rapide.`]: `Trained on VoxCeleb, about a hundred nationalities. Fast.`,
+    [`Même idée, autre équipe, affiné à marge large. Rapide.`]: `Same idea, different team, tuned with a wide margin. Fast.`,
+    [`Architecture différente : à essayer quand les CAM++ confondent deux voix.`]: `Different architecture: try it when the CAM++ models confuse two voices.`,
+    [`Encore une autre architecture, sur les mêmes données.`]: `Yet another architecture, on the same data.`,
+    [`Anglais uniquement, mais réputé solide. Lent et lourd.`]: `English only, but known to be solid. Slow and heavy.`,
+    [`Version légère du précédent.`]: `Lightweight version of the previous one.`,
+    [`L'ancien réglage par défaut. Correct en anglais, jamais pensé pour le français.`]: `The former default. Fine in English, never designed for French.`,
+    [`Mandarin uniquement. Trois fois plus lent, sans avantage hors chinois.`]: `Mandarin only. Three times slower, with no advantage outside Chinese.`,
+    [`Mandarin, sur des enregistrements variés.`]: `Mandarin, on varied recordings.`,
+    [`Enlève le souffle sans toucher au timbre. C'est ce qui a donné la meilleure séparation dans nos mesures, et c'est presque instantané.`]:
+      `Removes hiss without touching the voice's character. It gave the best separation in our measurements, and it is almost instant.`,
+    [`Nettoie beaucoup plus, mais a fait disparaître une voix sur trois dans notre enregistrement d'essai. À réserver à un son très dégradé, et à vérifier en écoutant les extraits.`]:
+      `Cleans much more, but made one voice in three disappear in our test recording. Keep it for very poor audio, and check by listening to the samples.`,
+    [`Encore plus agressif, avec le même risque de confondre deux personnes. Deux fois plus lent que le précédent.`]:
+      `Even more aggressive, with the same risk of merging two people. Twice as slow as the previous one.`,
+    // sign-in key screen
+    [`Une clé,`]: `One key,`, [`et c'est tout.`]: `and that's it.`,
+    [`La reconnaissance de la parole passe par Groq. Il te faut une clé gratuite, à coller une seule fois.`]: `Speech recognition goes through Groq. You need a free key, to paste just once.`,
+    [`Ouvre`]: `Open`, [`Connecte-toi (Google ou e-mail, sans carte bancaire)`]: `Sign in (Google or e-mail, no credit card)`, [`Clique sur`]: `Click`, [`et copie ce qui s'affiche`]: `and copy what appears`,
+    [`La clé est rangée dans ton dossier personnel, sur cette machine. Elle n'est envoyée qu'à Groq.`]: `The key is stored in your personal folder, on this machine. It is only sent to Groq.`,
+    // review panel
+    [`Relecture`]: `Review`, [`Corriger l'attribution`]: `Fix who said what`, [`Corriger le texte`]: `Fix the text`, [`Lancer`]: `Start`, [`Fermer`]: `Close`,
+    [`Contexte : sigles, noms propres, rôle de chacun. Par exemple « AEPP = Association des entreprises. Vincent développe le site, Annie dirige, Dominique gère les locaux. »`]:
+      `Context: acronyms, proper names, each person's role. For example “AEPP = Association of businesses. Vincent builds the website, Annie is the director, Dominique manages the premises.”`,
+    [`L'original n'est pas modifié : les corrections s'affichent ici une par une et se décochent. L'attribution se juge sur la syntaxe, ce qui répare les phrases coupées en deux — mais une personne qui termine la phrase d'une autre reste indétectable par ce moyen.`]:
+      `The original is not changed: corrections appear here one by one and can be unticked. Who said what is judged from the grammar, which repairs sentences cut in two — but a person finishing someone else's sentence cannot be detected that way.`,
+    [`Relecture en cours`]: `Review in progress`, [`lecture des premiers blocs…`]: `reading the first blocks…`, [`Aucune correction proposée.`]: `No corrections suggested.`,
+    [`Appliquer la sélection`]: `Apply the selection`, [`Actuel`]: `Current`, [`Proposé`]: `Proposed`, [`devient`]: `becomes`,
+    [`Voir l'original`]: `Show the original`, [`Voir la version relue`]: `Show the reviewed version`, [`Rien à relire`]: `Nothing to review`, [`Il faut un transcript terminé.`]: `A finished transcript is needed first.`,
+    [`Lit la réunion entière d'un seul coup.`]: `Reads the whole meeting at once.`, [`Lit par tranches de dix blocs`]: `Reads in slices of ten blocks`,
+    [`, sans voir le reste de la réunion.`]: `, without seeing the rest of the meeting.`, [`pour la lecture d'un seul tenant.`]: `to read the whole meeting at once.`,
+    [`Ajouter une clé Gemini (gratuite)`]: `Add a Gemini key (free)`,
+    [`Gratuit, sans carte bancaire, sur`]: `Free, no credit card, at`, [`. La clé est rangée dans le trousseau du système et n'est envoyée qu'à`]: `. The key is stored in the system keychain and is only sent to`,
+    // review models (server notes)
+    [`Le plus capable. Voit la réunion entière d'un coup.`]: `The most capable. Sees the whole meeting at once.`,
+    [`Deux fois moins cher qu'Opus, même contexte.`]: `Half the price of Opus, same context.`, [`Quelques centimes par réunion.`]: `A few cents per meeting.`,
+    [`Gratuit, et voit la réunion entière d'un coup. Peu de requêtes par jour, ce qui suffit largement.`]: `Free, and sees the whole meeting at once. Few requests per day, which is plenty.`,
+    [`Plus de requêtes par jour, un peu moins fin.`]: `More requests per day, slightly less fine-grained.`, [`Gratuit, par tranches de dix blocs. Quota quotidien.`]: `Free, in slices of ten blocks. Daily quota.`,
+    [`Gratuit et rapide, un peu moins sûr.`]: `Free and fast, slightly less reliable.`,
+    // summary panel
+    [`Résumé`]: `Summary`, [`Rédiger`]: `Write it`, [`Rédaction…`]: `Writing…`, [`Aperçu de la forme`]: `Preview of the format`, [`Contexte : sigles, noms propres, rôle de chacun.`]: `Context: acronyms, proper names, each person's role.`,
+    [`Copier`]: `Copy`, [`Enregistrer .txt`]: `Save as .txt`, [`Résumé copié`]: `Summary copied`,
+    [`Compte rendu`]: `Meeting minutes`, [`Décisions et suites à donner`]: `Decisions and follow-ups`, [`Résumé bref`]: `Short summary`, [`Par thème`]: `By topic`,
+    [`Transcript lisible`]: `Readable transcript`, [`Questions soulevées`]: `Questions raised`,
+    // transcript screen
+    [`· écoute puis nomme, le texte se met à jour`]: `· listen, then name them; the text updates`, [`Donne le même nom à deux cartes pour les fusionner`]: `Give two cards the same name to merge them`,
+    [`Nommer`]: `Name`, [`Écouter cette voix`]: `Listen to this voice`, [`Arrêter l'écoute`]: `Stop listening`, [`Lecture`]: `Play`,
+    [`Texte copié.`]: `Text copied.`, [`Copie refusée par le navigateur.`]: `Copy refused by the browser.`
+  },
+  rules: [
+    [/^Séparation des voix (\d+) %$/, (m, n) => `Separating the voices ${n} %`],
+    [/^Transcription (\d+)\/(\d+)$/, (m, a, b) => `Transcribing ${a}/${b}`],
+    [/^(.+) — sur cet ordinateur$/, (m, n) => `${n} — on this computer`],
+    [/^(.+) — (\d+) Mo à télécharger$/, (m, n, mo) => `${n} — ${mo} MB to download`],
+    [/^(.+) — clé manquante$/, (m, n) => `${n} — key missing`],
+    [/^(\d+) voix détectées?$/, (m, n) => `${n} ${n === '1' ? 'voice' : 'voices'} detected`],
+    [/^(\d+) cartes? fusionnées? par le nom$/, (m, n) => `${n} ${n === '1' ? 'card' : 'cards'} merged by name`],
+    [/^Ne montrer que les (\d+) principales$/, (m, n) => `Show only the ${n} main ones`],
+    [/^Afficher les (\d+) voix$/, (m, n) => `Show all ${n} voices`],
+    [/^Écouter la voix (\d+)$/, (m, n) => `Listen to voice ${n}`],
+    [/^(\S+) de parole$/, (m, t) => `${t} of speech`],
+    [/^(\d+) prises?$/, (m, n) => `${n} ${n === '1' ? 'turn' : 'turns'}`],
+    [/^extraits pris à (.+)$/, (m, t) => `samples taken at ${t}`],
+    [/^(\d+) correction\(s\) proposée\(s\)$/, (m, n) => `${n} suggested correction(s)`],
+    [/^(\d+) correction\(s\) appliquée\(s\)$/, (m, n) => `${n} correction(s) applied`],
+    [/^bloc (\d+)$/, (m, n) => `block ${n}`],
+    [/^bloc (\d+) — « (.*) » (rendus au bloc précédent|passés au bloc suivant)$/, (m, n, w, s) => `block ${n} — “${w}” ${s.startsWith('rendus') ? 'given back to the previous block' : 'passed to the next block'}`],
+    [/^Ajouter une clé (.+)$/, (m, n) => `Add a ${n} key`],
+    [/^(.+) enregistré\.$/, (m, n) => `${n} saved.`],
+    [/^(\S+) écoulées(?: — (.*))?$/, (m, t, eta) => `${t} elapsed` + (eta ? ' — ' + eta : '')],
+    [/^plus d'une heure restante$/, () => `more than an hour left`], [/^moins d'une minute restante$/, () => `less than a minute left`],
+    [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`]
+  ],
+  parts: [
+    [`Entraîné sur VoxCeleb, une centaine de nationalités. Rapide.`, `Trained on VoxCeleb, about a hundred nationalities. Fast.`],
+    [`Même idée, autre équipe, affiné à marge large. Rapide.`, `Same idea, different team, tuned with a wide margin. Fast.`],
+    [`Architecture différente : à essayer quand les CAM++ confondent deux voix.`, `Different architecture: try it when the CAM++ models confuse two voices.`],
+    [`Encore une autre architecture, sur les mêmes données.`, `Yet another architecture, on the same data.`],
+    [`Anglais uniquement, mais réputé solide. Lent et lourd.`, `English only, but known to be solid. Slow and heavy.`],
+    [`Version légère du précédent.`, `Lightweight version of the previous one.`],
+    [`L'ancien réglage par défaut. Correct en anglais, jamais pensé pour le français.`, `The former default. Fine in English, never designed for French.`],
+    [`Mandarin uniquement. Trois fois plus lent, sans avantage hors chinois.`, `Mandarin only. Three times slower, with no advantage outside Chinese.`],
+    [`Mandarin, sur des enregistrements variés.`, `Mandarin, on varied recordings.`],
+    [`Enlève le souffle sans toucher au timbre. C'est ce qui a donné la meilleure séparation dans nos mesures, et c'est presque instantané.`, `Removes hiss without touching the voice's character. It gave the best separation in our measurements, and it is almost instant.`],
+    [`Nettoie beaucoup plus, mais a fait disparaître une voix sur trois dans notre enregistrement d'essai. À réserver à un son très dégradé, et à vérifier en écoutant les extraits.`, `Cleans much more, but made one voice in three disappear in our test recording. Keep it for very poor audio, and check by listening to the samples.`],
+    [`Encore plus agressif, avec le même risque de confondre deux personnes. Deux fois plus lent que le précédent.`, `Even more aggressive, with the same risk of merging two people. Twice as slow as the previous one.`],
+    [`Le plus capable. Voit la réunion entière d'un coup.`, `The most capable. Sees the whole meeting at once.`],
+    [`Deux fois moins cher qu'Opus, même contexte.`, `Half the price of Opus, same context.`],
+    [`Quelques centimes par réunion.`, `A few cents per meeting.`],
+    [`Gratuit, et voit la réunion entière d'un coup. Peu de requêtes par jour, ce qui suffit largement.`, `Free, and sees the whole meeting at once. Few requests per day, which is plenty.`],
+    [`Plus de requêtes par jour, un peu moins fin.`, `More requests per day, slightly less fine-grained.`],
+    [`Gratuit, par tranches de dix blocs. Quota quotidien.`, `Free, in slices of ten blocks. Daily quota.`],
+    [`Gratuit et rapide, un peu moins sûr.`, `Free and fast, slightly less reliable.`],
+    [/\bMultilingue\b/g, 'Multilingual'], [/\bAnglais\b/g, 'English'], [/\bChinois\b/g, 'Chinese'], [/\banglais\b/g, 'English'],
+    ['(grand)', '(large)'], ['(petit)', '(small)'], [/\bTrès fort\b/g, 'Very strong'], [/\bFort\b/g, 'Strong'], [/\bLéger\b/g, 'Light'],
+    [/\(gratuite?\)/g, '(free)'], [/ Environ (\d+[.,]\d)× le temps de calcul du plus rapide\./g, ' About $1× the compute time of the fastest.'],
+    [' Le téléchargement se fera au lancement, une seule fois.', ' The download happens at launch, once only.'],
+    [/ Compter environ une minute de calcul par (\d+) minutes d'enregistrement\./g, ' Allow about one minute of processing per $1 minutes of recording.'],
+    [/Environ (\d+) 000 jetons pour (\d+) blocs?\./g, 'About $1,000 tokens for $2 blocks.'],
+    [` Facturé à l'usage : quelques dizaines de centimes.`, ` Billed by use: a few tens of cents.`],
+    [` Modèle gratuit, soumis à un quota quotidien — s'il est épuisé, en choisir un autre dans la liste.`, ` Free model with a daily quota. If it runs out, pick another one from the list.`]
+  ]
+});
+vm.lang.onChange(() => { if (typeof job !== 'undefined' && job && job.status === 'done') render(); });
+vm.lang.enable({ default: 'fr' });
+
+</script>
+</body>
+</html>
