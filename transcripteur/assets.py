@@ -232,18 +232,142 @@ def ensure_denoiser(cle: str, note=None):
     return fichier, d.famille
 
 
-def ffmpeg_exe() -> str:
-    """ffmpeg du système s'il existe, sinon celui fourni par imageio-ffmpeg."""
-    system = shutil.which("ffmpeg")
-    if system:
-        return system
+# ffmpeg n'est plus dans le paquet. C'était de loin le plus gros
+# morceau : 165 Mo sur Linux, où imageio-ffmpeg livre un binaire
+# statique, et quelques dizaines ailleurs — plus que tout le reste
+# réuni. Or il ne sert qu'au moment où l'on traite un enregistrement,
+# et beaucoup de machines l'ont déjà.
+#
+# On le prend donc dans cet ordre : celui du système, celui qu'on a
+# déjà téléchargé, celui qui accompagne une installation depuis les
+# sources, et en dernier recours on va le chercher.
+#
+# Depuis PyPI, et non chez un fournisseur de binaires : c'est la roue
+# imageio-ffmpeg, celle-là même qui était dans le paquet jusqu'ici,
+# versionnée et servie par l'endroit d'où viennent déjà toutes les
+# autres dépendances. Trois miroirs différents pour trois systèmes
+# auraient été trois occasions de télécharger autre chose.
+PYPI_FFMPEG = "https://pypi.org/pypi/imageio-ffmpeg/json"
+
+# Des fragments, et non l'étiquette complète de la roue. Les étiquettes
+# bougent d'une version à l'autre — macosx_10_9 est devenu macosx_10_13,
+# manylinux2014 est devenu manylinux_2_28 — et une table d'étiquettes
+# exactes cesse de trouver son fichier au prochain téléversement, sans
+# prévenir, chez quelqu'un qui installe six mois plus tard.
+_FRAGMENTS = {
+    ("darwin", "x86_64"): ("macosx", "x86_64"),
+    ("darwin", "arm64"): ("macosx", "arm64"),
+    ("win32", "amd64"): ("win_amd64",),
+    ("win32", "arm64"): ("win_arm64",),
+    ("win32", "x86"): ("win32",),
+    ("linux", "x86_64"): ("linux", "x86_64"),
+    ("linux", "aarch64"): ("linux", "aarch64"),
+}
+
+
+def _fragments_roue() -> tuple[str, ...] | None:
+    import platform
+    sys_nom = ("darwin" if sys.platform == "darwin"
+               else "win32" if os.name == "nt" else "linux")
+    machine = platform.machine().lower()
+    if machine in ("amd64", "x86_64"):
+        machine = "amd64" if sys_nom == "win32" else "x86_64"
+    elif machine in ("arm64", "aarch64"):
+        machine = "arm64" if sys_nom in ("darwin", "win32") else "aarch64"
+    elif machine in ("i386", "i686", "x86"):
+        machine = "x86"
+    return _FRAGMENTS.get((sys_nom, machine))
+
+
+def dossier_ffmpeg() -> Path:
+    from . import memoire
+    return memoire.dossier() / "ffmpeg"
+
+
+def _ffmpeg_telecharge() -> Path | None:
+    nom = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    chemin = dossier_ffmpeg() / nom
+    return chemin if chemin.exists() and os.access(chemin, os.X_OK) else None
+
+
+def recuperer_ffmpeg(note=None) -> Path:
+    """Va chercher ffmpeg et le range dans le dossier de données."""
+    import json
+    import zipfile
+
+    def dire(m: str) -> None:
+        _ecrire(m + "\n")
+        if note:
+            note(m)
+
+    fragments = _fragments_roue()
+    if not fragments:
+        raise RuntimeError(
+            "Pas de ffmpeg tout prêt pour ce système. Installer ffmpeg "
+            "(apt install ffmpeg, brew install ffmpeg) puis relancer.")
+
+    dire("téléchargement de ffmpeg (une seule fois)")
+    with urllib.request.urlopen(PYPI_FFMPEG, timeout=30) as r:
+        infos = json.loads(r.read())
+
+    roue = None
+    for fichier in infos["urls"]:
+        nom = fichier["filename"]
+        if nom.endswith(".whl") and all(f in nom for f in fragments):
+            roue = fichier["url"]
+            break
+    if not roue:
+        raise RuntimeError(
+            f"Aucune roue ffmpeg pour {'+'.join(fragments)}. Installer "
+            "ffmpeg sur le système puis relancer.")
+
+    cible = dossier_ffmpeg()
+    cible.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        archive = Path(tmp) / "roue.whl"
+        _download(roue, archive, "ffmpeg")
+        with zipfile.ZipFile(archive) as z:
+            noms = [n for n in z.namelist()
+                    if "/binaries/ffmpeg" in n and not n.endswith("/")]
+            if not noms:
+                raise RuntimeError("Roue ffmpeg inattendue : binaire absent.")
+            # Le plus gros : la roue peut contenir un script d'appoint
+            # à côté du binaire.
+            nom = max(noms, key=lambda n: z.getinfo(n).file_size)
+            sortie = cible / ("ffmpeg.exe" if os.name == "nt" else "ffmpeg")
+            with z.open(nom) as src, open(sortie, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+    sortie.chmod(0o755)
+    dire("ffmpeg prêt")
+    return sortie
+
+
+def ffmpeg_exe(note=None) -> str:
+    """Le ffmpeg à employer, téléchargé au besoin."""
+    système = shutil.which("ffmpeg")
+    if système:
+        return système
+
+    deja = _ffmpeg_telecharge()
+    if deja:
+        return str(deja)
+
+    # Installation depuis les sources : la roue est dans l'environnement.
     try:
         import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
+        chemin = imageio_ffmpeg.get_ffmpeg_exe()
+        if chemin and Path(chemin).exists():
+            return chemin
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        return str(recuperer_ffmpeg(note))
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(
-            "Aucun ffmpeg utilisable. Installe le paquet imageio-ffmpeg "
-            f"ou ffmpeg sur le système. ({exc})"
+            "ffmpeg est introuvable et n'a pas pu être téléchargé. "
+            "L'installer sur le système (apt install ffmpeg, "
+            f"brew install ffmpeg) puis relancer. ({exc})"
         ) from exc
 
 

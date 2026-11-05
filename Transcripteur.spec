@@ -12,14 +12,15 @@ HTML et de scripts lus sur le disque ; PyInstaller ne suit que les
 `import`, donc il ne les emporterait pas, et l'application s'ouvrirait
 sur une page blanche.
 
-Les bibliothèques à code natif. sherpa-onnx et imageio-ffmpeg portent
-des binaires — les modèles de voix d'un côté, ffmpeg de l'autre — que
-l'analyse des imports ne voit pas davantage. `collect_all` va les
-chercher.
+Les bibliothèques à code natif. sherpa-onnx porte les binaires de la
+séparation des voix, que l'analyse des imports ne voit pas davantage.
+`collect_all` va les chercher.
 
-Les modèles ONNX ne sont PAS dans le paquet. Trois cents mégaoctets
-pour un téléchargement qui, chez la plupart des gens, n'en servira que
-trente : ils arrivent au premier démarrage, dans le dossier de données.
+Ce qui n'est PAS dans le paquet, et arrive au besoin dans le dossier
+de données : les modèles ONNX (une trentaine de mégaoctets sur les
+trois cents du catalogue) et ffmpeg (165 Mo sur Linux à lui seul).
+L'un ne sert qu'à séparer les voix, l'autre qu'à traiter un
+enregistrement, et beaucoup de machines ont déjà ffmpeg.
 """
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
@@ -30,7 +31,7 @@ binaries, datas, hiddenimports = [], [], []
 datas += [("transcripteur/static", "transcripteur/static")]
 
 # Les paquets à contenu natif ou à chargement dynamique.
-for paquet in ("sherpa_onnx", "imageio_ffmpeg"):
+for paquet in ("sherpa_onnx",):
     b, d, h = collect_all(paquet)
     binaries += b
     datas += d
@@ -54,7 +55,8 @@ a = Analysis(
     runtime_hooks=[],
     # Matplotlib et consorts arrivent dans les bagages de certaines
     # dépendances et pèsent des dizaines de mégaoctets pour rien.
-    excludes=["tkinter", "matplotlib", "PIL", "pytest", "IPython"],
+    excludes=["tkinter", "matplotlib", "PIL", "pytest", "IPython",
+              "imageio_ffmpeg"],
     noarchive=False,
 )
 

@@ -74,6 +74,22 @@ ok("les pages sont emportées", (statiques / "index-vm.html").exists(),
 for greffe in ("branchement.js", "apercu.js", "seances.js"):
     ok(f"{greffe} est emporté", (statiques / greffe).exists())
 
+# Ce qui ne doit PAS y être. ffmpeg pesait à lui seul plus que tout le
+# reste sur Linux ; il se télécharge au premier traitement. Le
+# réintroduire sans s'en apercevoir — une dépendance qui le tire, un
+# collect_all de trop — ferait tripler le téléchargement en silence.
+lourds = [f for f in ressources().rglob("*ffmpeg*") if f.is_file()]
+ok("ffmpeg n'est pas dans le paquet", not lourds,
+   ", ".join(f.name for f in lourds[:3]))
+# Les liens symboliques sont écartés : un paquet .app relie MacOS/ et
+# Frameworks/ au même contenu, et les additionner compte tout deux
+# fois — 196 Mo annoncés pour 101 Mo sur le disque.
+racine = exe.parent.parent
+poids = sum(f.stat().st_size for f in racine.rglob("*")
+            if f.is_file() and not f.is_symlink())
+ok("le paquet reste léger", poids < 180 * 1048576, f"{poids / 1048576:.0f} Mo")
+print(f"      paquet : {poids / 1048576:.0f} Mo")
+
 print("\n2. Elle démarre")
 # Sans fenêtre : la machine de construction n'a pas d'écran, et c'est le
 # serveur qu'on éprouve. Sur un port connu, sinon on ne saurait où

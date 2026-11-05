@@ -122,7 +122,7 @@ def _run(args: list[str]) -> None:
     Une conversion de deux heures est un appel bloquant : sans cette
     surveillance, un arrêt demandé ne prendrait effet qu'à la fin."""
     proc = subprocess.Popen(
-        [assets.ffmpeg_exe(), "-y", "-loglevel", "error", *args],
+        [assets.ffmpeg_exe(note=_notify), "-y", "-loglevel", "error", *args],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
     )
     while proc.poll() is None:
