@@ -19,7 +19,7 @@ const PAQUETS = {
   'mac-silicon': 'Transcripteur-macOS-AppleSilicon.zip',
   'mac-intel': 'Transcripteur-macOS-Intel.zip',
   'windows': 'Transcripteur-Windows.zip',
-  'linux': 'Transcripteur-Linux.zip',
+  'linux': 'Transcripteur-Linux.tar.gz',
 };
 
 export default {

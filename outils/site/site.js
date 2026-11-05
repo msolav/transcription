@@ -49,12 +49,12 @@
            'If Windows shows a warning: More info, then Run anyway.'],
     },
     linux: {
-      fr: ['Décompresser l’archive.',
-           'chmod +x Transcripteur',
-           './Transcripteur'],
-      en: ['Extract the archive.',
-           'chmod +x Transcripteur',
-           './Transcripteur'],
+      fr: ['tar -xzf Transcripteur-Linux.tar.gz',
+           'cd Transcripteur && ./Transcripteur',
+           'WebKitGTK est requis : libwebkit2gtk-4.1 sur Debian et Ubuntu.'],
+      en: ['tar -xzf Transcripteur-Linux.tar.gz',
+           'cd Transcripteur && ./Transcripteur',
+           'WebKitGTK is required: libwebkit2gtk-4.1 on Debian and Ubuntu.'],
     },
   };
 

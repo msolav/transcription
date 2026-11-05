@@ -92,21 +92,27 @@ QU_EST_CE_QU_UNE_CLE = {
 OU_VA_LA_CLE = {
     "titre": {"fr": "Où elle est rangée", "en": "Where it is kept"},
     "texte": {
-        "fr": "Dans le trousseau de ton système — Trousseau d'accès sur Mac, "
-              "Gestionnaire d'identifiants sur Windows. Sur cette machine, "
-              "et nulle part ailleurs. Elle n'est envoyée qu'au service "
-              "auquel elle appartient, et elle ne traîne pas en clair dans "
-              "un fichier que tes sauvegardes recopient.\n\n"
-              "La séparation des voix, elle, se calcule entièrement sur "
-              "cette machine. Seul l'audio, compressé en MP3 mono, part chez "
-              "Groq pour la reconnaissance de la parole.",
-        "en": "In your system keychain — Keychain Access on a Mac, "
-              "Credential Manager on Windows. On this machine, nowhere else. "
-              "It is only ever sent to the service it belongs to, and it is "
-              "not left in plain text in a file your backups copy.\n\n"
-              "Separating the voices, for its part, is computed entirely on "
-              "this machine. Only the audio, compressed to mono MP3, goes to "
-              "Groq for speech recognition.",
+        "fr": "Dans le trousseau du système : Trousseau d'accès sur Mac, "
+              "Gestionnaire d'identifiants sur Windows, Secret Service "
+              "(GNOME Keyring, KWallet) sur Linux. Sur cette machine "
+              "seulement. Elle n'est envoyée qu'au service auquel elle "
+              "appartient.\n\n"
+              "Sur une installation Linux minimale, sans Secret Service, "
+              "elle est écrite dans ~/.transcripteur.json, en lecture pour "
+              "le seul propriétaire (0600).\n\n"
+              "La séparation des voix se calcule sur cette machine. Seul "
+              "l'audio, compressé en MP3 mono, part chez Groq pour la "
+              "reconnaissance de la parole.",
+        "en": "In the system keychain: Keychain Access on a Mac, Credential "
+              "Manager on Windows, Secret Service (GNOME Keyring, KWallet) "
+              "on Linux. On this machine only. It is sent to the service it "
+              "belongs to, and nowhere else.\n\n"
+              "On a minimal Linux install with no Secret Service, it is "
+              "written to ~/.transcripteur.json, readable by the owner only "
+              "(0600).\n\n"
+              "Voice separation is computed on this machine. Only the "
+              "audio, compressed to mono MP3, goes to Groq for speech "
+              "recognition.",
     },
 }
 

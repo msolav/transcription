@@ -140,6 +140,13 @@ jobs:
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/Transcripteur/* -DestinationPath "dist/Transcripteur-${{ matrix.nom }}.zip"
 
+      # tar.gz et non zip : le zip ne transporte pas le bit exécutable,
+      # et le programme arriverait de l'autre côté sans pouvoir être
+      # lancé — une panne qui ressemble à un fichier corrompu.
+      - name: Emballer (Linux)
+        if: runner.os == 'Linux'
+        run: tar -C dist -czf "dist/Transcripteur-${{ matrix.nom }}.tar.gz" Transcripteur
+
       # Le paquet doit au moins démarrer et répondre. Une construction
       # qui réussit ne prouve rien : les pannes d'empaquetage — un
       # fichier oublié, une bibliothèque native absente — n'apparaissent
@@ -151,7 +158,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Transcripteur-${{ matrix.nom }}
-          path: dist/Transcripteur-*.zip
+          path: |
+            dist/Transcripteur-*.zip
+            dist/Transcripteur-*.tar.gz
           if-no-files-found: error
 
   publier:
@@ -164,7 +173,9 @@ jobs:
           path: paquets
       - uses: softprops/action-gh-release@v2
         with:
-          files: paquets/**/*.zip
+          files: |
+            paquets/**/*.zip
+            paquets/**/*.tar.gz
           draft: true
           body: |
             ## Installer
