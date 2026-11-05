@@ -488,7 +488,46 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}") for r in result]
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
-    log(f"{len({t[2] for t in turns})} voix trouvées, {len(turns)} tours")
+    trouvees = len({t[2] for t in turns})
+    log(f"{trouvees} voix trouvées, {len(turns)} tours")
+
+    # Un effondrement : on a demandé plusieurs voix et il n'en ressort
+    # qu'une. Ce n'est pas une séparation imparfaite, c'est l'absence de
+    # séparation — le transcript sort d'un seul bloc, et la personne qui
+    # vient précisément d'annoncer le nombre de participants reçoit le
+    # pire résultat possible.
+    #
+    # Mesuré sur deux enregistrements à la vérité connue : avec un
+    # nombre imposé, « VoxCeleb CAM++ » — le modèle par défaut — rend
+    # une seule voix là où il en trouve 2 et 3 en détection libre. Les
+    # trois autres modèles ne font pas cela ; eux, le nombre imposé les
+    # aide. Le défaut est donc dans un modèle, pas dans la consigne.
+    #
+    # Plutôt que d'écarter ce modèle, on rattrape le cas général :
+    # quelle qu'en soit la cause, une voix pour plusieurs demandées est
+    # un échec, et la détection libre vaut mieux que rien.
+    if num_speakers and num_speakers > 1 and trouvees == 1:
+        log(f"une seule voix pour {num_speakers} demandées : le modèle "
+            f"« {assets.PAR_CLE[assets.resoudre(embedding)].nom} » a "
+            f"regroupé tout le monde. Reprise en détection libre.")
+        if _notify:
+            _notify(f"Le modèle n'a pas su séparer {num_speakers} voix en "
+                    f"les imposant. Reprise sans imposer le nombre.")
+        libre = sherpa_onnx.OfflineSpeakerDiarizationConfig(
+            segmentation=config.segmentation, embedding=config.embedding,
+            clustering=sherpa_onnx.FastClusteringConfig(
+                num_clusters=-1, threshold=threshold),
+            min_duration_on=0.3, min_duration_off=0.5)
+        secours = (sherpa_onnx.OfflineSpeakerDiarization(libre)
+                   .process(audio, callback=report).sort_by_start_time())
+        repris = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}")
+                  for r in secours]
+        if len({t[2] for t in repris}) > 1:
+            log(f"{len({t[2] for t in repris})} voix en détection libre, "
+                f"{len(repris)} tours")
+            return repris
+        log("la détection libre ne trouve pas mieux : une seule voix")
+
     return turns
 
 
