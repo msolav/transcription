@@ -34,11 +34,15 @@
   var OUVRIR = {
     mac: {
       fr: ['Déplacer Transcripteur.app dans Applications.',
-           'Clic droit sur l’application, puis Ouvrir.',
-           'Ouvrir de nouveau dans la fenêtre d’avertissement.'],
+           'Double-cliquer. macOS refuse : cliquer « Terminé ».',
+           'Réglages Système → Confidentialité et sécurité, section Sécurité.',
+           '« Ouvrir quand même », puis s’authentifier.',
+           'Le trousseau demande le mot de passe de session : « Toujours autoriser ».'],
       en: ['Move Transcripteur.app to Applications.',
-           'Right-click the app, then Open.',
-           'Click Open again in the warning dialog.'],
+           'Double-click it. macOS refuses: click Done.',
+           'System Settings → Privacy & Security, Security section.',
+           'Click Open Anyway, then authenticate.',
+           'The keychain asks for your login password: choose Always Allow.'],
     },
     windows: {
       fr: ['Décompresser le dossier.',
@@ -59,12 +63,18 @@
   };
 
   var POURQUOI = {
-    fr: 'Les paquets ne sont pas signés. La signature coûte 99 $ US par an '
-      + 'chez Apple et un certificat payant chez Microsoft ; le système '
-      + 'prévient donc à la première ouverture, une fois.',
-    en: 'The packages are unsigned. Signing costs US$99 a year from Apple '
-      + 'and a paid certificate from Microsoft, so the system warns on first '
-      + 'launch, once.',
+    fr: 'Les paquets ne sont pas signés : 99 $ US par an chez Apple, un '
+      + 'certificat payant chez Microsoft. Depuis macOS 15, le clic droit → '
+      + 'Ouvrir ne suffit plus. Le bouton « Ouvrir quand même » n’apparaît '
+      + 'dans les Réglages que dans l’heure suivant une tentative : s’il '
+      + 'manque, double-cliquer de nouveau sur l’application. La demande du '
+      + 'trousseau revient après chaque mise à jour, pour la même raison.',
+    en: 'The packages are unsigned: US$99 a year from Apple, a paid '
+      + 'certificate from Microsoft. Since macOS 15, right-click → Open no '
+      + 'longer works. The Open Anyway button only appears in Settings '
+      + 'within an hour of a launch attempt: if it is missing, double-click '
+      + 'the app again. The keychain prompt returns after each update, for '
+      + 'the same reason.',
   };
 
   var PUCE = {

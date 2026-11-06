@@ -50,8 +50,8 @@
 /* L'écran qui glisse. Rien d'autre ne bouge : la barre, le compteur et
    le bouton Retour restent en place d'un pas à l'autre, sinon le regard
    les suit au lieu de lire. */
-.ecran { display: flex; flex-direction: column; align-items: flex-start;
-  gap: 14px; max-width: 640px; opacity: 1; translate: 0 0;
+.setup > .ecran { display: flex; flex-direction: column; align-items: flex-start;
+  gap: 18px; max-width: min(1100px, 92vw); width: 100%; opacity: 1; translate: 0 0;
   transition: opacity ${SORTIE}ms var(--vm-ease), translate ${SORTIE}ms var(--vm-ease); }
 .ecran.part { opacity: 0; translate: -24px 0; }
 .ecran.vient { opacity: 0; translate: 24px 0; transition: none; }
@@ -60,7 +60,23 @@
   text-transform: uppercase; color: var(--vm-mute); }
 .etiq.oblig { color: var(--vm-accent); }
 .geste { font: 300 clamp(1.2rem, 2.6vw, 1.75rem)/1.25 var(--vm-font-display, inherit);
-  margin: 0; max-width: 22em; }
+  margin: 0; max-width: 26em; }
+
+/* Les gestes à faire dans l'autre onglet : numérotés, sur toute la
+   largeur, chacun sa colonne quand la fenêtre le permet. */
+.gestes { list-style: none; counter-reset: g; margin: .4rem 0 0; padding: 0;
+  display: grid; gap: 1.4rem 2.2rem; width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.gestes li { counter-increment: g; display: flex; flex-direction: column;
+  gap: .3rem; padding-top: .8rem;
+  border-top: 2px solid color-mix(in oklab, var(--vm-ink) 20%, transparent); }
+.gestes li::before { content: counter(g, decimal-leading-zero);
+  font: 500 .7rem/1 var(--vm-font-mono); letter-spacing: .12em;
+  color: var(--vm-accent); }
+.gestes b { font: 600 1.05rem/1.25 var(--vm-font-display, inherit); }
+.gestes span { color: var(--vm-mute); font-size: .95rem; line-height: 1.45; }
+.actes { display: flex; align-items: center; gap: 1.2rem; flex-wrap: wrap;
+  margin-top: .4rem; }
 .gros { font: 600 1rem/1 var(--vm-font-display, inherit); letter-spacing: -.01em;
   padding: 1rem 1.5rem; border: 0; cursor: pointer; color: var(--tr-on-accent, #fff);
   background: var(--vm-accent); transition: filter .4s var(--vm-ease-out); }
@@ -106,8 +122,14 @@
      allonge la barre de progrès au lieu de la faire mentir. */
   const etat = { file: [], i: 0, presentes: {}, sommaire: false };
 
+  /* Deux écrans par service, non quatre. Ouvrir le site, s'y
+     connecter, créer la clé : trois gestes qui se font d'affilée dans
+     l'autre onglet, sans revenir ici entre chaque. Les séparer
+     obligeait à faire l'aller-retour trois fois pour lire trois
+     phrases. Ils tiennent sur un écran ; le champ garde le sien, parce
+     que c'est là qu'on revient. */
   function pasDe(c, option) {
-    return c.etapes.map((e, n) => ({ type: 'pas', c, n, e, option }));
+    return [{ type: 'gestes', c, option }, { type: 'cle', c, option }];
   }
 
   function construire(o) {
@@ -220,13 +242,20 @@
     // Les pas numérotés portent le compteur ; les écrans de bascule
     // (intro, offre, sommaire) n'en font pas partie et le laissent vide
     // plutôt que d'annoncer « Étape 1 / 6 » devant une question.
-    const pas = etat.file.filter(x => x.type === 'pas');
+    const pas = etat.file.filter(
+      x => x.type === 'gestes' || x.type === 'cle');
     const rang = pas.indexOf(ecran) + 1;
     const top = document.getElementById('setuptop');
     if (top) {
       top.textContent = rang > 0
         ? `${L('Étape', 'Step')} ${rang} / ${pas.length}` : '';
     }
+    // Au tout premier écran d'un premier démarrage, Retour ne mène
+    // nulle part : on retombe sur l'écran de dépôt, où rien ne peut
+    // encore se faire faute de clé. On le cache là, et seulement là.
+    const retour = document.querySelector('.backbtn');
+    if (retour) retour.hidden = etat.i === 0 && !etat.presentes.groq;
+
     const barre = document.querySelector('.setupbar');
     if (barre) {
       barre.style.setProperty(
@@ -267,7 +296,7 @@
 
   function contenu(s) {
     if (s.type === 'intro') return vueIntro();
-    if (s.type === 'pas') return vuePas(s);
+    if (s.type === 'gestes' || s.type === 'cle') return vuePas(s);
     if (s.type === 'offre') return vueOffre();
     if (s.type === 'fini') return vueFini();
     return vueSommaire();
@@ -282,10 +311,10 @@
       <span class="etiq">${L('Avant de commencer', 'Before we start')}</span>
       <h2>${L('Deux services', 'Two services')}</h2>
       <p class="geste">${L(
-        'Groq transcrit la parole. Un second service, facultatif, rédige le '
-        + 'compte rendu. Les deux sont gratuits.',
-        'Groq transcribes speech. A second service, optional, drafts the '
-        + 'minutes. Both are free.')} ${
+        'Deux services, deux clés. Groq assure la reconnaissance de la '
+        + 'parole ; un modèle d\'IA, facultatif, rédige le compte rendu.',
+        'Two services, two keys. Groq handles speech recognition; an AI '
+        + 'model, optional, drafts the minutes.')} ${
       bulle(pourquoi.titre || '', pourquoi.texte || '')}</p>
       <button type="button" class="gros" data-x="suivant">${
       L('Commencer', 'Start')}</button>`;
@@ -298,31 +327,34 @@
       : `<span class="etiq">${c.recommande ? L('Recommandé', 'Recommended')
         : L('Facultatif', 'Optional')}</span>`;
 
-    // Premier pas : le bouton ouvre le site. Dernier pas : le champ.
-    // Entre les deux, rien à faire ici — on confirme et on avance.
-    let acte = '';
-    if (s.n === 0) {
-      acte = `<button type="button" class="gros" data-x="ouvrirsite">${
-        L('Ouvrir', 'Open')} ${esc(c.ou)}</button>
-        <button type="button" class="discret" data-x="suivant">${
-        L("J'y suis déjà", "I'm already there")}</button>`;
-    } else if (s.n === c.etapes.length - 1) {
-      acte = `<div class="keyrow">
+    if (s.type === 'cle') {
+      const dernier = c.etapes[c.etapes.length - 1];
+      return `${etiq}
+        <h2>${esc(c.nom)}</h2>
+        <p class="geste">${esc(dernier.geste)} ${bulle(c.nom, dernier.detail)}</p>
+        <div class="keyrow">
           <input type="password" id="keyinput" spellcheck="false"
                  autocomplete="off" placeholder="${esc(c.prefixes.join(' / '))}…"
                  aria-label="${L('Clé', 'Key')} ${esc(c.nom)}">
           <button id="keysave">${L('Enregistrer', 'Save')}</button>
         </div>
         <div class="keyerr" id="keyerr"></div>`;
-    } else {
-      acte = `<button type="button" class="gros" data-x="suivant">${
-        L('C\'est fait', 'Done')}</button>`;
     }
+
+    // Les gestes qui se font dans l'autre onglet, d'un seul tenant.
+    const gestes = c.etapes.slice(0, -1).map((e, n) => `
+      <li><b>${esc(e.geste)}</b><span>${esc(e.detail)}</span></li>`).join('');
 
     return `${etiq}
       <h2>${esc(c.nom)}</h2>
-      <p class="geste">${esc(s.e.geste)} ${bulle(c.role, s.e.detail)}</p>
-      ${acte}`;
+      <p class="geste">${esc(c.role)}</p>
+      <ol class="gestes">${gestes}</ol>
+      <div class="actes">
+        <button type="button" class="gros" data-x="ouvrirsite">${
+      L('Ouvrir', 'Open')} ${esc(c.ou)}</button>
+        <button type="button" class="discret" data-x="suivant">${
+      L('Clé déjà créée', 'Key already created')}</button>
+      </div>`;
   }
 
   function vueOffre() {
@@ -332,10 +364,10 @@
       <span class="etiq">${L('Facultatif', 'Optional')}</span>
       <h2>${L('Le compte rendu', 'The minutes')}</h2>
       <p class="geste">${L(
-        'Avec cette clé, l\'outil rédige un compte rendu à partir du '
-        + 'transcript. Sans elle, la transcription fonctionne quand même.',
-        'With this key the tool drafts minutes from the transcript. '
-        + 'Without it, transcription still works.')} ${
+        'Rédaction automatique du compte rendu à partir du transcript. '
+        + 'Sans cette clé, la sortie est le transcript seul.',
+        'Automatic drafting of minutes from the transcript. Without this '
+        + 'key, the output is the transcript alone.')} ${
       bulle(ia.nom, ia.pour_quoi)}</p>
       <button type="button" class="gros" data-x="ajouter">${
       L('Ajouter', 'Add')} ${esc(ia.nom)}</button>
@@ -345,11 +377,11 @@
 
   function vueFini() {
     return `
-      <span class="etiq etat-oui">${L('Prêt', 'Ready')}</span>
-      <h2>${L('C\'est branché', 'All set')}</h2>
+      <span class="etiq etat-oui">${L('Terminé', 'Done')}</span>
+      <h2>${L('Configuré', 'Configured')}</h2>
       <p class="geste">${L(
-        'Les clés sont enregistrées dans le trousseau du système.',
-        'The keys are stored in the system keychain.')}</p>
+        'Clés enregistrées dans le trousseau du système.',
+        'Keys stored in the system keychain.')}</p>
       <button type="button" class="gros" data-x="fini">${
       L('Transcrire un enregistrement', 'Transcribe a recording')}</button>`;
   }
@@ -384,7 +416,15 @@
         if (quoi === 'suivant') return avancer();
         if (quoi === 'fini') return terminer();
         if (quoi === 'ouvrirsite') {
-          window.open(s.c.url, '_blank', 'noopener');
+          /* Par le serveur, et non window.open : dans la fenêtre de
+             l'application empaquetée, window.open n'ouvre rien, et le
+             bouton ne faisait donc rien — au premier pas, celui qu'on
+             ne peut pas contourner. Le navigateur reste le repli. */
+          api('/api/ouvrir', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: s.c.url }),
+          }).catch(() => { window.open(s.c.url, '_blank', 'noopener'); });
           return avancer();
         }
         if (quoi === 'ajouter') {

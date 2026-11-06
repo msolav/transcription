@@ -46,73 +46,59 @@ POURQUOI_DEUX = {
     "titre": {"fr": "Pourquoi deux inscriptions",
               "en": "Why two sign-ups"},
     "texte": {
-        "fr": "L'outil fait deux métiers. Le premier écoute l'enregistrement "
-              "et écrit ce qui a été dit : c'est Groq qui s'en charge. Le "
-              "second lit ce texte et en tire un compte rendu : c'est une "
-              "intelligence artificielle, celle de ton choix. Deux "
-              "entreprises différentes, donc deux inscriptions.\n\n"
-              "La première est obligatoire — sans elle, rien ne se "
-              "transcrit. La seconde est facultative : sans elle tu obtiens "
-              "le texte brut de la réunion, ce qui suffit si tu rédiges le "
-              "compte rendu toi-même.",
-        "en": "The tool does two jobs. The first listens to the recording "
-              "and writes down what was said — Groq handles that. The "
-              "second reads that text and drafts the minutes — an AI of "
-              "your choosing handles that. Two different companies, so two "
-              "sign-ups.\n\n"
-              "The first is required: without it, nothing gets transcribed. "
-              "The second is optional: without it you still get the raw "
-              "text of the meeting, which is enough if you write the "
-              "minutes yourself.",
+        "fr": "Deux services distincts, donc deux inscriptions.\n\n"
+              "Groq : reconnaissance de la parole. Obligatoire — c'est "
+              "lui qui produit le texte.\n\n"
+              "Modèle d'IA au choix (Gemini, Claude) : rédaction du "
+              "compte rendu à partir de ce texte. Facultatif. Sans lui, "
+              "la sortie est le transcript brut.",
+        "en": "Two separate services, two registrations.\n\n"
+              "Groq: speech recognition. Required — it produces the "
+              "text.\n\n"
+              "An AI model of your choice (Gemini, Claude): drafting "
+              "the minutes from that text. Optional. Without it, the "
+              "output is the raw transcript.",
     },
 }
 
 QU_EST_CE_QU_UNE_CLE = {
     "titre": {"fr": "Ce qu'est une clé", "en": "What a key is"},
     "texte": {
-        "fr": "Une clé d'API est une longue suite de caractères que l'outil "
-              "présente au service pour dire « c'est bien moi qui demande ». "
-              "Ce n'est pas le mot de passe de ton compte : elle ne donne "
-              "accès qu'à ce seul service, et tu peux la supprimer pour en "
-              "créer une autre quand tu veux, sans rien casser ailleurs.\n\n"
-              "Copie-la au moment où elle s'affiche. La plupart des services "
-              "ne la remontrent jamais ensuite — ils en recréent une, ce qui "
-              "n'est pas grave non plus.",
-        "en": "An API key is a long string of characters that the tool shows "
-              "a service to say \"this really is me asking\". It is not your "
-              "account password: it opens that one service and nothing else, "
-              "and you can delete it and make another whenever you like, "
-              "without breaking anything.\n\n"
-              "Copy it the moment it appears. Most services never show it "
-              "again afterwards — they just make you a new one, which is no "
-              "trouble either.",
+        "fr": "Une clé d'API est une chaîne de caractères qui identifie "
+              "le programme auprès du service. Sa portée se limite à ce "
+              "service. Elle est révocable et remplaçable à tout "
+              "moment, sans effet sur le compte.\n\n"
+              "La plupart des services ne l'affichent qu'une fois, à la "
+              "création.",
+        "en": "An API key is a character string identifying the program "
+              "to the service. Its scope is limited to that service. It "
+              "is revocable and replaceable at any time, with no effect "
+              "on the account.\n\n"
+              "Most services display it once only, at creation.",
     },
 }
 
 OU_VA_LA_CLE = {
     "titre": {"fr": "Où elle est rangée", "en": "Where it is kept"},
     "texte": {
-        "fr": "Dans le trousseau du système : Trousseau d'accès sur Mac, "
-              "Gestionnaire d'identifiants sur Windows, Secret Service "
-              "(GNOME Keyring, KWallet) sur Linux. Sur cette machine "
-              "seulement. Elle n'est envoyée qu'au service auquel elle "
-              "appartient.\n\n"
-              "Sur une installation Linux minimale, sans Secret Service, "
-              "elle est écrite dans ~/.transcripteur.json, en lecture pour "
-              "le seul propriétaire (0600).\n\n"
-              "La séparation des voix se calcule sur cette machine. Seul "
-              "l'audio, compressé en MP3 mono, part chez Groq pour la "
-              "reconnaissance de la parole.",
-        "en": "In the system keychain: Keychain Access on a Mac, Credential "
-              "Manager on Windows, Secret Service (GNOME Keyring, KWallet) "
-              "on Linux. On this machine only. It is sent to the service it "
-              "belongs to, and nowhere else.\n\n"
-              "On a minimal Linux install with no Secret Service, it is "
-              "written to ~/.transcripteur.json, readable by the owner only "
-              "(0600).\n\n"
-              "Voice separation is computed on this machine. Only the "
-              "audio, compressed to mono MP3, goes to Groq for speech "
-              "recognition.",
+        "fr": "Stockage : trousseau du système — Trousseau d'accès "
+              "(macOS), Gestionnaire d'identifiants (Windows), Secret "
+              "Service, GNOME Keyring ou KWallet (Linux). Sans Secret "
+              "Service : ~/.transcripteur.json, droits 0600.\n\n"
+              "Transmission : au service propriétaire de la clé, et à "
+              "lui seul.\n\n"
+              "Traitement local : séparation des voix, sous-titres, "
+              "stockage des transcriptions. Transmis à Groq : l'audio "
+              "converti en MP3 mono.",
+        "en": "Storage: the system keychain — Keychain Access (macOS), "
+              "Credential Manager (Windows), Secret Service, GNOME "
+              "Keyring or KWallet (Linux). With no Secret Service: "
+              "~/.transcripteur.json, mode 0600.\n\n"
+              "Transmission: to the service that owns the key, and to "
+              "nothing else.\n\n"
+              "Processed locally: voice separation, subtitles, "
+              "transcript storage. Sent to Groq: the audio converted to "
+              "mono MP3.",
     },
 }
 
@@ -123,19 +109,18 @@ PIEGE_ABONNEMENT = {
     "titre": {"fr": "Un abonnement n'est pas une clé",
               "en": "A subscription is not a key"},
     "texte": {
-        "fr": "Un abonnement Claude Pro, ou ChatGPT Plus, ne donne pas de "
-              "clé d'API. Ce sont deux produits distincts, avec deux "
-              "factures distinctes : l'abonnement paie l'usage du site par "
-              "un humain, la clé paie l'usage du service par un programme "
-              "comme celui-ci.\n\n"
-              "Si tu as déjà un abonnement, il ne sert à rien ici, et il "
-              "n'y a rien à annuler : prends la clé gratuite de Gemini.",
-        "en": "A Claude Pro or ChatGPT Plus subscription does not give you an "
-              "API key. They are two separate products with two separate "
-              "bills: the subscription pays for a human using the website, "
-              "the key pays for a program like this one using the service."
-              "\n\nIf you already have a subscription it is of no use here, "
-              "and there is nothing to cancel: take the free Gemini key.",
+        "fr": "Un abonnement Claude Pro ou ChatGPT Plus ne fournit pas "
+              "de clé d'API. Produits distincts, facturations "
+              "distinctes : l'abonnement couvre l'usage du site web par "
+              "une personne, la clé couvre l'accès par un programme.\n\n"
+              "Un abonnement en cours ne dispense donc pas de créer une "
+              "clé, et n'a pas à être résilié.",
+        "en": "A Claude Pro or ChatGPT Plus subscription does not "
+              "provide an API key. Separate products, separate "
+              "billing: the subscription covers a person's use of the "
+              "website, the key covers access by a program.\n\n"
+              "An existing subscription therefore does not replace "
+              "creating a key, and does not need cancelling.",
     },
 }
 
@@ -154,10 +139,10 @@ CLES = [
         "role": {"fr": "Transcrit la parole en texte.",
                  "en": "Turns speech into text."},
         "pour_quoi": {
-            "fr": "Sans cette clé, l'outil ne peut rien faire : c'est elle "
-                  "qui transforme l'enregistrement en texte.",
-            "en": "Without this key the tool can do nothing at all: it is "
-                  "what turns the recording into text.",
+            "fr": "Obligatoire : toute la transcription passe par ce "
+                  "service.",
+            "en": "Required: all transcription goes through this "
+                  "service.",
         },
         "prix": {"fr": "Gratuit, sans carte bancaire.",
                  "en": "Free, no credit card."},
@@ -183,14 +168,12 @@ CLES = [
                         "en": "No credit card is required."}},
             {"geste": {"fr": "Créer une clé.",
                        "en": "Create a key."},
-             "detail": {"fr": "Cherche le bouton « Create API Key ». "
-                              "Donne-lui le nom que tu veux, "
-                              "« Transcripteur » par exemple : ce nom ne "
-                              "sert qu'à t'y retrouver plus tard.",
-                        "en": "Look for the button marked \"Create API "
-                              "Key\". Give it any name you like, "
-                              "\"Transcripteur\" for instance: the name "
-                              "only helps you recognise it later."}},
+             "detail": {"fr": "Bouton « Create API Key ». Le nom "
+                              "demandé est libre et sert uniquement à "
+                              "identifier la clé dans la console.",
+                        "en": "Button marked \"Create API Key\". The "
+                              "name requested is free-form and only "
+                              "identifies the key in the console."}},
             {"geste": {"fr": "Copier la clé, puis la coller ici.",
                        "en": "Copy the key, then paste it here."},
              "detail": {"fr": "Format : gsk_… Groq ne l'affiche "
@@ -200,12 +183,11 @@ CLES = [
                               "only. If lost, create another."}},
         ],
         "limites": {
-            "fr": "Le compte gratuit a un plafond quotidien. L'usage normal "
-                  "d'une association l'atteint rarement ; quand il est "
-                  "atteint, le message annonce l'heure à laquelle reprendre.",
-            "en": "The free account has a daily ceiling. Normal use by a "
-                  "community organisation rarely reaches it; when it is "
-                  "reached, the message tells you what time to come back.",
+            "fr": "Plafond quotidien sur le compte gratuit. Au "
+                  "dépassement, le message indique l'heure de "
+                  "réinitialisation.",
+            "en": "Daily ceiling on the free account. When exceeded, the "
+                  "message states the reset time.",
         },
     },
     {
@@ -219,9 +201,8 @@ CLES = [
             "fr": "C'est le choix gratuit, et celui que nous avons mesuré "
                   "comme le plus fiable : il lit la réunion entière d'un "
                   "seul tenant au lieu de la découper en tranches.",
-            "en": "This is the free option, and the one we measured as the "
-                  "most dependable: it reads the whole meeting in one piece "
-                  "instead of chopping it into slices.",
+            "en": "Free option. Context window large enough to process "
+                  "the transcript in a single request.",
         },
         "prix": {"fr": "Gratuit, sans carte bancaire.",
                  "en": "Free, no credit card."},
@@ -238,12 +219,12 @@ CLES = [
                         "en": "No credit card is asked for."}},
             {"geste": {"fr": "Créer une clé.",
                        "en": "Create a key."},
-             "detail": {"fr": "Cherche le bouton « Create API key ». Si on "
-                              "te demande de choisir un projet, celui qui "
-                              "est proposé convient.",
-                        "en": "Look for the button marked \"Create API "
-                              "key\". If you are asked to pick a project, "
-                              "the one it suggests will do."}},
+             "detail": {"fr": "Bouton « Create API key ». Si un projet "
+                              "est demandé, celui proposé par défaut "
+                              "convient.",
+                        "en": "Button marked \"Create API key\". If a "
+                              "project is requested, the default one "
+                              "is suitable."}},
             {"geste": {"fr": "Copier la clé, puis la coller ici.",
                        "en": "Copy the key, then paste it here."},
              "detail": {"fr": "Elle commence par AIza ou par AQ. — les deux "
@@ -252,38 +233,30 @@ CLES = [
                               "formats are accepted."}},
         ],
         "limites": {
-            "fr": "Le compte gratuit limite le nombre de requêtes par jour, "
-                  "pas le volume de texte — ce qui tombe bien, puisqu'un "
-                  "compte rendu tient en une ou deux requêtes. De quoi "
-                  "couvrir plusieurs réunions par jour.",
-            "en": "The free account limits how many requests you make per "
-                  "day, not how much text they carry — which suits us, since "
-                  "one set of minutes takes one or two requests. Enough for "
-                  "several meetings a day.",
+            "fr": "Quota exprimé en requêtes par jour, pas en volume de "
+                  "texte. Un compte rendu consomme une à deux requêtes.",
+            "en": "Quota measured in requests per day, not in volume of "
+                  "text. One set of minutes uses one or two requests.",
         },
     },
     {
         "id": "anthropic",
         "nom": "Claude (Anthropic)",
         "requis": False,
-        "role": {"fr": "Rédige le compte rendu, un peu mieux, contre "
-                       "paiement.",
-                 "en": "Drafts the minutes, somewhat better, for a fee."},
+        "role": {"fr": "Rédaction du compte rendu. Service payant.",
+                 "en": "Drafting of the minutes. Paid service."},
         "pour_quoi": {
-            "fr": "Le plus capable des trois, et sans plafond quotidien. À "
-                  "ne faire que si le choix gratuit ne te suffit pas — pour "
-                  "un compte rendu de réunion, il suffit presque toujours.",
-            "en": "The most capable of the three, and with no daily ceiling. "
-                  "Worth doing only if the free option is not enough for you "
-                  "— for meeting minutes, it almost always is.",
+            "fr": "Pas de plafond quotidien. Utile lorsque les quotas "
+                  "gratuits sont insuffisants.",
+            "en": "No daily ceiling. Useful when the free quotas are "
+                  "insufficient.",
         },
         "prix": {
-            "fr": "Payant, à l'usage. Il faut déposer du crédit d'avance : "
-                  "une dizaine de dollars durent très longtemps, un compte "
-                  "rendu coûtant quelques dizaines de centimes au plus.",
-            "en": "Paid, by usage. You have to put credit in up front: ten "
-                  "dollars or so lasts a very long time, one set of minutes "
-                  "costing a few tens of cents at most.",
+            "fr": "Facturation à l'usage, sur crédit prépayé. Ordre de "
+                  "grandeur : quelques dizaines de centimes par compte "
+                  "rendu.",
+            "en": "Billed by usage, from prepaid credit. Order of "
+                  "magnitude: a few tens of cents per set of minutes.",
         },
         "etapes": [
             {"geste": {"fr": "Ouvrir la page des clés d'Anthropic.",
@@ -312,10 +285,10 @@ CLES = [
                         "en": "It starts with sk-ant-."}},
         ],
         "limites": {
-            "fr": "Pas de plafond quotidien : tu paies ce que tu consommes, "
-                  "et le panneau affiche le coût estimé avant de lancer.",
-            "en": "No daily ceiling: you pay for what you use, and the panel "
-                  "shows the estimated cost before it starts.",
+            "fr": "Pas de plafond quotidien. Le coût estimé est affiché "
+                  "avant lancement.",
+            "en": "No daily ceiling. The estimated cost is displayed "
+                  "before launch.",
         },
     },
 ]

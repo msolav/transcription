@@ -295,6 +295,31 @@ def health() -> dict:
     }
 
 
+@app.post("/api/ouvrir")
+def ouvrir_lien(payload: dict) -> dict:
+    """Ouvre une adresse de fournisseur dans le navigateur du système.
+
+    Dans l'application empaquetée, la page vit dans une fenêtre
+    pywebview : window.open n'y ouvre rien du tout. Le bouton « Ouvrir
+    console.groq.com » ne faisait donc rien, ce qui bloque la
+    configuration au premier pas, et c'est le seul pas qu'on ne peut
+    pas contourner.
+
+    La liste des adresses permises vient de config.FOURNISSEURS. Un
+    point d'entrée qui ouvrirait n'importe quelle adresse sur demande
+    de la page serait un moyen commode, pour une page compromise, de
+    faire ouvrir n'importe quoi au système."""
+    demande = str(payload.get("url") or "").strip()
+    permises = {f"https://{f['ou']}" for f in config.FOURNISSEURS.values()}
+    if demande not in permises:
+        raise HTTPException(400, "Adresse non autorisée.")
+    try:
+        webbrowser.open(demande)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(500, f"Ouverture impossible : {exc}") from exc
+    return {"ouvert": demande}
+
+
 @app.get("/api/guide")
 def api_guide(langue: str = "fr") -> dict:
     """Le mode d'emploi des clés, dans la langue de l'interface."""
