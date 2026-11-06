@@ -46,6 +46,19 @@ def binaire() -> Path:
     return RACINE / "dist/Transcripteur/Transcripteur"
 
 
+def racine_app() -> Path:
+    """Le dossier de l'application elle-même.
+
+    Et non `exe.parent.parent`, qui ne désigne pas la même chose selon
+    le système : Contents/ sur macOS, mais dist/ sur Linux et Windows —
+    où il contient aussi l'archive qu'on vient de fabriquer. Le contrôle
+    de taille y voyait donc un « fichier énorme de 71 Mo » qui était le
+    paquet lui-même, et n'échouait que sur deux systèmes sur trois."""
+    if sys.platform == "darwin":
+        return RACINE / "dist" / "Transcripteur.app"
+    return RACINE / "dist" / "Transcripteur"
+
+
 def ressources() -> Path:
     """Où PyInstaller a posé les fichiers qui ne sont pas du code."""
     if sys.platform == "darwin":
@@ -84,8 +97,8 @@ ok("ffmpeg n'est pas dans le paquet", not lourds,
 # Les liens symboliques sont écartés : un paquet .app relie MacOS/ et
 # Frameworks/ au même contenu, et les additionner compte tout deux
 # fois — 196 Mo annoncés pour 101 Mo sur le disque.
-racine = exe.parent.parent
-fichiers = [f for f in racine.rglob("*") if f.is_file() and not f.is_symlink()]
+fichiers = [f for f in racine_app().rglob("*")
+            if f.is_file() and not f.is_symlink()]
 poids = sum(f.stat().st_size for f in fichiers)
 
 # Un plafond sur le total ne veut pas dire la même chose d'un système à
