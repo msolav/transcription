@@ -27,8 +27,26 @@ const PAQUETS = {
   'linux': 'Transcripteur-Linux.tar.gz',
 };
 
-const VERSION = 'v1.0';
-const AMONT = (f) => `https://github.com/${DEPOT}/releases/download/${VERSION}/${f}`;
+/* La version servie est celle de la dernière publication, demandée au
+   dépôt. Elle était écrite en dur : le site a continué de distribuer
+   v1.0 après la sortie de v1.1, y compris à l'avis de mise à jour qui
+   renvoyait ici. Une constante de version dans un fichier qu'on oublie
+   de modifier est exactement la panne que /version.json évite déjà. */
+async function derniere() {
+  try {
+    const r = await fetch(
+      `https://api.github.com/repos/${DEPOT}/releases/latest`,
+      { headers: { 'user-agent': 'transcripteur-site',
+                   accept: 'application/vnd.github+json' },
+        cf: { cacheTtl: 900, cacheEverything: true } });
+    if (r.ok) return (await r.json()).tag_name || null;
+  } catch (e) { /* on retombe sur l'adresse « latest » de GitHub */ }
+  return null;
+}
+
+const AMONT = (f, tag) => tag
+  ? `https://github.com/${DEPOT}/releases/download/${tag}/${f}`
+  : `https://github.com/${DEPOT}/releases/latest/download/${f}`;
 
 function page(titre, texte, code) {
   return new Response(
@@ -87,7 +105,10 @@ export default {
         'Ce lien ne correspond à aucun système.', 404);
     }
 
-    const cle = `${VERSION}/${fichier}`;
+    // La clé R2 porte la version : sans elle, une version nouvelle
+    // serait servie depuis le cache de l'ancienne, indéfiniment.
+    const tag = await derniere();
+    const cle = `${tag || 'latest'}/${fichier}`;
 
     // 1. R2, si le paquet y est déjà.
     if (env.PAQUETS) {
@@ -103,7 +124,7 @@ export default {
     // 2. Sinon le dépôt.
     let amont;
     try {
-      amont = await fetch(AMONT(fichier), {
+      amont = await fetch(AMONT(fichier, tag), {
         headers: { 'user-agent': 'transcripteur-site' },
         redirect: 'follow',
       });
