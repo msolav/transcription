@@ -5,13 +5,17 @@
  * tous les systèmes, sommes de contrôle, interface en anglais — on en
  * conclut qu'on s'est trompé d'endroit.
  *
- * Le fichier est relayé, pas redirigé. Une redirection renvoyait vers
- * github.com, et quand la version n'était pas encore publiée elle y
- * affichait « Not Found » sur fond noir, sans un mot d'explication et
- * sans retour possible. Ici l'adresse reste la nôtre, et l'absence de
- * version se dit dans une phrase.
+ * Le fichier est relayé, jamais redirigé. Une redirection renvoyait
+ * vers github.com, et tant que la version n'était pas publiée elle y
+ * affichait « Not Found » sur fond noir, sans un mot ni retour
+ * possible.
  *
- * Le jour où les paquets vivront sur R2, seule ORIGINE change.
+ * D'où vient le fichier : de R2 s'il y est, du dépôt sinon — et dans
+ * ce cas on le range dans R2 en passant. Pas d'étape de téléversement
+ * dans la chaîne de construction, donc pas de clé d'accès à confier à
+ * GitHub ; et le premier à télécharger une version nouvelle la dépose
+ * pour les suivants. Si R2 tombe ou se vide, le dépôt reste derrière :
+ * le téléchargement ralentit, il ne casse pas.
  */
 
 const DEPOT = 'msolav/transcription';
@@ -23,8 +27,8 @@ const PAQUETS = {
   'linux': 'Transcripteur-Linux.tar.gz',
 };
 
-const ORIGINE = (fichier) =>
-  `https://github.com/${DEPOT}/releases/latest/download/${fichier}`;
+const VERSION = 'v1.0';
+const AMONT = (f) => `https://github.com/${DEPOT}/releases/download/${VERSION}/${f}`;
 
 function page(titre, texte, code) {
   return new Response(
@@ -40,8 +44,18 @@ max-width:32rem;color:#6b6a65}a{color:inherit}</style>
     { status: code, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }
 
+function entetes(fichier, taille, source) {
+  const h = new Headers();
+  h.set('content-type', 'application/octet-stream');
+  h.set('content-disposition', `attachment; filename="${fichier}"`);
+  if (taille) h.set('content-length', String(taille));
+  h.set('cache-control', 'public, max-age=3600');
+  h.set('x-source', source);          // pour savoir d'où il est venu
+  return h;
+}
+
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const m = url.pathname.match(/^\/telecharger\/([a-z-]+)\/?$/);
     if (!m) return env.ASSETS.fetch(request);
@@ -52,9 +66,23 @@ export default {
         'Ce lien ne correspond à aucun système.', 404);
     }
 
+    const cle = `${VERSION}/${fichier}`;
+
+    // 1. R2, si le paquet y est déjà.
+    if (env.PAQUETS) {
+      try {
+        const objet = await env.PAQUETS.get(cle);
+        if (objet) {
+          return new Response(objet.body,
+            { headers: entetes(fichier, objet.size, 'r2') });
+        }
+      } catch (e) { /* on passera par le dépôt */ }
+    }
+
+    // 2. Sinon le dépôt.
     let amont;
     try {
-      amont = await fetch(ORIGINE(fichier), {
+      amont = await fetch(AMONT(fichier), {
         headers: { 'user-agent': 'transcripteur-site' },
         redirect: 'follow',
       });
@@ -62,23 +90,30 @@ export default {
       return page('Téléchargement indisponible',
         'Le fichier n’a pas pu être récupéré. Réessayer dans un moment.', 502);
     }
-
-    if (!amont.ok) {
+    if (!amont.ok || !amont.body) {
       return page('Pas encore disponible',
-        `Le paquet pour ce système n’est pas encore publié. `
-        + `Il arrivera à la prochaine version.`, 404);
+        'Le paquet pour ce système n’est pas encore publié. '
+        + 'Il arrivera à la prochaine version.', 404);
     }
 
-    // On réécrit les en-têtes : le nom du fichier doit être lisible
-    // dans le dossier de téléchargements, et la taille connue pour que
-    // le navigateur affiche une progression plutôt qu'un compteur fou.
-    const entetes = new Headers();
-    entetes.set('content-type', 'application/octet-stream');
-    entetes.set('content-disposition', `attachment; filename="${fichier}"`);
     const taille = amont.headers.get('content-length');
-    if (taille) entetes.set('content-length', taille);
-    entetes.set('cache-control', 'public, max-age=3600');
 
-    return new Response(amont.body, { status: 200, headers: entetes });
+    // 3. Et on le range au passage, sans faire attendre qui télécharge :
+    //    le flux est dédoublé, une moitié part vers le navigateur,
+    //    l'autre vers R2. La taille est donnée à put() — sans elle, un
+    //    flux interrompu déposerait un fichier tronqué, que les
+    //    suivants téléchargeraient en croyant l'avoir en entier.
+    if (env.PAQUETS && taille) {
+      const [pourVous, pourR2] = amont.body.tee();
+      ctx.waitUntil(
+        env.PAQUETS.put(cle, pourR2, {
+          httpMetadata: { contentType: 'application/octet-stream' },
+        }).catch(() => {}));
+      return new Response(pourVous,
+        { headers: entetes(fichier, taille, 'amont-rangé') });
+    }
+
+    return new Response(amont.body,
+      { headers: entetes(fichier, taille, 'amont') });
   },
 };

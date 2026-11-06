@@ -15,6 +15,13 @@
   "observability": {
     "enabled": true
   },
+  // Les paquets. Le Worker y dépose ce qu'il va chercher au dépôt la
+  // première fois, et le sert de là ensuite. Pas de téléversement dans
+  // la chaîne de construction, donc aucune clé d'accès à confier à
+  // GitHub.
+  "r2_buckets": [
+    { "binding": "PAQUETS", "bucket_name": "transcripteur-paquets" }
+  ],
   "assets": {
     "directory": "site",
     "binding": "ASSETS",
