@@ -337,3 +337,9 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 /* option markers: pinned to the first text line, so rows of unequal height stay aligned */
 .settings .vm-sel li { align-self: start; }
 .settings .vm-sel li::before { top: calc(.62rem + .675rem); }
+
+/* Le dépôt et la progression se réduisent comme l'écran des clés.
+   Le contenu est calé en bas : quand il dépasse, il dépasse par le
+   HAUT, et le titre géant se retrouve coupé. « safe » empêche le
+   débordement du côté du début, le zoom fait tenir le reste. */
+.capture > * { zoom: var(--fit, 1); }

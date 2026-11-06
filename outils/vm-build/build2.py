@@ -166,6 +166,41 @@ if (location.protocol === 'file:') {
     s.prepend(b); };
   new MutationObserver(() => { addBack(); fit(); }).observe(sa, { childList: true, subtree: true });
   addEventListener('resize', fit);
+
+  /* L'écran de dépôt et de progression se réduit de la même façon. Le
+     pourcentage géant est dimensionné en vw : dans une fenêtre large
+     mais courte, il dépasse par le haut et pousse le reste hors de
+     l'écran, qui ne doit jamais défiler. On mesure, et on réduit. */
+  const cap = $('#capture');
+  const fitCap = () => {
+    if (!cap || document.body.classList.contains('back')) return;
+    cap.style.setProperty('--fit', 1);
+    /* Deux pièges ici, et le second a coûté deux essais.
+       scrollHeight ne voit QUE le débordement par le bas ; or le
+       contenu de la zone de dépôt est calé en bas, donc il déborde par
+       le HAUT — le titre géant était coupé pendant que scrollHeight
+       annonçait zéro.
+       Et ce n'est pas .capture qui déborde : c'est #dropzone, qui a
+       `flex: 1 1 0; min-height: 0` et se laisse écraser pendant que son
+       contenu, lui, garde sa taille. C'est donc lui qu'il faut mesurer. */
+    const zone = $('#dropzone');
+    if (!zone) return;
+    const r = [...zone.children].map(e => e.getBoundingClientRect())
+      .filter(x => x.height > 0);
+    if (!r.length) return;
+    const besoin = Math.max(...r.map(x => x.bottom)) - Math.min(...r.map(x => x.top));
+    const place = zone.clientHeight;
+    if (place > 60 && besoin > place + 2) {
+      cap.style.setProperty('--fit',
+        Math.max(.55, (place / besoin) * 0.97).toFixed(3));
+    }
+  };
+  if (cap) {
+    new ResizeObserver(fitCap).observe(cap);
+    new MutationObserver(fitCap).observe(cap, { childList: true, subtree: true });
+    addEventListener('resize', fitCap);
+    fitCap();
+  }
 }
 
 /* ---------- margin timeline ---------- */

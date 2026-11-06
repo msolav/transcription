@@ -101,8 +101,18 @@
     return hote;
   }
 
+  /* Pendant un traitement, la liste n'a plus lieu d'être : on ne peut
+     ni rouvrir ni supprimer tant que ça tourne, et elle occupe la
+     hauteur dont le pourcentage géant a besoin. Dans une fenêtre
+     courte, c'est elle qui faisait déborder l'écran. */
+  function enTraitement() {
+    const s = document.getElementById('status');
+    return !!(s && !s.hidden);
+  }
+
   async function peindre() {
     if (!placer()) return;
+    if (enTraitement()) { hote.hidden = true; return; }
     let d = null;
     try { d = await api('/api/seances'); } catch (e) { return; }
     const liste = (d && d.seances) || [];
@@ -297,6 +307,16 @@
       };
     }
     if (window.vm && vm.lang && vm.lang.onChange) vm.lang.onChange(peindre);
+
+    // Le passage en traitement et le retour se voient sur #status :
+    // on s'y accroche plutôt que de sonder l'état en boucle.
+    const statut = document.getElementById('status');
+    if (statut) {
+      new MutationObserver(() => {
+        clearTimeout(demarrer._s);
+        demarrer._s = setTimeout(peindre, 250);
+      }).observe(statut, { attributes: true, attributeFilter: ['hidden'] });
+    }
   }
 
   if (document.readyState === 'loading') {
