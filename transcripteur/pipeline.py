@@ -14,6 +14,7 @@ import subprocess
 import time
 import wave
 from dataclasses import dataclass, field
+import sys
 from pathlib import Path
 from typing import Callable
 
@@ -373,9 +374,48 @@ def denoise(audio, cle: str, progress: Progress, span: tuple[float, float]):
     progress("Nettoyage du son", low)
     checkpoint()
     debut = time.time()
-    propre = sherpa_onnx.OfflineSpeechDenoiser(config).run(audio, 16000)
     import numpy as np
-    sortie = np.array(propre.samples, dtype=np.float32)
+
+    moteur = sherpa_onnx.OfflineSpeechDenoiser(config)
+
+    # Par tranches, et non d'un seul appel. Un appel unique est un bloc
+    # opaque : la barre reste figée du début à la fin — sur une réunion
+    # longue, plusieurs minutes sans le moindre signe de vie, ce qui ne
+    # se distingue pas d'un plantage — et la demande d'arrêt n'est lue
+    # nulle part, donc « Arrêter » ne répond pas.
+    #
+    # Les tranches se recouvrent d'un quart de seconde, fondu enchaîné :
+    # recollées bout à bout sans recouvrement, le modèle laisse un clic
+    # audible à chaque jointure.
+    PAS = 20 * 16000          # 20 s
+    RECOUVRE = 4000           # 0,25 s
+
+    if len(audio) <= PAS:
+        propre = moteur.run(audio, 16000)
+        sortie = np.array(propre.samples, dtype=np.float32)
+    else:
+        morceaux: list = []
+        depart = 0
+        total = len(audio)
+        while depart < total:
+            checkpoint()
+            fin = min(depart + PAS, total)
+            bout = np.array(
+                moteur.run(audio[depart:fin], 16000).samples, dtype=np.float32)
+            if morceaux and len(bout) > RECOUVRE:
+                # Fondu : la fin du morceau précédent décroît pendant que
+                # le début de celui-ci monte.
+                f = np.linspace(0.0, 1.0, RECOUVRE, dtype=np.float32)
+                queue = morceaux[-1]
+                n = min(RECOUVRE, len(queue), len(bout))
+                queue[-n:] = queue[-n:] * (1 - f[-n:]) + bout[:n] * f[-n:]
+                bout = bout[n:]
+            morceaux.append(bout)
+            depart = fin - RECOUVRE if fin < total else fin
+            progress("Nettoyage du son",
+                     low + (high - low) * min(1.0, depart / total))
+        sortie = np.concatenate(morceaux) if morceaux else audio
+
     log(f"son nettoyé en {time.time() - debut:.0f}s")
     progress("Nettoyage du son", high)
     return sortie
@@ -445,6 +485,116 @@ NOMS_LANGUES = {
 # Séparation des voix
 # --------------------------------------------------------------------------
 
+def _commande_diariseur() -> list[str] | None:
+    """Comment relancer ce programme en mode séparation.
+
+    Depuis les sources, c'est l'interpréteur courant et le module. Une
+    fois empaqueté, il n'y a plus d'interpréteur : c'est l'exécutable
+    lui-même, avec un drapeau que lancer.py intercepte avant d'ouvrir
+    quoi que ce soit."""
+    if getattr(sys, "frozen", False):
+        return [sys.executable, "--diariser"]
+    if sys.executable:
+        return [sys.executable, "-m", "transcripteur.diariseur"]
+    return None
+
+
+def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
+                     seuil: float, avance) -> list | None:
+    """Sépare les voix dans un processus qu'on peut tuer.
+
+    Rend None si c'est impossible — l'appelant calcule alors sur place."""
+    import json
+    import subprocess
+    import tempfile
+    import wave
+
+    commande = _commande_diariseur()
+    if not commande:
+        return None
+
+    import numpy as np
+    with tempfile.TemporaryDirectory(prefix="diar_") as tmp:
+        chemin = str(Path(tmp) / "a.wav")
+        with wave.open(chemin, "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(16000)
+            w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
+
+        args = commande + [chemin, str(seg_model), str(emb_model),
+                           str(nombre), str(seuil), str(DIARIZE_THREADS)]
+        # PYTHONPATH explicite : un sous-processus n'hérite pas des
+        # modifications de sys.path du parent, et `-m transcripteur…`
+        # échouait alors selon le dossier courant — sans un mot, puisque
+        # sa sortie d'erreur partait au néant.
+        import os
+        env = dict(os.environ)
+        if not getattr(sys, "frozen", False):
+            racine = str(Path(__file__).resolve().parent.parent)
+            ancien = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = racine + (os.pathsep + ancien if ancien else "")
+        try:
+            proc = subprocess.Popen(args, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True,
+                                    bufsize=1, env=env)
+        except Exception as exc:  # noqa: BLE001
+            log(f"séparation à part impossible ({exc})")
+            return None
+
+        tours = None
+        erreur = None
+        try:
+            # readline() et non `for ligne in proc.stdout` : l'itérateur
+            # lit par blocs et ne rend la main qu'une fois son tampon
+            # rempli, ce qui retardait la lecture de la demande d'arrêt
+            # de plusieurs secondes.
+            while True:
+                ligne = proc.stdout.readline()
+                if not ligne:
+                    break
+                if _stop and _stop():
+                    # SIGTERM ne peut pas être traité tant que l'appel
+                    # C++ n'a pas rendu la main à Python : attendre cinq
+                    # secondes ne faisait qu'ajouter cinq secondes. Le
+                    # travail est jetable, on tue.
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=0.5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        proc.wait()
+                    raise Cancelled()
+                ligne = ligne.strip()
+                if ligne.startswith("P "):
+                    _, faits, total = ligne.split()
+                    avance(int(faits), int(total))
+                elif ligne.startswith("R "):
+                    tours = [tuple(t) for t in json.loads(ligne[2:])]
+                elif ligne.startswith("E "):
+                    erreur = ligne[2:]
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+        proc.wait()
+
+        if erreur:
+            raise PipelineError(f"Séparation des voix : {erreur}")
+        if tours is None:
+            # On dit pourquoi : sans cela, le repli se déclenche en
+            # silence et l'on croit que tout va bien jusqu'au jour où
+            # « Arrêter » ne répond plus.
+            fin = ""
+            try:
+                fin = (proc.stderr.read() or "").strip().splitlines()[-1][:160]
+            except Exception:  # noqa: BLE001
+                pass
+            log(f"le processus de séparation n'a rien rendu"
+                f"{' : ' + fin if fin else ''}")
+            return None
+        return tours
+
+
 def diarize(audio, num_speakers: int | None, progress: Progress,
             span: tuple[float, float],
             threshold: float = CLUSTER_THRESHOLD,
@@ -473,19 +623,35 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
             "Modèles de séparation illisibles. Supprime le dossier models/ et relance."
         )
 
-    engine = sherpa_onnx.OfflineSpeakerDiarization(config)
     low, high = span
     log(f"modèle « {assets.PAR_CLE[assets.resoudre(embedding)].nom} » chargé "
         f"sur {DIARIZE_THREADS} cœurs, analyse du signal")
 
-    def report(done: int, total: int) -> int:
-        checkpoint()
+    def avance(done: int, total: int) -> None:
         progress(f"Séparation des voix {int(100 * done / max(total, 1))} %",
                  low + (high - low) * (done / max(total, 1)))
-        return 0
 
-    result = engine.process(audio, callback=report).sort_by_start_time()
-    turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}") for r in result]
+    # Dans un processus à part, pour pouvoir l'arrêter. sherpa-onnx
+    # ignore ce que rend le rappel de progression — mesuré : 669 appels,
+    # retour non nul dès le troisième, calcul mené à terme — et une
+    # exception levée depuis ce rappel est avalée par la couche C++. Sur
+    # une réunion de deux heures, « Arrêter » ne pouvait donc rien
+    # pendant les trois quarts d'heure que dure cette étape.
+    turns = _diariser_dehors(audio, seg_model, emb_model, num_speakers or -1,
+                             threshold, avance)
+    if turns is None:
+        # Pas de processus séparé possible : on calcule ici, en sachant
+        # que l'arrêt ne sera lu qu'à la fin.
+        log("séparation dans le processus courant : l'arrêt attendra la fin")
+        engine = sherpa_onnx.OfflineSpeakerDiarization(config)
+
+        def report(done: int, total: int) -> int:
+            avance(done, total)
+            return 0
+
+        result = engine.process(audio, callback=report).sort_by_start_time()
+        turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}")
+                 for r in result]
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
     trouvees = len({t[2] for t in turns})

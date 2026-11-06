@@ -1916,6 +1916,12 @@ $('#go').onclick = async () => {
 $('#stop').onclick = async () => {
   $('#stop').textContent = 'Arrêt…';
   $('#stop').disabled = true;
+  /* Le titre géant est le libellé de #go. Sans cette ligne il continue
+     d'annoncer « Traitement en cours » pendant que l'état, juste
+     au-dessus, dit « Arrêt en cours… » — et c'est le plus gros des deux
+     qui dit le faux. */
+  $('#go').textContent = (window.vm && vm.lang)
+    ? vm.lang.t('Arrêt en cours', 'Stopping') : 'Arrêt en cours';
   try { await api(`/api/jobs/${jobId}/cancel`, { method: 'POST' }); } catch (e) {}
 };
 

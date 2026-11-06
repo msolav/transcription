@@ -14,10 +14,20 @@ Depuis les sources, les deux chemins restent ouverts :
 """
 
 import multiprocessing
+import sys
 
 from transcripteur.fenetre import main
 
 if __name__ == "__main__":
+    # La séparation des voix tourne dans un processus séparé, pour
+    # qu'« Arrêter » puisse le tuer. Une fois empaqueté il n'y a plus
+    # d'interpréteur Python à appeler : c'est cet exécutable qu'on
+    # relance, avec ce drapeau, intercepté avant d'ouvrir la moindre
+    # fenêtre.
+    if len(sys.argv) > 1 and sys.argv[1] == "--diariser":
+        from transcripteur.diariseur import main as diariser
+        sys.exit(diariser(sys.argv[2:]))
+
     # Sans cela, chaque processus fils relancé par un paquet gelé
     # rouvrirait l'application : une fenêtre, puis deux, puis seize.
     multiprocessing.freeze_support()
