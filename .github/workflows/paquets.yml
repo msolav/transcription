@@ -176,7 +176,13 @@ jobs:
           files: |
             paquets/**/*.zip
             paquets/**/*.tar.gz
-          draft: true
+          # Publiée directement. La porte n'est pas un clic humain mais
+          # la construction elle-même : `publier` ne s'exécute que si
+          # les quatre paquets ont été bâtis ET éprouvés — démarrage,
+          # interface servie, écriture dans le dossier de données. La
+          # décision se prend donc au moment de poser l'étiquette, ce
+          # qui est déjà un geste délibéré.
+          draft: false
           body: |
             ## Installer
 

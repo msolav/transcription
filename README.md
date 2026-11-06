@@ -456,6 +456,17 @@ Texte brut, sous-titres `.srt` — avec ou sans le nom des voix — et
 sous-titres sont servis en WebVTT sur
 `/api/jobs/<id>/soustitres.vtt?noms=1`, pour un lecteur extérieur.
 
+## Licence
+
+MIT. Utilisation, modification et redistribution libres, y compris
+commerciales, à condition de conserver la mention de droit d'auteur.
+Voir `LICENSE`.
+
+Le dépôt était public depuis août sans licence, ce qui revenait à tout
+montrer sans rien permettre : le droit d'auteur s'applique par défaut,
+et personne — pas même l'association à qui l'outil est destiné —
+n'avait le droit de s'en servir.
+
 ## Pour les curieux
 
 - Séparation des voix : sherpa-onnx (segmentation pyannote + empreintes
