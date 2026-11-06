@@ -57,6 +57,27 @@ function entetes(fichier, taille, source) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    /* La version publiée, pour que l'application installée sache
+       qu'elle est en retard. Elle est lue sur la dernière publication
+       du dépôt plutôt qu'écrite en dur : un paquet livré sans que ce
+       fichier soit remis à jour ne serait annoncé à personne. */
+    if (url.pathname === '/version.json') {
+      let tag = null;
+      try {
+        const r = await fetch(
+          `https://api.github.com/repos/${DEPOT}/releases/latest`,
+          { headers: { 'user-agent': 'transcripteur-site',
+                       accept: 'application/vnd.github+json' },
+            cf: { cacheTtl: 900, cacheEverything: true } });
+        if (r.ok) tag = (await r.json()).tag_name;
+      } catch (e) { /* on rend null : l'application se taira */ }
+      return new Response(
+        JSON.stringify({ version: tag, url: url.origin }),
+        { headers: { 'content-type': 'application/json; charset=utf-8',
+                     'cache-control': 'public, max-age=900',
+                     'access-control-allow-origin': '*' } });
+    }
+
     const m = url.pathname.match(/^\/telecharger\/([a-z-]+)\/?$/);
     if (!m) return env.ASSETS.fetch(request);
 

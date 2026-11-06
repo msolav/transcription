@@ -51,6 +51,10 @@
 .tr-sc button.danger:hover { background: var(--tr-warn, #c93a14); color: #fff;
   border-color: var(--tr-warn, #c93a14); }
 .tr-sc .vide { color: var(--vm-mute, #666); font-size: .92em; padding: .4rem 0; }
+.tr-maj { margin: .9rem 0 0; font: 500 var(--vm-s, .75rem)/1.4
+  var(--vm-font-mono, ui-monospace, monospace); letter-spacing: .04em;
+  text-transform: uppercase; color: var(--vm-mute, #666); }
+.tr-maj a { color: var(--vm-accent, #ff3d12); }
 `;
 
   function styler() {
@@ -289,8 +293,33 @@
     }, true);
   }
 
+  /* Une version plus récente existe-t-elle ? Relevé une fois par
+     lancement. Sans cela, personne n'apprend jamais qu'une correction
+     est sortie : il n'y a pas de mise à jour automatique, et rien dans
+     l'application ne le dit. En cas d'échec on se tait — une panne de
+     réseau n'est pas une nouvelle à annoncer. */
+  async function majDisponible() {
+    let v = null;
+    try { v = await api('/api/version'); } catch (e) { return; }
+    if (!v || !v.retard || document.getElementById('tr-maj')) return;
+    const ancre = $$('.pickrow') || $$('#dropzone');
+    if (!ancre) return;
+    styler();
+    const el = document.createElement('p');
+    el.id = 'tr-maj';
+    el.className = 'tr-maj';
+    el.setAttribute('data-no-i18n', '');
+    el.innerHTML = L(
+      `Version ${v.publiee} disponible — installée : ${v.installee}.`,
+      `Version ${v.publiee} available — installed: ${v.installee}.`)
+      + ` <a href="${v.url}" target="_blank" rel="noopener">`
+      + L('Télécharger', 'Download') + '</a>';
+    ancre.after(el);
+  }
+
   function demarrer() {
     retablir();
+    majDisponible();
     peindre();
     retenirLancement();
 

@@ -295,6 +295,56 @@ def health() -> dict:
     }
 
 
+# Relevée une fois par lancement : savoir si une version plus récente
+# existe n'a pas besoin d'être redemandé toutes les minutes, et une
+# requête par démarrage est le minimum défendable pour un programme qui
+# ne communique rien d'autre.
+_VERSION_VUE: dict = {}
+SITE = "https://transcripteur.solav.workers.dev"
+
+
+def _numero(v: str) -> tuple:
+    """« v1.10 » → (1, 10), pour comparer autrement qu'alphabétiquement."""
+    chiffres = re.findall(r"\d+", v or "")
+    return tuple(int(x) for x in chiffres) if chiffres else ()
+
+
+@app.get("/api/version")
+def version() -> dict:
+    """La version installée, et celle qui est publiée.
+
+    Aucun identifiant n'est envoyé : la requête ne dit rien de plus que
+    « quelqu'un a lancé le programme ». En cas d'échec — pas de réseau,
+    site injoignable — on rend simplement « à jour » et l'interface se
+    tait, plutôt que d'inquiéter avec une panne qui n'en est pas une."""
+    from . import __version__ as installee
+    if "resultat" in _VERSION_VUE:
+        return _VERSION_VUE["resultat"]
+
+    publiee = None
+    try:
+        import urllib.request
+        # Un en-tête d'agent explicite : sans lui urllib s'annonce
+        # « Python-urllib », que la protection de Cloudflare refuse par
+        # 403. Le relevé de version ne marchait donc chez personne, et
+        # en silence, puisque l'échec est volontairement muet.
+        requete = urllib.request.Request(
+            SITE + "/version.json",
+            headers={"User-Agent": f"Transcripteur/{installee}",
+                     "Accept": "application/json"})
+        with urllib.request.urlopen(requete, timeout=6) as r:
+            publiee = (json.loads(r.read()) or {}).get("version")
+    except Exception:  # noqa: BLE001
+        publiee = None
+
+    retard = bool(publiee and _numero(publiee) > _numero(installee))
+    _VERSION_VUE["resultat"] = {
+        "installee": installee, "publiee": publiee,
+        "retard": retard, "url": SITE,
+    }
+    return _VERSION_VUE["resultat"]
+
+
 @app.post("/api/ouvrir")
 def ouvrir_lien(payload: dict) -> dict:
     """Ouvre une adresse de fournisseur dans le navigateur du système.
