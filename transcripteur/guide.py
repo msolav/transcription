@@ -291,6 +291,64 @@ CLES = [
                   "before launch.",
         },
     },
+    {
+        "id": "openai",
+        "nom": "ChatGPT (OpenAI)",
+        "requis": False,
+        "role": {"fr": "Rédaction du compte rendu. Service payant.",
+                 "en": "Drafting of the minutes. Paid service."},
+        "pour_quoi": {
+            "fr": "Même usage que Claude : pas de plafond quotidien, pour "
+                  "qui a déjà un compte OpenAI.",
+            "en": "Same use as Claude: no daily ceiling, for anyone who "
+                  "already has an OpenAI account.",
+        },
+        "prix": {
+            "fr": "Facturation à l'usage, sur crédit prépayé. Ordre de "
+                  "grandeur : quelques dizaines de centimes par compte "
+                  "rendu.",
+            "en": "Billed by usage, from prepaid credit. Order of "
+                  "magnitude: a few tens of cents per set of minutes.",
+        },
+        "etapes": [
+            {"geste": {"fr": "Ouvrir la page des clés d'OpenAI.",
+                       "en": "Open the OpenAI keys page."},
+             "detail": {"fr": "Le bouton ouvre platform.openai.com/api-keys "
+                              "dans un nouvel onglet.",
+                        "en": "The button opens platform.openai.com/api-keys "
+                              "in a new tab."}},
+            # L'abonnement ChatGPT Plus et l'accès par programme sont deux
+            # produits distincts, facturés séparément. C'est la confusion
+            # la plus fréquente chez OpenAI, et elle coûte une recherche
+            # dans des réglages où la réponse n'est pas.
+            {"geste": {"fr": "Créer un compte, puis y déposer du crédit.",
+                       "en": "Create an account, then add credit to it."},
+             "detail": {"fr": "Un abonnement ChatGPT Plus ne donne pas "
+                              "accès à l'API : ce sont deux produits "
+                              "distincts. Sans crédit, la clé existe mais "
+                              "chaque demande est refusée.",
+                        "en": "A ChatGPT Plus subscription does not grant "
+                              "API access: they are two distinct products. "
+                              "With no credit the key exists but every "
+                              "request is refused."}},
+            {"geste": {"fr": "Créer une clé.",
+                       "en": "Create a key."},
+             "detail": {"fr": "Bouton « Create new secret key ».",
+                        "en": "Button marked \"Create new secret key\"."}},
+            {"geste": {"fr": "Copier la clé, puis la coller ici.",
+                       "en": "Copy the key, then paste it here."},
+             "detail": {"fr": "Elle commence par sk-. OpenAI ne l'affiche "
+                              "qu'une fois.",
+                        "en": "It starts with sk-. OpenAI displays it once "
+                              "only."}},
+        ],
+        "limites": {
+            "fr": "Pas de plafond quotidien. Le coût estimé est affiché "
+                  "avant lancement.",
+            "en": "No daily ceiling. The estimated cost is displayed "
+                  "before launch.",
+        },
+    },
 ]
 
 

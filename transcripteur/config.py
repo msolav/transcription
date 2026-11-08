@@ -69,6 +69,12 @@ FOURNISSEURS = {
     "anthropic": {"env": "ANTHROPIC_API_KEY", "ancien": "anthropic_key",
                   "prefixe": "sk-ant-", "nom": "Claude (Anthropic)",
                   "ou": "console.anthropic.com/settings/keys"},
+    # OpenAI émet des clés « sk-… » et « sk-proj-… » selon qu'elles
+    # appartiennent au compte ou à un projet. N'accepter que la seconde
+    # forme refuserait des clés valides : on s'en tient au préfixe commun.
+    "openai": {"env": "OPENAI_API_KEY", "ancien": "openai_key",
+               "prefixe": "sk-", "nom": "ChatGPT (OpenAI)",
+               "ou": "platform.openai.com/api-keys"},
 }
 
 

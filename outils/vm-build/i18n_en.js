@@ -80,6 +80,11 @@ vm.lang.add({
     `Texte copié.`: `Text copied.`, `Copie refusée par le navigateur.`: `Copy refused by the browser.`
   },
   rules: [
+    [/^Relecture en cours$/, () => `Correction in progress`],
+    [/^Relecture arrêtée$/, () => `Correction stopped`],
+    [/^Arrêt…$/, () => `Stopping…`],
+    [/^arrêt demandé$/, () => `stop requested`],
+    [/^Aucune correction n'a été trouvée avant l'arrêt\. Le transcript\s+est inchangé\.$/, () => `No correction was found before the stop. The transcript is unchanged.`],
     [/^Séparation des voix (\d+) %$/, (m, n) => `Separating the voices ${n} %`],
     [/^Transcription (\d+)\/(\d+)$/, (m, a, b) => `Transcribing ${a}/${b}`],
     [/^(.+) — sur cet ordinateur$/, (m, n) => `${n} — on this computer`],
@@ -101,7 +106,8 @@ vm.lang.add({
     [/^(.+) enregistré\.$/, (m, n) => `${n} saved.`],
     [/^(\S+) écoulées(?: — (.*))?$/, (m, t, eta) => `${t} elapsed` + (eta ? ' — ' + eta : '')],
     [/^plus d'une heure restante$/, () => `more than an hour left`], [/^moins d'une minute restante$/, () => `less than a minute left`],
-    [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`]
+    [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`],
+    [/^encore (\d+) h (\d+) environ$/, (m, h, n) => `about ${h} h ${n} left`]
   ],
   parts: [
     [`Entraîné sur VoxCeleb, une centaine de nationalités. Rapide.`, `Trained on VoxCeleb, about a hundred nationalities. Fast.`],

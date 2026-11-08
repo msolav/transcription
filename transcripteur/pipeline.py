@@ -63,6 +63,77 @@ DIARIZE_THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
 DENOISE_THREADS = 1
 MP3_BYTES_PER_SECOND = 8000  # mono, 64 kbit/s constants
 
+# Coût de chaque étape, en multiple de la durée de l'enregistrement.
+#
+# Ces nombres servent à une seule chose : découper la barre en parts
+# proportionnelles au TEMPS, et non au nombre d'étapes. L'ancien
+# découpage donnait 3 % de la barre au nettoyage du son, qui prend plus
+# du dixième du travail ; pendant tout ce temps la barre avançait au
+# trentième de sa vitesse moyenne, et l'estimation du reste — qui
+# extrapole la pente des soixante dernières secondes — annonçait des
+# heures qui n'existaient pas.
+#
+# Mesuré sur une vraie exécution, pas sur un échantillon : 23 min 47 de
+# nettoyage pour 2 h 35 d'enregistrement, soit x0,154. Un extrait court
+# mesuré à côté donnait x0,058 — trois fois moins. Le chargement du
+# modèle et la mise en train comptent peu sur deux heures et beaucoup
+# sur deux minutes ; c'est l'exécution longue qui fait foi, puisque
+# c'est elle qu'on cherche à estimer.
+# Séparation : x0,30 sur une vraie réunion (trois quarts d'heure pour
+# deux heures et demie — le regroupement croît plus vite que la durée).
+# La transcription est bornée par le réseau, pas par la machine : c'est
+# une approximation.
+#
+# Ils n'ont pas à être exacts. Une part fausse d'un tiers décale
+# l'estimation d'autant ; une part fausse d'un facteur dix, comme avant,
+# la rend absurde.
+COUT = {
+    "conversion": 0.02,
+    "nettoyage": 0.154,
+    "langue": 0.01,
+    "voix": 0.30,
+    "voix_auto": 0.42,     # un second passage arrive quand le compte dérape
+    "tranches": 0.02,
+    "transcription": 0.12,
+    "assemblage": 0.03,
+}
+
+
+# Le coût de la séparation suit le modèle d'empreintes choisi. x0,30 a été
+# relevé avec le ResNet34 multilingue, dont le poids relatif est 1,4 : un
+# ERes2Net, à 2,2, demande donc la moitié de temps en plus. Sans ce
+# rapport, changer de modèle laissait l'estimation annoncer l'attente de
+# l'ancien.
+POIDS_REFERENCE = 1.4
+
+
+def _poids_voix(options: "Options") -> float:
+    """Le coût relatif du modèle d'empreintes retenu pour ce travail."""
+    cle = options.embedding
+    if cle == "auto":
+        cle = assets.resoudre_pour_langue(options.language or None)
+    fiche = assets.PAR_CLE.get(cle)
+    return fiche.poids if fiche else POIDS_REFERENCE
+
+
+def repartir(etapes: list[str], poids_voix: float = POIDS_REFERENCE
+             ) -> dict[str, tuple[float, float]]:
+    """Les bornes de chaque étape sur la barre, au prorata de son coût.
+
+    On ne garde que les étapes réellement prévues pour cette exécution :
+    sans nettoyage ni séparation des voix, la transcription occupe la
+    barre entière, ce qui est la vérité."""
+    echelle = (poids_voix or POIDS_REFERENCE) / POIDS_REFERENCE
+    cout = {e: COUT[e] * (echelle if e.startswith("voix") else 1.0)
+            for e in etapes}
+    total = sum(cout.values()) or 1.0
+    bornes, acquis = {}, 0.0
+    for e in etapes:
+        debut = acquis / total
+        acquis += cout[e]
+        bornes[e] = (debut, acquis / total)
+    return bornes
+
 # Une tranche était dimensionnée sur la seule limite de taille de Groq,
 # ce qui donnait quarante et une minutes d'audio par requête sur une
 # réunion de deux heures et demie. Le fichier passait, mais l'appel
@@ -1258,7 +1329,18 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
             "produits par une version ancienne peuvent en manquer : "
             "il faut alors repartir de l'audio.")
 
-    progress("Conversion", 0.02)
+    # Même répartition au prorata du temps que pour une transcription
+    # complète, moins les étapes qui ne sont pas rejouées.
+    etapes = ["conversion"]
+    if options.denoise:
+        etapes.append("nettoyage")
+    if options.embedding == "auto" and not options.language and options.api_key:
+        etapes.append("langue")
+    etapes += ["voix" if options.num_speakers else "voix_auto", "assemblage"]
+    part = repartir(etapes, _poids_voix(options))
+    voix = part.get("voix") or part["voix_auto"]
+
+    progress("Conversion", part["conversion"][0])
     wav = work_dir / "audio16k.wav"
     to_wav16k(src, wav)
     audio = read_wav16k(wav)
@@ -1279,7 +1361,7 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
 
     checkpoint()
     if options.denoise:
-        audio = denoise(audio, options.denoise, progress, (0.03, 0.08))
+        audio = denoise(audio, options.denoise, progress, part["nettoyage"])
 
     checkpoint()
     embedding = options.embedding
@@ -1290,21 +1372,21 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
         # une clé pour un traitement qui, lui, est entièrement local.
         langue = options.language
         if not langue and options.api_key:
-            progress("Reconnaissance de la langue", 0.08)
+            progress("Reconnaissance de la langue", part["langue"][0])
             langue = detect_language(audio, options.api_key)
             log(f"langue détectée : {langue or 'indéterminée'}")
         embedding = assets.resoudre_pour_langue(langue)
         log(f"modèle choisi : {assets.PAR_CLE[embedding].nom}")
 
-    progress("Séparation des voix", 0.10)
+    progress("Séparation des voix", voix[0])
     if options.num_speakers:
         log(f"séparation des voix, {options.num_speakers} demandées "
             f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
-        turns = diarize(audio, options.num_speakers, progress, (0.10, 0.90),
+        turns = diarize(audio, options.num_speakers, progress, voix,
                         CLUSTER_THRESHOLD, embedding)
     else:
         log("séparation des voix, nombre à déterminer")
-        turns = diarize_auto(audio, progress, (0.10, 0.90),
+        turns = diarize_auto(audio, progress, voix,
                              CLUSTER_THRESHOLD, embedding)
     del audio
     wav.unlink(missing_ok=True)
@@ -1315,10 +1397,10 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
             "Aucune voix n'a pu être isolée dans cet enregistrement. "
             "Le transcript est conservé tel quel.")
 
-    progress("Assemblage", 0.92)
+    progress("Assemblage", part["assemblage"][0])
     blocks = build_blocks(mots, turns)
     log(f"{len(blocks)} passages attribués")
-    progress("Extraits d'écoute", 0.97)
+    progress("Extraits d'écoute", sum(part["assemblage"]) / 2)
     profiles = speaker_profiles(turns, blocks, src, work_dir)
     log(f"extraits d'écoute prêts pour {len(profiles)} voix")
 
@@ -1336,8 +1418,29 @@ def process(src: Path, work_dir: Path, options: Options,
     if not options.api_key:
         raise PipelineError("Clé Groq absente.")
 
+    # La barre est découpée avant de commencer, en fonction de ce qui
+    # sera réellement fait : nettoyer et séparer sont facultatifs, et
+    # leur absence change complètement la part de chaque étape.
+    nettoyer = bool(options.denoise and options.diarize)
+    auto_voix = bool(options.diarize and not options.num_speakers)
+    chercher_langue = (options.embedding == "auto" and not options.language)
+    etapes = ["conversion"]
+    if nettoyer:
+        etapes.append("nettoyage")
+    if chercher_langue:
+        etapes.append("langue")
+    if options.diarize:
+        etapes.append("voix_auto" if auto_voix else "voix")
+    etapes += ["tranches", "transcription", "assemblage"]
+    # Le poids du modèle qui servira. En « auto », il n'est pas encore
+    # résolu — la langue se reconnaît plus bas — mais celui que la langue
+    # demandée désignerait en est la meilleure approximation, et c'est
+    # neuf fois sur dix le même.
+    part = repartir(etapes, _poids_voix(options))
+    voix = part.get("voix_auto") or part.get("voix") or (0.0, 0.0)
+
     log(f"fichier : {src.stat().st_size / 1048576:.0f} Mo")
-    progress("Conversion", 0.02)
+    progress("Conversion", part["conversion"][0])
     wav = work_dir / "audio16k.wav"
     to_wav16k(src, wav)
     audio = read_wav16k(wav)
@@ -1347,15 +1450,15 @@ def process(src: Path, work_dir: Path, options: Options,
     log(f"durée : {duration / 60:.1f} min — conversion faite")
 
     checkpoint()
-    if options.denoise and options.diarize:
-        audio = denoise(audio, options.denoise, progress, (0.03, 0.06))
+    if nettoyer:
+        audio = denoise(audio, options.denoise, progress, part["nettoyage"])
 
     checkpoint()
     embedding = options.embedding
     if embedding == "auto":
         langue = options.language
         if not langue:
-            progress("Reconnaissance de la langue", 0.05)
+            progress("Reconnaissance de la langue", part["langue"][0])
             langue = detect_language(audio, options.api_key)
             log(f"langue détectée : {langue or 'indéterminée'}")
         embedding = assets.resoudre_pour_langue(langue)
@@ -1364,32 +1467,33 @@ def process(src: Path, work_dir: Path, options: Options,
 
     turns = []
     if options.diarize:
-        progress("Séparation des voix", 0.06)
+        progress("Séparation des voix", voix[0])
         if options.num_speakers:
             log(f"séparation des voix, {options.num_speakers} demandées "
                 f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
-            turns = diarize(audio, options.num_speakers, progress, (0.06, 0.52),
+            turns = diarize(audio, options.num_speakers, progress, voix,
                             CLUSTER_THRESHOLD, embedding)
         else:
             log("séparation des voix, nombre à déterminer")
-            turns = diarize_auto(audio, progress, (0.06, 0.52),
+            turns = diarize_auto(audio, progress, voix,
                                  CLUSTER_THRESHOLD, embedding)
     del audio
     wav.unlink(missing_ok=True)
 
-    progress("Préparation de l'envoi", 0.55)
-    chunks = split_audio(src, duration, options.max_mb, work_dir, progress, (0.55, 0.62))
+    progress("Préparation de l'envoi", part["tranches"][0])
+    chunks = split_audio(src, duration, options.max_mb, work_dir, progress,
+                         part["tranches"])
 
     checkpoint()
     log(f"{len(chunks)} tranche(s) prête(s), envoi à Groq")
-    words = transcribe_all(chunks, options, progress, (0.62, 0.94))
+    words = transcribe_all(chunks, options, progress, part["transcription"])
     log(f"transcription terminée : {len(words)} mots")
     checkpoint()
 
     if not words:
         raise PipelineError("Transcription vide : aucune parole reconnue.")
 
-    progress("Assemblage", 0.94)
+    progress("Assemblage", part["assemblage"][0])
 
     if not turns:
         blocks = decouper_sans_voix(words)
@@ -1401,7 +1505,8 @@ def process(src: Path, work_dir: Path, options: Options,
     else:
         blocks = build_blocks(words, turns)
         log(f"{len(blocks)} passages attribués")
-        progress("Extraits d'écoute", 0.97)
+        progress("Extraits d'écoute",
+                 sum(part["assemblage"]) / 2)   # à mi-chemin de l'assemblage
         profiles = speaker_profiles(turns, blocks, src, work_dir)
         log(f"extraits d'écoute prêts pour {len(profiles)} voix")
 

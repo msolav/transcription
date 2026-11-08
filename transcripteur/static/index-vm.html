@@ -426,7 +426,26 @@ body:has(.setup) .exportbar { display: none; }
 .exportbar button, .newjob, .linkbtn { position: relative; padding: 0 .85rem; min-height: 44px; font: 600 .9375rem/1 var(--vm-font-display); white-space: nowrap;
   background: linear-gradient(currentColor, currentColor) left calc(100% - 9px) / calc(100% - 1.7rem) 1px no-repeat; background-position-x: .85rem;
   transition: background-size .55s var(--vm-ease-out), color .4s var(--vm-ease); }
-.exportbar button:hover, .newjob:hover { background-size: calc(100% - 1.7rem) 5px; color: var(--vm-accent); }
+
+/* Un seul soulignement pour toute la barre, celui du sélecteur FR | EN :
+   1 px au repos, 2 px quand on le vise ou qu'il est ouvert, et c'est
+   l'opacité qui marque l'état plutôt que l'épaisseur. Avant, le trait
+   passait de 1 à 5 px et seul le menu ouvert portait la couleur de
+   signal : quatre boutons voisins, quatre traits différents. */
+/* `body:has(#doc) .newjob { opacity: 1 }` sert à faire paraître le
+   bouton ; il l'emportait sur l'opacité de repos et laissait « Nouveau »
+   seul en pleine encre au bout de la rangée. Même portée, posée après. */
+body:has(#doc) .exportbar button, body:has(#doc) .newjob,
+.exportbar button, .newjob {
+  opacity: .62;
+  transition: background-size .55s var(--vm-ease-out), opacity .4s var(--vm-ease),
+              color .4s var(--vm-ease); }
+.exportbar button:hover, .newjob:hover,
+.exportbar button[aria-expanded="true"],
+.exportbar button[aria-pressed="true"] {
+  opacity: 1; background-size: calc(100% - 1.7rem) 2px; color: var(--vm-accent); }
+/* Le bouton éteint reste lisible mais ne se propose pas. */
+.exportbar button:disabled { opacity: .3; }
 .exportbar button[hidden] { display: none; }
 .exportbar .said { font: 400 .8125rem var(--vm-font-mono); color: var(--vm-mute); margin-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .savewrap { display: inline-flex; align-items: center; }
@@ -486,7 +505,18 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 .giant.got { opacity: 0; pointer-events: none; font-size: clamp(3rem, min(12vw, 20svh), 12rem); }
 .drop.filled .giant.ask { opacity: 0; pointer-events: none; }
 .drop.filled .giant.got { opacity: 1; }
-.giant.got .a { font-size: 1em; }
+/* Le nom du fichier est borné à deux lignes, et sa taille suit sa
+   longueur. Sans cela, « Conseil d'administration du 6 novembre 2026
+   enregistrement complet » se composait à 12 rem sur six lignes : le
+   facteur d'ajustement tombait à son plancher de 0,55, le titre était
+   rogné de 405 px par le haut, et il n'en remontait jamais — le bloc
+   devenu invisible garde sa boîte, donc la mesure restait faussée même
+   après avoir retiré le fichier.
+   --n est posé par le script, d'après le nombre de caractères. */
+.giant.got .a { font-size: clamp(1.4rem, calc(1em / max(1, var(--n, 1))), 12rem);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+  transition: font-size .7s var(--vm-ease-out); }
 .giant.got .b { font-family: var(--vm-font-mono); font-size: .18em; font-weight: 400; font-stretch: 100%; letter-spacing: .06em; margin-top: .9em; }
 .pctwrap { grid-row: 2; grid-column: 1; opacity: 0; pointer-events: none; transition: opacity .9s var(--vm-ease); }
 .pctwrap em { display: block; font: normal 900 clamp(6rem, min(30vw, 40svh), 26rem)/.8 var(--vm-font-display); font-stretch: 62%; font-weight: calc(100 + 800 * var(--prog, 0)); letter-spacing: -.03em;
@@ -511,7 +541,61 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 
 /* ---------- form fields: numbered like a form ---------- */
 .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 0 clamp(20px, 4vw, 64px); padding: 14px var(--pad) 10px; border-top: 1px solid var(--vm-ink); transition: opacity .8s var(--vm-ease); }
-.capture:has(#status:not([hidden])) .settings { opacity: .3; pointer-events: none; }
+/* Le repli des réglages pendant le traitement.
+   grid-template-rows 1fr↔0fr et non display : la hauteur s'interpole,
+   rien ne disparaît d'un coup. Le contenu garde sa taille et se fait
+   rogner par overflow, donc le texte ne se recompose pas en chemin. */
+.plier { display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows .85s var(--vm-ease-shut); }
+.plier > * { min-height: 0; }
+/* Le rognage seulement pendant le traitement, c'est-à-dire seulement
+   quand le pli sert. Posé en permanence, il coupait les listes de choix
+   qui s'ouvrent en place sous leur champ — la langue et le modèle de
+   voix déroulaient dans le vide. */
+.capture:has(#status:not([hidden])) .plier > * { overflow: hidden; }
+.capture:has(#status:not([hidden])) .plier { grid-template-rows: 0fr;
+  transition: grid-template-rows .85s var(--vm-ease-shut); }
+/* Rouverts à la demande : visibles, jamais manipulables — ce sont les
+   réglages du travail en cours, les changer ne voudrait rien dire. */
+.capture:has(#status:not([hidden])) .plier[data-ouvert] {
+  grid-template-rows: 1fr; transition: grid-template-rows 1s var(--vm-ease-bloom); }
+/* Le remplissage propre du panneau n'est pas rogné par overflow : la
+   rangée tombait bien à zéro, mais les 24 px de padding restaient, et
+   une tranche des étiquettes dépassait sous le récapitulatif. Il
+   s'interpole donc avec le reste. padding-block seulement : toucher au
+   padding horizontal recomposerait les lignes pendant le mouvement. */
+.settings { transition: opacity .8s var(--vm-ease),
+  padding-block .85s var(--vm-ease-shut); }
+.capture:has(#status:not([hidden])) .settings { opacity: .55; pointer-events: none;
+  border-top-color: transparent; padding-block: 0; }
+.capture:has(#status:not([hidden])) .plier[data-ouvert] .settings {
+  padding-block: 14px 10px; }
+
+/* Les prévisions d'avant-lancement s'effacent : la ligne d'état donne
+   désormais le temps écoulé et le reste, mesurés et non prévus. Garder
+   « + 14 min » en face d'une option sur un calcul déjà parti ne
+   répondrait plus à aucune question. */
+.capture:has(#status:not([hidden])) .estim,
+.capture:has(#status:not([hidden])) .cout { opacity: 0; }
+
+/* La ligne qui remplace le panneau : ce qui tourne, en un coup d'œil. */
+.recap { display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 11px var(--pad); border: 0; border-top: 1px solid var(--vm-ink);
+  background: none; color: var(--vm-mute); cursor: pointer; text-align: left;
+  font: 500 .75rem var(--vm-font-mono); letter-spacing: .1em; text-transform: uppercase;
+  opacity: 0; pointer-events: none;
+  transition: opacity .7s var(--vm-ease), color .4s var(--vm-ease); }
+.recap[hidden] { display: flex; }
+.capture:has(#status:not([hidden])) .recap { opacity: 1; pointer-events: auto; }
+.recap:hover { color: var(--vm-ink); }
+.recap span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Le plus qui pivote en croix, comme partout ailleurs : pas de chevron. */
+.recap i { margin-left: auto; position: relative; width: 13px; height: 13px; flex: none;
+  transition: rotate .7s var(--vm-spring); }
+.recap i::before, .recap i::after { content: ''; position: absolute; inset: 50% 0 auto 0;
+  height: 1px; background: currentColor; }
+.recap i::after { rotate: 90deg; }
+.recap[aria-expanded="true"] i { rotate: 45deg; }
 .field { min-width: 0; }
 .lab { display: flex; align-items: center; gap: 10px; min-height: 28px; font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase; }
 .lab .no { color: var(--vm-accent); }
@@ -534,6 +618,18 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
   transition: --bar .8s var(--vm-ease-out), color .6s var(--vm-ease), background-color .5s var(--vm-ease); }
 .go:not(:disabled):hover { background-color: var(--vm-ink); color: var(--vm-paper); }
 .go:disabled { --bar: 3px; color: var(--vm-mute); cursor: not-allowed; }
+/* Le temps annoncé avant de lancer, et ce que chaque option ajoute.
+   Rien ne paraît tant que la durée du fichier n'est pas connue : la
+   ligne apparaît et disparaît en fondu, elle ne surgit pas. */
+.estim { margin: 0; padding: 0 var(--pad) 8px; font: 500 .8125rem var(--vm-font-mono);
+  letter-spacing: .04em; color: var(--vm-mute);
+  opacity: 1; transition: opacity .5s var(--vm-ease); }
+.estim[hidden] { display: block; opacity: 0; pointer-events: none; }
+.cout { margin-left: auto; font: 500 .6875rem var(--vm-font-mono); letter-spacing: .06em;
+  color: var(--vm-accent); white-space: nowrap;
+  opacity: 1; transition: opacity .5s var(--vm-ease); }
+.cout:empty { opacity: 0; }
+
 .launch #busyHost .vm-busy-bar { margin: 0; }
 .launch .vm-busyb-track { height: 3px; }
 .launch .vm-busy-bar.on .vm-busyb-track { height: 18px; }
@@ -624,6 +720,12 @@ body:has(#panneau:not([hidden])) .spine { opacity: 0; pointer-events: none; }
 .deck .follow { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .deck .follow i { width: 10px; height: 10px; border: 1.5px solid currentColor; display: block; transition: background-color .3s; }
 .deck .follow.on i { background: var(--vm-accent); border-color: var(--vm-accent); }
+/* Le retour à la lecture : en couleur de signal, parce qu'il signale un
+   écart entre ce qu'on entend et ce qu'on lit. Il paraît et s'efface en
+   fondu — hidden ne cache pas, il met à zéro, sinon il surgirait. */
+.deck .revenir { color: var(--vm-accent); white-space: nowrap;
+  opacity: 1; transition: opacity .55s var(--vm-ease); }
+.deck .revenir[hidden] { display: inline-block; opacity: 0; pointer-events: none; }
 .deck .rate { font-family: var(--vm-font-mono); min-width: 52px; }
 
 /* ---------- drawer: review and summary ---------- */
@@ -744,6 +846,19 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
    HAUT, et le titre géant se retrouve coupé. « safe » empêche le
    débordement du côté du début, le zoom fait tenir le reste. */
 .capture > * { zoom: var(--fit, 1); }
+
+/* Les icônes de transport du lecteur : même poids optique que les
+   libellés « −10 s » à côté, sinon la rangée bascule d'un côté. */
+.deck .ico { display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 .55rem; }
+.deck .ico svg { width: 17px; height: 17px; fill: currentColor; display: block; }
+
+/* Le nom devant chaque réplique mène à sa carte de nommage. Souligné au
+   survol seulement : une réunion en affiche des centaines, tous
+   soulignés en permanence ferait une page de liens. */
+.turn .who { cursor: pointer; text-underline-offset: 3px;
+  transition: color .35s var(--vm-ease); }
+.turn .who:hover { color: var(--vm-accent); text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -769,7 +884,7 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
         <button data-x="json" data-en="Data" title="Pour rouvrir plus tard" data-en-title="To reopen later">Données</button>
       </span></span>
     </span>
-    <button id="reread" data-en="Proofread">Relire</button>
+    <button id="reread" data-en="Correct">Corriger</button>
     <button id="sum" data-en="Summarize">Résumer</button>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
@@ -801,6 +916,14 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
     </div>
   </div>
 
+  <!-- Pendant le traitement, les réglages se replient : ils occupaient
+       le milieu de l'écran, grisés, sans qu'on puisse y toucher. Le
+       récapitulatif prend leur place sur une ligne, et les rouvre. -->
+  <button type="button" class="recap" id="recap" aria-expanded="false"
+          aria-controls="reglages" hidden>
+    <span id="recaptxt" data-no-i18n></span><i aria-hidden="true"></i>
+  </button>
+  <div class="plier" id="reglages">
   <div class="settings">
     <div class="field">
       <div class="lab"><span class="no">01</span><label for="lang" data-en="Language">Langue</label></div>
@@ -837,6 +960,7 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
     <div class="field voices">
       <div class="lab"><span class="no">02</span><label id="seplab" data-en="Separate voices">Séparer les voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="counthint"></span><span data-en="If you know how many people speak, say so: the separation is much more reliable.">Si le nombre de personnes est connu, l'indiquer : la séparation est bien plus fiable.</span></span></span>
+        <span class="cout" id="coutvoix" data-no-i18n></span>
       </div>
       <div class="sepline">
         <button type="button" class="tgl" id="sep" role="switch" aria-checked="false" aria-labelledby="seplab"><i></i></button>
@@ -856,14 +980,20 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
         </div>
         <div class="field">
           <div class="lab"><span class="no">04</span><label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
-            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span></div>
+            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span>
+            <span class="cout" id="coutnet" data-no-i18n></span></div>
           <select id="clean"></select>
         </div>
       </div>
     </details>
   </div>
+  </div>
 
   <div class="launch">
+    <!-- Au-dessus du bouton, et non sous lui : la barre TRANSCRIRE est
+         le dernier élément de l'écran, et tout ce qui la suit tombe
+         hors du cadre sur une fenêtre courte. -->
+    <p class="estim" id="estim" data-no-i18n hidden></p>
     <button class="go" id="go" disabled data-en="Transcribe">Transcrire</button>
     <div id="busyHost"></div><p id="gohint" hidden></p>
   </div>
@@ -890,13 +1020,33 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
       <svg viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z"/></svg>
     </button>
     <span class="clock" id="clock" data-no-i18n>0:00 / 0:00</span>
+    <!-- Les icônes de transport sont la seule exception à « pas de
+         flèches » : ce sont les signes d'un lecteur, lus comme tels
+         partout, et le bouton lecture/pause en est déjà un. Les deux
+         sauts de dix secondes restent écrits, parce qu'un chiffre se lit
+         plus vite qu'il ne se devine. -->
     <span class="grp">
-      <button class="skip" id="prev" aria-label="Réplique précédente" data-en-aria-label="Previous passage" data-en="Previous">Précédent</button>
-      <button class="skip" id="next" aria-label="Réplique suivante" data-en-aria-label="Next passage" data-en="Next">Suivant</button>
+      <button class="skip ico" id="first" aria-label="Revenir au début" data-en-aria-label="Back to start"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6z"/><path d="M19 5v14l-9-7z"/></svg></button>
+      <button class="skip ico" id="prev" aria-label="Réplique précédente" data-en-aria-label="Previous passage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5v14l-8-7zM20 5v14l-8-7z"/></svg></button>
       <button class="skip" id="back" aria-label="Reculer de 10 secondes" data-en-aria-label="Back 10 seconds">−10 s</button>
       <button class="skip" id="fwd" aria-label="Avancer de 10 secondes" data-en-aria-label="Forward 10 seconds">+10 s</button>
+      <button class="skip ico" id="next" aria-label="Réplique suivante" data-en-aria-label="Next passage"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5v14l8-7zM4 5v14l8-7z"/></svg></button>
+      <button class="skip ico" id="last" aria-label="Aller à la fin" data-en-aria-label="Go to the end"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2z"/><path d="M5 5v14l9-7z"/></svg></button>
       <button class="rate" id="rate" aria-label="Vitesse de lecture" data-en-aria-label="Playback speed">1×</button>
       <button class="follow on" id="follow" aria-pressed="true"><i></i><span data-en="Follow">Suivre</span></button>
+      <!-- Les cartes de nommage sont en tête du document : sans ce
+           bouton, corriger une attribution demandait de remonter toute
+           la réunion, puis de redescendre. -->
+      <button class="skip" id="versnoms" data-en="Names">Noms</button>
+      <!-- Paraît seulement quand la lecture avance pendant qu'on lit
+           ailleurs : un clic ramène au passage en cours et remet le
+           suivi. Sans lui, faire défiler d'une page coupait le suivi
+           définitivement, et rien ne le disait.
+           En dernier de la rangée : caché, il garde sa place pour ne pas
+           déplacer ses voisins en paraissant, et ce vide se voit moins
+           au bout qu'entre deux boutons vivants. -->
+      <button class="skip revenir" id="revenir" hidden
+              data-en="Back to playback">Revenir à la lecture</button>
     </span>
     <span class="who" id="nowwho"></span>
   </div>
@@ -1392,9 +1542,25 @@ let relOpts = null, relTimer = null, corrections = [];
 
 /* Le contexte saisi est retenu d'un panneau à l'autre : les sigles et les
    rôles valent pour la relecture comme pour le résumé, et personne n'a
-   envie de les retaper. */
-let contexteMemo = '';
+   envie de les retaper.
+
+   Et d'une séance à l'autre : c'est le seul texte que l'on écrit à la
+   main dans cette interface — sigles de l'organisme, noms des personnes,
+   objet de la réunion — et il ne changeait pas d'une réunion au mois
+   suivant. Tout le reste est déjà retenu : les clés par le trousseau,
+   les réglages par la base, le thème et la langue par le navigateur.
+   Lui seul se perdait au rechargement.
+
+   localStorage et non la base : c'est une commodité de saisie, propre à
+   ce navigateur, pas une donnée de l'application. */
+const CTX_CLE = 'transcripteur-contexte';
+let contexteMemo = (() => {
+  try { return localStorage.getItem(CTX_CLE) || ''; } catch (e) { return ''; }
+})();
 let modelesRelecture = null;
+// Les fiches des fournisseurs, retenues du dernier appel : l'écran de
+// saisie en a besoin sans refaire une requête.
+let fournisseursMemo = null;
 
 /* Le choix du modèle de relecture n'est pas un réglage de confort : un
    modèle à grand contexte lit la réunion entière d'un coup, un petit la
@@ -1407,10 +1573,16 @@ async function majModeles() {
   try { d = await api('/api/relecture/modeles'); } catch { return; }
   modelesRelecture = d.modeles;
   const choisi = sel.value || d.defaut;
+  /* Les modèles sans clé restent choisissables. Désactivés, ils
+     laissaient une ligne morte dans la liste : on la vise, rien ne se
+     passe, et rien ne dit comment y remédier. Les choisir ouvre
+     maintenant la saisie de la clé du bon fournisseur. */
   sel.innerHTML = d.modeles.map(m => `<option value="${m.cle}"
-    ${m.dispo ? '' : 'disabled'} ${m.cle === choisi && m.dispo ? 'selected' : ''}>
+    ${m.cle === choisi ? 'selected' : ''}>
     ${m.nom}${m.dispo ? '' : ' — clé manquante'}</option>`).join('');
+  fournisseursMemo = d.fournisseurs;
   const actuel = d.modeles.find(m => m.cle === sel.value) || {};
+  if (actuel.cle && !actuel.dispo) return panneauCle(d.fournisseurs, actuel.fournisseur);
   const manquants = d.modeles.filter(m => !m.dispo && m.gratuit);
   $('#rmodnote').innerHTML = (actuel.note || '')
     + (actuel.un_appel
@@ -1424,19 +1596,32 @@ async function majModeles() {
   if (lien) lien.onclick = (e) => { e.preventDefault(); panneauCle(d.fournisseurs); };
 }
 
-/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau. */
-function panneauCle(fiches) {
-  const f = fiches.google ? 'google' : Object.keys(fiches)[0];
+/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau.
+
+   `prefere` est le fournisseur du modèle qu'on vient de choisir. Sans
+   lui, on retombait toujours sur Google : choisir Claude Opus affichait
+   la marche à suivre pour obtenir une clé Gemini. */
+function panneauCle(fiches, prefere) {
+  const f = (prefere && fiches[prefere]) ? prefere
+    : (fiches.google ? 'google' : Object.keys(fiches)[0]);
   const fiche = fiches[f];
+  /* Gratuit ou payant se dit ici, d'après la fiche et non d'après une
+     phrase écrite une fois pour toutes : annoncer « gratuit, sans carte
+     bancaire » devant une clé Anthropic est un mensonge que la première
+     facture dément. */
+  const prix = fiche.gratuit
+    ? 'Gratuit, sans carte bancaire, sur'
+    : 'Compte payant, à l\'usage, sur';
   $('#rmodnote').innerHTML = `<div class="keyrow">
       <input type="password" id="kin" placeholder="${[].concat(fiche.prefixe).join(' ou ')}…"
              spellcheck="false" autocomplete="off">
       <button id="ksave">Enregistrer</button>
     </div>
-    <span class="hint">Gratuit, sans carte bancaire, sur
+    <span class="hint">Clé ${escapeHtml(fiche.nom)} requise pour ce modèle.
+    ${prix}
     <a href="https://${fiche.ou}" target="_blank" rel="noopener">${fiche.ou}</a>.
     La clé est rangée dans le trousseau du système et n'est envoyée qu'à
-    ${fiche.nom}.</span>`;
+    ${escapeHtml(fiche.nom)}.</span>`;
   $('#kin').focus();
   $('#ksave').onclick = async () => {
     const b = $('#ksave');
@@ -1455,6 +1640,7 @@ function panneauCle(fiches) {
 function ctx() {
   const champ = $('#rctx') || $('#sctx');
   contexteMemo = champ ? champ.value.trim() : contexteMemo;
+  try { localStorage.setItem(CTX_CLE, contexteMemo); } catch (e) {}
   return contexteMemo;
 }
 
@@ -1545,8 +1731,24 @@ function pollRelecture() {
     const r = fresh && fresh.relecture;
     if (!r) return;
     if (r.status === 'running') {
-      $('#panneau').innerHTML = `<h4>Relecture en cours</h4><pre data-no-i18n>${
-        escapeHtml((r.notes || []).join('\n') || 'lecture des premiers blocs…')}</pre>`;
+      /* Le cadre est posé une fois, et seules les lignes changent
+         ensuite. Réécrire tout le panneau à chaque sondage détruisait
+         le bouton d'arrêt une fois et demie par seconde : le clic
+         tombait entre deux reconstructions. */
+      if (!$('#relnotes')) {
+        $('#panneau').innerHTML = `<h4>Relecture en cours</h4>
+          <pre id="relnotes" data-no-i18n lang="fr"></pre>
+          <div class="opts"><button id="relstop">Arrêter</button></div>`;
+        $('#relstop').onclick = async () => {
+          const b = $('#relstop');
+          b.disabled = true; b.textContent = 'Arrêt…';
+          await api(`/api/jobs/${job.id}/relire/annuler`, { method: 'POST' })
+            .catch(() => {});
+        };
+      }
+      const lignes = (r.notes || []).join('\n') || 'lecture des premiers blocs…';
+      const boite = $('#relnotes');
+      if (boite.dataset.t !== lignes) { boite.dataset.t = lignes; boite.textContent = lignes; }
       return;
     }
     clearInterval(relTimer);
@@ -1556,6 +1758,15 @@ function pollRelecture() {
       return;
     }
     corrections = r.corrections || [];
+    /* Arrêtée : ce qui a été trouvé avant l'arrêt est proposé quand même
+       — une passe d'attribution terminée vaut quelque chose même si l'on
+       a coupé avant celle du texte. Sans correction, on le dit. */
+    if (r.status === 'cancelled' && !corrections.length) {
+      $('#panneau').innerHTML = `<h4>Relecture arrêtée</h4>
+        <p>Aucune correction n'a été trouvée avant l'arrêt. Le transcript
+        est inchangé.</p>`;
+      return;
+    }
     showCorrections();
   }, 1500);
 }
@@ -1871,9 +2082,30 @@ function accept(file) {
 
   const mb = (file.size / 1048576).toFixed(1);
   { const dot = file.name.lastIndexOf('.'), base = dot > 0 ? file.name.slice(0, dot) : file.name, ext = dot > 0 ? file.name.slice(dot) : '';
-    $('#fname').textContent = base; $('#fmeta').textContent = (ext ? ext + '  ·  ' : '') + mb + ' ' + vm.lang.t('Mo', 'MB'); }
+    $('#fname').textContent = base; $('#fmeta').textContent = (ext ? ext + '  ·  ' : '') + mb + ' ' + vm.lang.t('Mo', 'MB');
+    /* La taille du titre suit la longueur du nom. Une quinzaine de
+       caractères tiennent en pleine taille ; au-delà, on divise. Deux
+       lignes au plus, le reste en points de suspension — un nom de
+       fichier n'a pas à occuper l'écran entier. */
+    $('#fname').style.setProperty('--n', Math.max(1, base.length / 15).toFixed(2)); }
   zone.classList.add('filled');
-  $('#clear').onclick = () => { picked = null; zone.classList.remove('filled'); $('#go').disabled = true; $('#file').value = ''; };
+  if (window.dureeDuFichier) dureeDuFichier(file).then(s => poserDuree(s));
+  /* Retirer le fichier remettait l'écran à zéro en rechargeant la page.
+     Un rechargement ne s'interpole pas : le titre repassait de « nom du
+     fichier » à « Déposer un fichier » d'un seul coup, ce qui se lisait
+     comme un saut. Les mêmes gestes que `render()` fait déjà, sans
+     détruire la page : le CSS repasse alors d'un titre à l'autre en
+     fondu, comme à l'arrivée du fichier. */
+  $('#clear').onclick = () => {
+    picked = null;
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    $('#player').removeAttribute('src');
+    zone.classList.remove('filled');
+    $('#file').value = '';           // sans quoi le même fichier ne se redépose pas
+    $('#go').disabled = true;
+    if (window.poserDuree) poserDuree(0);
+    $('#alerts').innerHTML = '';
+  };
   $('#go').disabled = false;
   const gh = $('#gohint'); if (gh) gh.hidden = true;
 }
@@ -1948,7 +2180,13 @@ let marks = [];
    sur la dernière minute, ce qui reflète l'étape en cours.
 
    Rien n'est affiché tant que la mesure n'est pas assez large pour être
-   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste. */
+   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste.
+
+   Cette pente ne vaut que si la barre avance en proportion du temps.
+   C'est pipeline.repartir() qui s'en charge, en découpant la barre selon
+   le coût mesuré de chaque étape. Tant qu'elle donnait 3 % au nettoyage
+   du son pour plus du dixième du travail, la pente lue pendant cette
+   étape annonçait des heures imaginaires. */
 function eta(ratio) {
   const now = Date.now();
   marks.push([now, ratio]);
@@ -1959,9 +2197,17 @@ function eta(ratio) {
   if (span < 15 || gained <= 0.002) return '';
   const left = (1 - ratio) / (gained / span);
   if (!isFinite(left) || left < 5) return '';
-  if (left > 5400) return ' — plus d\'une heure restante';
   const mins = Math.round(left / 60);
   if (mins < 1) return ' — moins d\'une minute restante';
+  /* Un chiffre, même grand, plutôt que « plus d'une heure » : sur un
+     enregistrement de trois heures, ce plafond cachait une attente de
+     quatre heures derrière une phrase qui en annonçait une. Qui lit
+     « encore 2 h 40 » peut décider de laisser tourner la nuit ; qui lit
+     « plus d'une heure » revient dans une heure pour rien. */
+  if (mins >= 60) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return ` — encore ${h} h ${String(m).padStart(2, '0')} environ`;
+  }
   return ` — encore ${mins} min environ`;
 }
 
@@ -2474,6 +2720,348 @@ function escapeHtml(str) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+/* ---------- combien de temps, et ce que coûte chaque option ----------
+
+   La question se pose avant de lancer, pas après : séparer les voix sur
+   une réunion de deux heures et demie ajoute trois quarts d'heure, et
+   c'est un choix qu'on ne peut faire que si on le sait. Une fois le
+   calcul parti, le seul recours est d'arrêter et de tout reprendre.
+
+   La durée vient du navigateur, qui lit l'en-tête du fichier sans le
+   téléverser — rien ne part sur le réseau tant que « Transcrire » n'est
+   pas pressé. Les coûts viennent du serveur, de la même table qui
+   découpe la barre de progression : une seule source, donc l'annonce et
+   la barre ne peuvent pas se contredire. */
+{
+  let couts = null, secondes = 0;
+
+  api('/api/health').then(h => { couts = h && h.couts; majEstim(); }).catch(() => {});
+
+  /* La durée sans téléverser : un élément média sur un blob local. Tous
+     les conteneurs ne la rendent pas (certains .m4a sans en-tête de
+     durée, un fichier tronqué), et certains ne répondent jamais — d'où
+     le délai de garde. Sans durée, on n'annonce rien : une estimation
+     inventée est pire que pas d'estimation. */
+  window.dureeDuFichier = function (file) {
+    return new Promise(res => {
+      let rendu = false;
+      const el = document.createElement(
+        (file.type || '').startsWith('video') ? 'video' : 'audio');
+      const url = URL.createObjectURL(file);
+      const fini = v => {
+        if (rendu) return;
+        rendu = true; URL.revokeObjectURL(url); el.src = ''; res(v || 0);
+      };
+      el.preload = 'metadata';
+      el.onloadedmetadata = () => fini(isFinite(el.duration) ? el.duration : 0);
+      el.onerror = () => fini(0);
+      setTimeout(() => fini(0), 5000);
+      el.src = url;
+    });
+  };
+
+  function dire(s) {
+    const m = Math.round(s / 60);
+    if (m < 1) return vm.lang.t('moins d’une minute', 'under a minute');
+    if (m < 60) return m + ' min';
+    return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0');
+  }
+
+  /* Les mêmes étapes que pipeline.process choisira, dans le même ordre
+     et aux mêmes conditions. Le nettoyage ne tourne que si la séparation
+     tourne : sans voix à séparer, il n'y a rien à nettoyer pour. */
+  function etapes() {
+    const sep = $('#count') && $('#count').value !== 'none';
+    const l = ['conversion'];
+    if (sep && $('#clean') && $('#clean').value) l.push('nettoyage');
+    if ($('#emb') && $('#emb').value === 'auto' && $('#lang') && !$('#lang').value) l.push('langue');
+    if (sep) l.push($('#count').value === 'auto' ? 'voix_auto' : 'voix');
+    return l.concat(['tranches', 'transcription', 'assemblage']);
+  }
+
+  /* Le coût de la séparation suit le modèle d'empreintes : le ResNet34
+     sert de référence (poids 1,4), un ERes2Net demande la moitié de
+     temps en plus. Même rapport que côté serveur, sinon l'annonce et la
+     barre se contrediraient. */
+  const POIDS_REF = 1.4;
+  function echelleVoix() {
+    const sel = $('#emb');
+    /* `catalogue` est une liaison de premier niveau : visible ici, mais
+       absente de window. L'interroger par window.catalogue rendait
+       toujours undefined, et l'échelle serait restée à 1 sans que rien
+       ne le signale — la même panne muette que pour l'aperçu vidéo. */
+    if (!sel || typeof catalogue === 'undefined' || !catalogue.length) return 1;
+    let cle = sel.value;
+    if (cle === 'auto') {
+      // « Choisir pour moi » : le premier du classement, qui est celui
+      // que le serveur retiendra.
+      const t = catalogue[0];
+      return t && t.poids ? t.poids / POIDS_REF : 1;
+    }
+    const m = catalogue.find(x => x.cle === cle);
+    return m && m.poids ? m.poids / POIDS_REF : 1;
+  }
+
+  const somme = l => l.reduce((t, e) => t + (couts[e] || 0)
+    * (e.indexOf('voix') === 0 ? echelleVoix() : 1), 0);
+
+  window.majEstim = function majEstim() {
+    const box = $('#estim'), cv = $('#coutvoix'), cn = $('#coutnet');
+    if (!box) return;
+    if (!couts || !secondes) {
+      box.hidden = true;
+      if (cv) cv.textContent = '';
+      if (cn) cn.textContent = '';
+      return;
+    }
+    const total = somme(etapes()) * secondes;
+    box.hidden = false;
+    box.textContent = vm.lang.t('Environ ', 'About ') + dire(total)
+      + vm.lang.t(' de traitement', ' of processing');
+
+    /* Ce que chaque option ajoute, et non ce qu'elle coûte dans
+       l'absolu : la question posée devant l'écran est « est-ce que je
+       la garde ? ». Couper la séparation emporte le nettoyage avec
+       elle, et le chiffre le dit. */
+    const sep = $('#count') && $('#count').value !== 'none';
+    if (cv) {
+      const sans = somme(etapes().filter(
+        e => e !== 'voix' && e !== 'voix_auto' && e !== 'nettoyage')) * secondes;
+      cv.textContent = sep ? '+ ' + dire(total - sans) : '';
+    }
+    if (cn) {
+      const net = sep && $('#clean') && $('#clean').value;
+      cn.textContent = net ? '+ ' + dire(couts.nettoyage * secondes) : '';
+    }
+  };
+
+  window.poserDuree = function (s) { secondes = s || 0; majEstim(); };
+
+  /* ---------- le récapitulatif pendant le traitement ----------
+
+     Figé au lancement, et non relu à l'affichage : ce qu'on veut savoir
+     en regardant une barre à 53 %, c'est avec quoi ce calcul-là tourne.
+     Les commandes, elles, gardent la valeur courante — qui peut déjà
+     avoir servi à préparer la fois suivante. */
+  function etiquette(sel) {
+    const el = $(sel);
+    if (!el || !el.options) return '';
+    const o = el.options[el.selectedIndex];
+    return o ? o.textContent.trim() : '';
+  }
+
+  window.figerRecap = function () {
+    const t = $('#recaptxt'), b = $('#recap');
+    if (!t || !b) return;
+    const sep = $('#count') && $('#count').value !== 'none';
+    const n = sep ? $('#count').value : '';
+    const bouts = [etiquette('#lang') || vm.lang.t('Langue auto', 'Auto language')];
+    bouts.push(sep
+      ? (n === 'auto' ? vm.lang.t('Voix : auto', 'Voices: auto')
+        : vm.lang.t('Voix : ', 'Voices: ') + n)
+      : vm.lang.t('Sans séparation', 'No separation'));
+    if (sep) {
+      /* Le modèle de voix seulement s'il a été choisi : sur « auto »,
+         l'étiquette est « Choisir pour moi, selon la langue », une
+         phrase qui n'apprend rien et mange la ligne. Le vrai modèle
+         n'est connu qu'une fois la langue reconnue, et il est écrit au
+         journal. */
+      if ($('#emb') && $('#emb').value !== 'auto') bouts.push(etiquette('#emb'));
+      bouts.push($('#clean') && $('#clean').value
+        ? vm.lang.t('Nettoyage : ', 'Cleanup: ') + etiquette('#clean')
+        : vm.lang.t('Sans nettoyage', 'No cleanup'));
+    }
+    t.textContent = bouts.filter(Boolean).join('  ·  ');
+    b.hidden = false;
+    b.setAttribute('aria-expanded', 'false');
+    const p = $('#reglages');
+    if (p) p.removeAttribute('data-ouvert');
+  };
+
+  const recap = $('#recap');
+  let repliePlus = false;
+  if (recap) recap.onclick = () => {
+    const p = $('#reglages');
+    const plus = document.querySelector('.settings .more');
+    const ouvert = recap.getAttribute('aria-expanded') === 'true';
+    recap.setAttribute('aria-expanded', ouvert ? 'false' : 'true');
+    if (p) { if (ouvert) p.removeAttribute('data-ouvert'); else p.setAttribute('data-ouvert', ''); }
+    /* « Plus d'options » s'ouvre avec le reste : on vient voir les
+       quatre réglages du calcul en cours, et deux d'entre eux vivent
+       là-dedans. Son état d'avant est rendu à la fermeture.
+
+       Par un clic sur le sommaire, et non en posant `open` : c'est
+       vm.js qui tient ce pli, à travers une classe sur un conteneur
+       intérieur. Écrire `open` ouvrait le <details> sans déplier son
+       contenu — le panneau restait fermé à l'écran. Un clic appelé
+       depuis le code traverse `pointer-events: none`. */
+    const somm = plus && plus.querySelector(':scope > summary');
+    const deplie = () => plus && !plus.querySelector(':scope > .vm-fold.off');
+    if (somm) {
+      if (ouvert) { if (repliePlus && deplie()) somm.click(); }
+      else { repliePlus = !deplie(); if (repliePlus) somm.click(); }
+    }
+  };
+
+  /* Le lancement passe par #go ; on fige au même instant, avant que
+     l'écran ne bascule. */
+  const go = $('#go');
+  if (go) go.addEventListener('click', () => figerRecap(), true);
+
+  ['#lang', '#count', '#emb', '#clean'].forEach(s => {
+    const el = $(s);
+    if (el) el.addEventListener('change', () => majEstim());
+  });
+  /* Les pastilles du nombre de voix et l'interrupteur écrivent dans
+     #count par programme, ce qui ne déclenche pas « change ». */
+  const chips = $('#numchips'), bascule = $('#sep');
+  if (chips) chips.addEventListener('click', () => setTimeout(majEstim, 0));
+  if (bascule) bascule.addEventListener('click', () => setTimeout(majEstim, 0));
+  if (window.vm && vm.lang) vm.lang.onChange(() => majEstim());
+}
+
+/* ---------- retrouver la lecture après avoir lu ailleurs ----------
+
+   Le suivi se coupe tout seul dès qu'on tourne une page à la main, et
+   c'est voulu : sinon la page se dérobe sous les yeux de qui lit un
+   passage plus loin. Mais il ne revenait jamais, et le seul témoin
+   était une case de deux millimètres dans la barre. On repart en
+   lecture sans s'en apercevoir, et le texte reste en arrière.
+
+   Deux réponses. Un bouton qui ramène au passage en cours, visible
+   seulement quand la situation existe. Et le suivi qui se réarme à la
+   relance de la lecture — mais seulement s'il s'était coupé tout seul :
+   l'avoir décoché à la main est une décision, pas un accident. */
+{
+  let coupeAMain = false;
+  const bouton = $("#follow"), retour = $("#revenir");
+
+  /* `follow` est une liaison de premier niveau : lisible depuis ici,
+     absente de window, donc impossible à surveiller. L'état du bouton
+     en est le reflet fidèle — setFollow le tient à jour — et c'est lui
+     qu'on interroge. */
+  const suit = () => !!bouton && bouton.classList.contains('on');
+
+  function majRetour() {
+    if (!retour) return;
+    const p = (typeof player !== 'undefined') ? player : null;
+    retour.hidden = !(p && !p.paused && !suit());
+  }
+
+  function rejoindre() {
+    const vif = document.querySelector('.turn.live');
+    if (vif && typeof pageToEl === 'function') pageToEl(vif);
+  }
+
+  /* Délégué sur le document, en phase de capture, et non posé sur le
+     bouton : l'affichage du transcript réassigne `#follow.onclick` au
+     moment où il monte le lecteur. Un gestionnaire posé ici au
+     chargement était donc écrasé, et le décochage à la main repassait
+     pour un décochage automatique — le suivi se rallumait tout seul à
+     la lecture suivante, contre la volonté exprimée. Mesuré : c'est le
+     seul des cinq cas d'épreuve qui échouait.
+     La capture passe avant le onclick, donc `suit()` y donne encore
+     l'état d'avant le clic. */
+  document.addEventListener('click', ev => {
+    const c = ev.target.closest && ev.target.closest('#follow, #revenir');
+    if (!c) return;
+    if (c.id === 'follow') {
+      coupeAMain = suit();        // on s'apprête à le couper à la main
+      setTimeout(majRetour, 0);
+      return;
+    }
+    coupeAMain = false;
+    if (typeof setFollow === 'function') setFollow(true);
+    /* Ramener la page tout de suite : attendre la réplique suivante
+       laisserait le texte en arrière pendant une minute entière. */
+    rejoindre();
+    majRetour();
+  }, true);
+
+  if (typeof player !== 'undefined' && player) {
+    player.addEventListener('play', () => {
+      if (!suit() && !coupeAMain && typeof setFollow === 'function') {
+        setFollow(true);
+        rejoindre();
+      }
+      majRetour();
+    });
+    player.addEventListener('pause', majRetour);
+
+    /* Début et fin. `seek` borne et recale la page ; l'appeler plutôt
+       que d'écrire currentTime garde le reste de la barre d'accord. */
+    const aller = t => (typeof seek === 'function')
+      ? seek(t) : (player.currentTime = t);
+    const d = $('#first'), f = $('#last');
+    if (d) d.onclick = () => aller(0);
+    if (f) f.onclick = () => {
+      /* Une poignée de dixièmes avant la fin : se poser exactement
+         dessus déclenche la fin de lecture, et le lecteur se range au
+         lieu de montrer le dernier passage. */
+      const fin = player.duration;
+      aller(isFinite(fin) && fin > 0.4 ? fin - 0.3 : 0);
+    };
+
+    /* Le suivi se coupe aussi depuis la molette et depuis la frise,
+       sans passer par le bouton : on relit donc l'état au fil de la
+       lecture plutôt que de s'accrocher à chaque appelant. */
+    player.addEventListener('timeupdate', majRetour);
+  }
+
+  /* ---------- rejoindre les cartes de nommage ----------
+
+     Elles ouvrent le document ; sur une réunion de deux heures, elles
+     sont à cinquante pages de l'endroit où l'on vient de repérer une
+     attribution fausse. Le bouton de la barre y mène, et le nom affiché
+     devant chaque réplique y mène aussi — en visant la bonne carte. */
+  function versNoms(idVoix) {
+    if (typeof setPage === 'function') setPage(0);
+    /* Le suivi ramènerait la page sur la lecture dans la seconde : on
+       le coupe, et « Revenir à la lecture » reste là pour le rendre. */
+    if (typeof setFollow === 'function' && suit()) setFollow(false);
+    majRetour();
+    const champ = idVoix
+      ? document.querySelector(`.strip input[data-id="${CSS.escape(idVoix)}"]`)
+      : document.querySelector('.strip input');
+    if (champ) { champ.focus(); champ.select(); }
+  }
+
+  const versB = $('#versnoms');
+  if (versB) versB.onclick = () => versNoms();
+
+  /* Délégué : les répliques sont repeintes à chaque changement de nom
+     et à chaque page. */
+  document.addEventListener('click', ev => {
+    const qui = ev.target.closest && ev.target.closest('.turn .who');
+    if (!qui) return;
+    const tour = qui.closest('.turn');
+    const bloc = tour && shown[+tour.dataset.i];
+    versNoms(bloc && bloc.speaker);
+  });
+}
+
+/* ---------- après l'ajout d'une clé, sans recharger la page ----------
+
+   branchement.js vit dans son propre fichier : il ne voit pas les
+   liaisons de premier niveau d'ici, donc il ne peut pas vider lui-même
+   les caches qui dépendent des clés. C'est pour cela qu'il rechargeait
+   la page — une façon brutale d'obtenir le même effet, qui emportait
+   aussi l'animation et tout ce qui n'était qu'en mémoire.
+
+   Trois caches, et rien d'autre à défaire : la liste des modèles de
+   relecture, les options de relecture, et le bandeau de simulation qui
+   n'a plus lieu d'être une fois une clé posée. */
+window.apresCles = function () {
+  relOpts = null;
+  modelesRelecture = null;
+  const b = $('#changekey');
+  if (b) b.hidden = false;
+  api('/api/health').then(h => {
+    const bandeau = document.getElementById('tr-sim');
+    if (bandeau && h && !h.vierge) bandeau.remove();
+  }).catch(() => {});
+};
+
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {
   const w = $('#perime'); w.hidden = false; w.removeAttribute('data-fr');
@@ -2499,9 +3087,31 @@ if (location.protocol === 'file:') {
      mais courte, il dépasse par le haut et pousse le reste hors de
      l'écran, qui ne doit jamais défiler. On mesure, et on réduit. */
   const cap = $('#capture');
-  const fitCap = () => {
+
+  /* Le facteur est une cible, jamais une valeur posée : zoom ne
+     s'interpole pas tout seul, donc c'est une boucle rAF qui fait le
+     trajet. Sans elle, retirer un fichier changeait la hauteur du bloc
+     et le titre sautait d'un cran à l'autre en une image. */
+  let viseFit = 1, fitCourant = 1, fitRaf = 0;
+  const poser = v => { fitCourant = v; cap.style.setProperty('--fit', v.toFixed(4)); };
+  const glisserFit = () => {
+    const d = viseFit - fitCourant;
+    if (Math.abs(d) < .0015) { poser(viseFit); fitRaf = 0; return; }
+    poser(fitCourant + d * .16);
+    fitRaf = requestAnimationFrame(glisserFit);
+  };
+  /* Bande morte : la seconde qui s'écrit dans « 00:17 écoulées » fait
+     muter l'arbre chaque seconde. Sans seuil, chaque battement
+     redimensionnait l'écran d'un demi pour cent — le tremblement qu'on
+     voyait pendant tout un traitement. */
+  const viser = v => {
+    if (Math.abs(v - viseFit) < .012) return;
+    viseFit = v;
+    if (!fitRaf) fitRaf = requestAnimationFrame(glisserFit);
+  };
+
+  function mesurer() {
     if (!cap || document.body.classList.contains('back')) return;
-    cap.style.setProperty('--fit', 1);
     /* Deux pièges ici, et le second a coûté deux essais.
        scrollHeight ne voit QUE le débordement par le bas ; or le
        contenu de la zone de dépôt est calé en bas, donc il déborde par
@@ -2512,15 +3122,35 @@ if (location.protocol === 'file:') {
        contenu, lui, garde sa taille. C'est donc lui qu'il faut mesurer. */
     const zone = $('#dropzone');
     if (!zone) return;
+    /* Mesure prise à zoom 1, toujours, et le zoom courant remis avant
+       de rendre la main : la valeur obtenue est alors absolue.
+       Mesurer au zoom courant et en déduire une correction relative
+       boucle sur soi-même — réduire laisse de la place, la place fait
+       grandir, et l'écran respire sans fin. Essayé, mesuré : trente
+       secondes sans jamais se stabiliser.
+       Il n'y a pas de clignotement : rien n'est peint entre les deux
+       écritures, qui sont dans la même tâche. */
+    cap.style.setProperty('--fit', 1);
     const r = [...zone.children].map(e => e.getBoundingClientRect())
       .filter(x => x.height > 0);
-    if (!r.length) return;
-    const besoin = Math.max(...r.map(x => x.bottom)) - Math.min(...r.map(x => x.top));
     const place = zone.clientHeight;
-    if (place > 60 && besoin > place + 2) {
-      cap.style.setProperty('--fit',
-        Math.max(.55, (place / besoin) * 0.97).toFixed(3));
-    }
+    cap.style.setProperty('--fit', fitCourant.toFixed(4));
+    if (!r.length || !(place > 60)) return;
+    const besoin = Math.max(...r.map(x => x.bottom)) - Math.min(...r.map(x => x.top));
+    viser(besoin > place + 2
+      ? Math.max(.55, (place / besoin) * .97)
+      : 1);
+  }
+
+  /* Une mesure par image au plus, et une dernière quand les
+     transitions d'opacité et de graisse (1,1 s) ont fini de bouger :
+     mesurer pendant qu'un bloc s'efface donne une hauteur qui n'existe
+     à aucun moment. */
+  let attente = 0, repos = 0;
+  const fitCap = () => {
+    if (!attente) attente = requestAnimationFrame(() => { attente = 0; mesurer(); });
+    clearTimeout(repos);
+    repos = setTimeout(mesurer, 1200);
   };
   if (cap) {
     new ResizeObserver(fitCap).observe(cap);
@@ -2697,6 +3327,11 @@ vm.lang.add({
     [`Texte copié.`]: `Text copied.`, [`Copie refusée par le navigateur.`]: `Copy refused by the browser.`
   },
   rules: [
+    [/^Relecture en cours$/, () => `Correction in progress`],
+    [/^Relecture arrêtée$/, () => `Correction stopped`],
+    [/^Arrêt…$/, () => `Stopping…`],
+    [/^arrêt demandé$/, () => `stop requested`],
+    [/^Aucune correction n'a été trouvée avant l'arrêt\. Le transcript\s+est inchangé\.$/, () => `No correction was found before the stop. The transcript is unchanged.`],
     [/^Séparation des voix (\d+) %$/, (m, n) => `Separating the voices ${n} %`],
     [/^Transcription (\d+)\/(\d+)$/, (m, a, b) => `Transcribing ${a}/${b}`],
     [/^(.+) — sur cet ordinateur$/, (m, n) => `${n} — on this computer`],
@@ -2718,7 +3353,8 @@ vm.lang.add({
     [/^(.+) enregistré\.$/, (m, n) => `${n} saved.`],
     [/^(\S+) écoulées(?: — (.*))?$/, (m, t, eta) => `${t} elapsed` + (eta ? ' — ' + eta : '')],
     [/^plus d'une heure restante$/, () => `more than an hour left`], [/^moins d'une minute restante$/, () => `less than a minute left`],
-    [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`]
+    [/^encore (\d+) min environ$/, (m, n) => `about ${n} min left`],
+    [/^encore (\d+) h (\d+) environ$/, (m, h, n) => `about ${h} h ${n} left`]
   ],
   parts: [
     [`Entraîné sur VoxCeleb, une centaine de nationalités. Rapide.`, `Trained on VoxCeleb, about a hundred nationalities. Fast.`],

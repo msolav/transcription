@@ -31,7 +31,11 @@ rep("<p>${peindre(d, '+')}</p>", "<p data-no-i18n>${peindre(d, '+')}</p>")
 rep('<p class="extrait">', '<p class="extrait" data-no-i18n>')
 rep('<pre id="stexte">', '<pre id="stexte" data-no-i18n>')
 rep("`<pre>${escapeHtml(t)}</pre>`", "`<pre data-no-i18n>${escapeHtml(t)}</pre>`")
-rep("`<h4>Relecture en cours</h4><pre>${", "`<h4>Relecture en cours</h4><pre data-no-i18n>${")
+# Le journal de relecture porte maintenant data-no-i18n à la source :
+# il a un id, un bouton d'arrêt à côté, et n'est plus réécrit à chaque
+# sondage. Le marquer ici obligerait à recopier tout le gabarit.
+assert 'id="relnotes" data-no-i18n' in js, \
+    "le journal de relecture doit rester hors traduction"
 # ---- default voice labels follow the language (also in exports) ----
 rep("return `Voix ${s ? s.index + 1 : '?'}`;", "return `${vm.lang.t('Voix', 'Voice')} ${s ? s.index + 1 : '?'}`;")
 rep('<div class="tag">Voix ${s.index + 1}</div>', '<div class="tag">${vm.lang.t(\'Voix\', \'Voice\')} ${s.index + 1}</div>')
@@ -47,9 +51,30 @@ rep("$('#pct').textContent = Math.round(ratio * 100) + ' %';", "$('#pct').textCo
 
 # ---- accept(): fill the hero instead of replacing the drop zone ----
 cut("  zone.outerHTML = `<div class=\"filetag\"", "  $('#go').disabled = false;", r"""  { const dot = file.name.lastIndexOf('.'), base = dot > 0 ? file.name.slice(0, dot) : file.name, ext = dot > 0 ? file.name.slice(dot) : '';
-    $('#fname').textContent = base; $('#fmeta').textContent = (ext ? ext + '  ·  ' : '') + mb + ' ' + vm.lang.t('Mo', 'MB'); }
+    $('#fname').textContent = base; $('#fmeta').textContent = (ext ? ext + '  ·  ' : '') + mb + ' ' + vm.lang.t('Mo', 'MB');
+    /* La taille du titre suit la longueur du nom. Une quinzaine de
+       caractères tiennent en pleine taille ; au-delà, on divise. Deux
+       lignes au plus, le reste en points de suspension — un nom de
+       fichier n'a pas à occuper l'écran entier. */
+    $('#fname').style.setProperty('--n', Math.max(1, base.length / 15).toFixed(2)); }
   zone.classList.add('filled');
-  $('#clear').onclick = () => location.reload();
+  if (window.dureeDuFichier) dureeDuFichier(file).then(s => poserDuree(s));
+  /* Retirer le fichier remettait l'écran à zéro en rechargeant la page.
+     Un rechargement ne s'interpole pas : le titre repassait de « nom du
+     fichier » à « Déposer un fichier » d'un seul coup, ce qui se lisait
+     comme un saut. Les mêmes gestes que `render()` fait déjà, sans
+     détruire la page : le CSS repasse alors d'un titre à l'autre en
+     fondu, comme à l'arrivée du fichier. */
+  $('#clear').onclick = () => {
+    picked = null;
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    $('#player').removeAttribute('src');
+    zone.classList.remove('filled');
+    $('#file').value = '';           // sans quoi le même fichier ne se redépose pas
+    $('#go').disabled = true;
+    if (window.poserDuree) poserDuree(0);
+    $('#alerts').innerHTML = '';
+  };
 """)
 
 # ---- voices: proportional columns ----
@@ -147,6 +172,348 @@ assert "sur cet ordinateur' :" not in js
 
 # ---- add-ons: margin timeline, info popovers, save menu, hero click ----
 addon = r"""
+/* ---------- combien de temps, et ce que coûte chaque option ----------
+
+   La question se pose avant de lancer, pas après : séparer les voix sur
+   une réunion de deux heures et demie ajoute trois quarts d'heure, et
+   c'est un choix qu'on ne peut faire que si on le sait. Une fois le
+   calcul parti, le seul recours est d'arrêter et de tout reprendre.
+
+   La durée vient du navigateur, qui lit l'en-tête du fichier sans le
+   téléverser — rien ne part sur le réseau tant que « Transcrire » n'est
+   pas pressé. Les coûts viennent du serveur, de la même table qui
+   découpe la barre de progression : une seule source, donc l'annonce et
+   la barre ne peuvent pas se contredire. */
+{
+  let couts = null, secondes = 0;
+
+  api('/api/health').then(h => { couts = h && h.couts; majEstim(); }).catch(() => {});
+
+  /* La durée sans téléverser : un élément média sur un blob local. Tous
+     les conteneurs ne la rendent pas (certains .m4a sans en-tête de
+     durée, un fichier tronqué), et certains ne répondent jamais — d'où
+     le délai de garde. Sans durée, on n'annonce rien : une estimation
+     inventée est pire que pas d'estimation. */
+  window.dureeDuFichier = function (file) {
+    return new Promise(res => {
+      let rendu = false;
+      const el = document.createElement(
+        (file.type || '').startsWith('video') ? 'video' : 'audio');
+      const url = URL.createObjectURL(file);
+      const fini = v => {
+        if (rendu) return;
+        rendu = true; URL.revokeObjectURL(url); el.src = ''; res(v || 0);
+      };
+      el.preload = 'metadata';
+      el.onloadedmetadata = () => fini(isFinite(el.duration) ? el.duration : 0);
+      el.onerror = () => fini(0);
+      setTimeout(() => fini(0), 5000);
+      el.src = url;
+    });
+  };
+
+  function dire(s) {
+    const m = Math.round(s / 60);
+    if (m < 1) return vm.lang.t('moins d’une minute', 'under a minute');
+    if (m < 60) return m + ' min';
+    return Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0');
+  }
+
+  /* Les mêmes étapes que pipeline.process choisira, dans le même ordre
+     et aux mêmes conditions. Le nettoyage ne tourne que si la séparation
+     tourne : sans voix à séparer, il n'y a rien à nettoyer pour. */
+  function etapes() {
+    const sep = $('#count') && $('#count').value !== 'none';
+    const l = ['conversion'];
+    if (sep && $('#clean') && $('#clean').value) l.push('nettoyage');
+    if ($('#emb') && $('#emb').value === 'auto' && $('#lang') && !$('#lang').value) l.push('langue');
+    if (sep) l.push($('#count').value === 'auto' ? 'voix_auto' : 'voix');
+    return l.concat(['tranches', 'transcription', 'assemblage']);
+  }
+
+  /* Le coût de la séparation suit le modèle d'empreintes : le ResNet34
+     sert de référence (poids 1,4), un ERes2Net demande la moitié de
+     temps en plus. Même rapport que côté serveur, sinon l'annonce et la
+     barre se contrediraient. */
+  const POIDS_REF = 1.4;
+  function echelleVoix() {
+    const sel = $('#emb');
+    /* `catalogue` est une liaison de premier niveau : visible ici, mais
+       absente de window. L'interroger par window.catalogue rendait
+       toujours undefined, et l'échelle serait restée à 1 sans que rien
+       ne le signale — la même panne muette que pour l'aperçu vidéo. */
+    if (!sel || typeof catalogue === 'undefined' || !catalogue.length) return 1;
+    let cle = sel.value;
+    if (cle === 'auto') {
+      // « Choisir pour moi » : le premier du classement, qui est celui
+      // que le serveur retiendra.
+      const t = catalogue[0];
+      return t && t.poids ? t.poids / POIDS_REF : 1;
+    }
+    const m = catalogue.find(x => x.cle === cle);
+    return m && m.poids ? m.poids / POIDS_REF : 1;
+  }
+
+  const somme = l => l.reduce((t, e) => t + (couts[e] || 0)
+    * (e.indexOf('voix') === 0 ? echelleVoix() : 1), 0);
+
+  window.majEstim = function majEstim() {
+    const box = $('#estim'), cv = $('#coutvoix'), cn = $('#coutnet');
+    if (!box) return;
+    if (!couts || !secondes) {
+      box.hidden = true;
+      if (cv) cv.textContent = '';
+      if (cn) cn.textContent = '';
+      return;
+    }
+    const total = somme(etapes()) * secondes;
+    box.hidden = false;
+    box.textContent = vm.lang.t('Environ ', 'About ') + dire(total)
+      + vm.lang.t(' de traitement', ' of processing');
+
+    /* Ce que chaque option ajoute, et non ce qu'elle coûte dans
+       l'absolu : la question posée devant l'écran est « est-ce que je
+       la garde ? ». Couper la séparation emporte le nettoyage avec
+       elle, et le chiffre le dit. */
+    const sep = $('#count') && $('#count').value !== 'none';
+    if (cv) {
+      const sans = somme(etapes().filter(
+        e => e !== 'voix' && e !== 'voix_auto' && e !== 'nettoyage')) * secondes;
+      cv.textContent = sep ? '+ ' + dire(total - sans) : '';
+    }
+    if (cn) {
+      const net = sep && $('#clean') && $('#clean').value;
+      cn.textContent = net ? '+ ' + dire(couts.nettoyage * secondes) : '';
+    }
+  };
+
+  window.poserDuree = function (s) { secondes = s || 0; majEstim(); };
+
+  /* ---------- le récapitulatif pendant le traitement ----------
+
+     Figé au lancement, et non relu à l'affichage : ce qu'on veut savoir
+     en regardant une barre à 53 %, c'est avec quoi ce calcul-là tourne.
+     Les commandes, elles, gardent la valeur courante — qui peut déjà
+     avoir servi à préparer la fois suivante. */
+  function etiquette(sel) {
+    const el = $(sel);
+    if (!el || !el.options) return '';
+    const o = el.options[el.selectedIndex];
+    return o ? o.textContent.trim() : '';
+  }
+
+  window.figerRecap = function () {
+    const t = $('#recaptxt'), b = $('#recap');
+    if (!t || !b) return;
+    const sep = $('#count') && $('#count').value !== 'none';
+    const n = sep ? $('#count').value : '';
+    const bouts = [etiquette('#lang') || vm.lang.t('Langue auto', 'Auto language')];
+    bouts.push(sep
+      ? (n === 'auto' ? vm.lang.t('Voix : auto', 'Voices: auto')
+        : vm.lang.t('Voix : ', 'Voices: ') + n)
+      : vm.lang.t('Sans séparation', 'No separation'));
+    if (sep) {
+      /* Le modèle de voix seulement s'il a été choisi : sur « auto »,
+         l'étiquette est « Choisir pour moi, selon la langue », une
+         phrase qui n'apprend rien et mange la ligne. Le vrai modèle
+         n'est connu qu'une fois la langue reconnue, et il est écrit au
+         journal. */
+      if ($('#emb') && $('#emb').value !== 'auto') bouts.push(etiquette('#emb'));
+      bouts.push($('#clean') && $('#clean').value
+        ? vm.lang.t('Nettoyage : ', 'Cleanup: ') + etiquette('#clean')
+        : vm.lang.t('Sans nettoyage', 'No cleanup'));
+    }
+    t.textContent = bouts.filter(Boolean).join('  ·  ');
+    b.hidden = false;
+    b.setAttribute('aria-expanded', 'false');
+    const p = $('#reglages');
+    if (p) p.removeAttribute('data-ouvert');
+  };
+
+  const recap = $('#recap');
+  let repliePlus = false;
+  if (recap) recap.onclick = () => {
+    const p = $('#reglages');
+    const plus = document.querySelector('.settings .more');
+    const ouvert = recap.getAttribute('aria-expanded') === 'true';
+    recap.setAttribute('aria-expanded', ouvert ? 'false' : 'true');
+    if (p) { if (ouvert) p.removeAttribute('data-ouvert'); else p.setAttribute('data-ouvert', ''); }
+    /* « Plus d'options » s'ouvre avec le reste : on vient voir les
+       quatre réglages du calcul en cours, et deux d'entre eux vivent
+       là-dedans. Son état d'avant est rendu à la fermeture.
+
+       Par un clic sur le sommaire, et non en posant `open` : c'est
+       vm.js qui tient ce pli, à travers une classe sur un conteneur
+       intérieur. Écrire `open` ouvrait le <details> sans déplier son
+       contenu — le panneau restait fermé à l'écran. Un clic appelé
+       depuis le code traverse `pointer-events: none`. */
+    const somm = plus && plus.querySelector(':scope > summary');
+    const deplie = () => plus && !plus.querySelector(':scope > .vm-fold.off');
+    if (somm) {
+      if (ouvert) { if (repliePlus && deplie()) somm.click(); }
+      else { repliePlus = !deplie(); if (repliePlus) somm.click(); }
+    }
+  };
+
+  /* Le lancement passe par #go ; on fige au même instant, avant que
+     l'écran ne bascule. */
+  const go = $('#go');
+  if (go) go.addEventListener('click', () => figerRecap(), true);
+
+  ['#lang', '#count', '#emb', '#clean'].forEach(s => {
+    const el = $(s);
+    if (el) el.addEventListener('change', () => majEstim());
+  });
+  /* Les pastilles du nombre de voix et l'interrupteur écrivent dans
+     #count par programme, ce qui ne déclenche pas « change ». */
+  const chips = $('#numchips'), bascule = $('#sep');
+  if (chips) chips.addEventListener('click', () => setTimeout(majEstim, 0));
+  if (bascule) bascule.addEventListener('click', () => setTimeout(majEstim, 0));
+  if (window.vm && vm.lang) vm.lang.onChange(() => majEstim());
+}
+
+/* ---------- retrouver la lecture après avoir lu ailleurs ----------
+
+   Le suivi se coupe tout seul dès qu'on tourne une page à la main, et
+   c'est voulu : sinon la page se dérobe sous les yeux de qui lit un
+   passage plus loin. Mais il ne revenait jamais, et le seul témoin
+   était une case de deux millimètres dans la barre. On repart en
+   lecture sans s'en apercevoir, et le texte reste en arrière.
+
+   Deux réponses. Un bouton qui ramène au passage en cours, visible
+   seulement quand la situation existe. Et le suivi qui se réarme à la
+   relance de la lecture — mais seulement s'il s'était coupé tout seul :
+   l'avoir décoché à la main est une décision, pas un accident. */
+{
+  let coupeAMain = false;
+  const bouton = $("#follow"), retour = $("#revenir");
+
+  /* `follow` est une liaison de premier niveau : lisible depuis ici,
+     absente de window, donc impossible à surveiller. L'état du bouton
+     en est le reflet fidèle — setFollow le tient à jour — et c'est lui
+     qu'on interroge. */
+  const suit = () => !!bouton && bouton.classList.contains('on');
+
+  function majRetour() {
+    if (!retour) return;
+    const p = (typeof player !== 'undefined') ? player : null;
+    retour.hidden = !(p && !p.paused && !suit());
+  }
+
+  function rejoindre() {
+    const vif = document.querySelector('.turn.live');
+    if (vif && typeof pageToEl === 'function') pageToEl(vif);
+  }
+
+  /* Délégué sur le document, en phase de capture, et non posé sur le
+     bouton : l'affichage du transcript réassigne `#follow.onclick` au
+     moment où il monte le lecteur. Un gestionnaire posé ici au
+     chargement était donc écrasé, et le décochage à la main repassait
+     pour un décochage automatique — le suivi se rallumait tout seul à
+     la lecture suivante, contre la volonté exprimée. Mesuré : c'est le
+     seul des cinq cas d'épreuve qui échouait.
+     La capture passe avant le onclick, donc `suit()` y donne encore
+     l'état d'avant le clic. */
+  document.addEventListener('click', ev => {
+    const c = ev.target.closest && ev.target.closest('#follow, #revenir');
+    if (!c) return;
+    if (c.id === 'follow') {
+      coupeAMain = suit();        // on s'apprête à le couper à la main
+      setTimeout(majRetour, 0);
+      return;
+    }
+    coupeAMain = false;
+    if (typeof setFollow === 'function') setFollow(true);
+    /* Ramener la page tout de suite : attendre la réplique suivante
+       laisserait le texte en arrière pendant une minute entière. */
+    rejoindre();
+    majRetour();
+  }, true);
+
+  if (typeof player !== 'undefined' && player) {
+    player.addEventListener('play', () => {
+      if (!suit() && !coupeAMain && typeof setFollow === 'function') {
+        setFollow(true);
+        rejoindre();
+      }
+      majRetour();
+    });
+    player.addEventListener('pause', majRetour);
+
+    /* Début et fin. `seek` borne et recale la page ; l'appeler plutôt
+       que d'écrire currentTime garde le reste de la barre d'accord. */
+    const aller = t => (typeof seek === 'function')
+      ? seek(t) : (player.currentTime = t);
+    const d = $('#first'), f = $('#last');
+    if (d) d.onclick = () => aller(0);
+    if (f) f.onclick = () => {
+      /* Une poignée de dixièmes avant la fin : se poser exactement
+         dessus déclenche la fin de lecture, et le lecteur se range au
+         lieu de montrer le dernier passage. */
+      const fin = player.duration;
+      aller(isFinite(fin) && fin > 0.4 ? fin - 0.3 : 0);
+    };
+
+    /* Le suivi se coupe aussi depuis la molette et depuis la frise,
+       sans passer par le bouton : on relit donc l'état au fil de la
+       lecture plutôt que de s'accrocher à chaque appelant. */
+    player.addEventListener('timeupdate', majRetour);
+  }
+
+  /* ---------- rejoindre les cartes de nommage ----------
+
+     Elles ouvrent le document ; sur une réunion de deux heures, elles
+     sont à cinquante pages de l'endroit où l'on vient de repérer une
+     attribution fausse. Le bouton de la barre y mène, et le nom affiché
+     devant chaque réplique y mène aussi — en visant la bonne carte. */
+  function versNoms(idVoix) {
+    if (typeof setPage === 'function') setPage(0);
+    /* Le suivi ramènerait la page sur la lecture dans la seconde : on
+       le coupe, et « Revenir à la lecture » reste là pour le rendre. */
+    if (typeof setFollow === 'function' && suit()) setFollow(false);
+    majRetour();
+    const champ = idVoix
+      ? document.querySelector(`.strip input[data-id="${CSS.escape(idVoix)}"]`)
+      : document.querySelector('.strip input');
+    if (champ) { champ.focus(); champ.select(); }
+  }
+
+  const versB = $('#versnoms');
+  if (versB) versB.onclick = () => versNoms();
+
+  /* Délégué : les répliques sont repeintes à chaque changement de nom
+     et à chaque page. */
+  document.addEventListener('click', ev => {
+    const qui = ev.target.closest && ev.target.closest('.turn .who');
+    if (!qui) return;
+    const tour = qui.closest('.turn');
+    const bloc = tour && shown[+tour.dataset.i];
+    versNoms(bloc && bloc.speaker);
+  });
+}
+
+/* ---------- après l'ajout d'une clé, sans recharger la page ----------
+
+   branchement.js vit dans son propre fichier : il ne voit pas les
+   liaisons de premier niveau d'ici, donc il ne peut pas vider lui-même
+   les caches qui dépendent des clés. C'est pour cela qu'il rechargeait
+   la page — une façon brutale d'obtenir le même effet, qui emportait
+   aussi l'animation et tout ce qui n'était qu'en mémoire.
+
+   Trois caches, et rien d'autre à défaire : la liste des modèles de
+   relecture, les options de relecture, et le bandeau de simulation qui
+   n'a plus lieu d'être une fois une clé posée. */
+window.apresCles = function () {
+  relOpts = null;
+  modelesRelecture = null;
+  const b = $('#changekey');
+  if (b) b.hidden = false;
+  api('/api/health').then(h => {
+    const bandeau = document.getElementById('tr-sim');
+    if (bandeau && h && !h.vierge) bandeau.remove();
+  }).catch(() => {});
+};
+
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {
   const w = $('#perime'); w.hidden = false; w.removeAttribute('data-fr');
@@ -172,9 +539,31 @@ if (location.protocol === 'file:') {
      mais courte, il dépasse par le haut et pousse le reste hors de
      l'écran, qui ne doit jamais défiler. On mesure, et on réduit. */
   const cap = $('#capture');
-  const fitCap = () => {
+
+  /* Le facteur est une cible, jamais une valeur posée : zoom ne
+     s'interpole pas tout seul, donc c'est une boucle rAF qui fait le
+     trajet. Sans elle, retirer un fichier changeait la hauteur du bloc
+     et le titre sautait d'un cran à l'autre en une image. */
+  let viseFit = 1, fitCourant = 1, fitRaf = 0;
+  const poser = v => { fitCourant = v; cap.style.setProperty('--fit', v.toFixed(4)); };
+  const glisserFit = () => {
+    const d = viseFit - fitCourant;
+    if (Math.abs(d) < .0015) { poser(viseFit); fitRaf = 0; return; }
+    poser(fitCourant + d * .16);
+    fitRaf = requestAnimationFrame(glisserFit);
+  };
+  /* Bande morte : la seconde qui s'écrit dans « 00:17 écoulées » fait
+     muter l'arbre chaque seconde. Sans seuil, chaque battement
+     redimensionnait l'écran d'un demi pour cent — le tremblement qu'on
+     voyait pendant tout un traitement. */
+  const viser = v => {
+    if (Math.abs(v - viseFit) < .012) return;
+    viseFit = v;
+    if (!fitRaf) fitRaf = requestAnimationFrame(glisserFit);
+  };
+
+  function mesurer() {
     if (!cap || document.body.classList.contains('back')) return;
-    cap.style.setProperty('--fit', 1);
     /* Deux pièges ici, et le second a coûté deux essais.
        scrollHeight ne voit QUE le débordement par le bas ; or le
        contenu de la zone de dépôt est calé en bas, donc il déborde par
@@ -185,15 +574,35 @@ if (location.protocol === 'file:') {
        contenu, lui, garde sa taille. C'est donc lui qu'il faut mesurer. */
     const zone = $('#dropzone');
     if (!zone) return;
+    /* Mesure prise à zoom 1, toujours, et le zoom courant remis avant
+       de rendre la main : la valeur obtenue est alors absolue.
+       Mesurer au zoom courant et en déduire une correction relative
+       boucle sur soi-même — réduire laisse de la place, la place fait
+       grandir, et l'écran respire sans fin. Essayé, mesuré : trente
+       secondes sans jamais se stabiliser.
+       Il n'y a pas de clignotement : rien n'est peint entre les deux
+       écritures, qui sont dans la même tâche. */
+    cap.style.setProperty('--fit', 1);
     const r = [...zone.children].map(e => e.getBoundingClientRect())
       .filter(x => x.height > 0);
-    if (!r.length) return;
-    const besoin = Math.max(...r.map(x => x.bottom)) - Math.min(...r.map(x => x.top));
     const place = zone.clientHeight;
-    if (place > 60 && besoin > place + 2) {
-      cap.style.setProperty('--fit',
-        Math.max(.55, (place / besoin) * 0.97).toFixed(3));
-    }
+    cap.style.setProperty('--fit', fitCourant.toFixed(4));
+    if (!r.length || !(place > 60)) return;
+    const besoin = Math.max(...r.map(x => x.bottom)) - Math.min(...r.map(x => x.top));
+    viser(besoin > place + 2
+      ? Math.max(.55, (place / besoin) * .97)
+      : 1);
+  }
+
+  /* Une mesure par image au plus, et une dernière quand les
+     transitions d'opacité et de graisse (1,1 s) ont fini de bouger :
+     mesurer pendant qu'un bloc s'efface donne une hauteur qui n'existe
+     à aucun moment. */
+  let attente = 0, repos = 0;
+  const fitCap = () => {
+    if (!attente) attente = requestAnimationFrame(() => { attente = 0; mesurer(); });
+    clearTimeout(repos);
+    repos = setTimeout(mesurer, 1200);
   };
   if (cap) {
     new ResizeObserver(fitCap).observe(cap);

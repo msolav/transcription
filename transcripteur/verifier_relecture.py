@@ -80,5 +80,119 @@ for _, d, f in relecture._fenetres(40):
     vues.update(range(d, f))
 verifie("fenetres couvrantes", vues == set(range(40)), sorted(set(range(40)) - vues))
 
+# 8. l'arret pendant la relecture
+#
+# Deux endroits, et deux seulement, ou la relecture passe son temps :
+# l'appel au modele, et l'attente quand la limite par minute est
+# atteinte. Cette attente dure de vingt a soixante-quinze secondes, et
+# c'est justement la qu'on veut arreter, puisque c'est la qu'il ne se
+# passe rien. Un sleep d'un bloc rendait le bouton muet pendant tout ce
+# temps.
+#
+# Le piege verifie ici n'est pas l'arret lui-meme mais son filet : les
+# boucles de relecture attrapent Exception pour qu'une fenetre en panne
+# n'emporte pas tout le travail. Annulee etant une exception, elle y
+# tombait, etait notee comme une fenetre ratee, et la boucle enchainait.
+# Le bouton n'aurait rien fait, et rien ne l'aurait dit.
+import threading
+import time
+
+BLOCS = [{"speaker": f"SPEAKER_0{i % 3}", "start": i * 5.0, "end": i * 5.0 + 4.0,
+          "text": f"Replique numero {i}, assez longue pour peser.", "words": []}
+         for i in range(60)]
+NOMS = {"SPEAKER_00": "Karina", "SPEAKER_01": "Annie", "SPEAKER_02": "Elaine"}
+
+_vrai_appeler = relecture.fournisseurs.appeler
+_vrai_decoupage = relecture._decoupage
+# Plusieurs fenetres : un transcript qui tient en un seul appel ne fait
+# qu'un tour de boucle, plus court que le delai avant l'arret, et
+# l'essai mesurerait la fin normale au lieu de l'arret.
+relecture._decoupage = lambda blocs, modele, note=None: [
+    (0, i, i + 2) for i in range(0, 100, 2)]
+
+
+def _arret(nom, bouchon, plafond):
+    relecture.fournisseurs.appeler = bouchon
+    stop = {"v": False}
+    bilan = {}
+
+    def courir():
+        t0 = time.time()
+        try:
+            relecture.corriger_attribution(BLOCS, NOMS, "cle", "gemini-flash",
+                                           note=lambda m: None,
+                                           stop=lambda: stop["v"])
+            bilan["r"] = "terminee sans s'arreter"
+        except relecture.Annulee:
+            bilan["r"] = "Annulee"
+        except Exception as exc:  # noqa: BLE001
+            bilan["r"] = f"{type(exc).__name__}"
+        bilan["t"] = time.time() - t0
+
+    fil = threading.Thread(target=courir)
+    fil.start()
+    time.sleep(1.0)
+    stop["v"] = True
+    fil.join(timeout=plafond + 5)
+    delai = max(bilan.get("t", 999) - 1.0, 0)
+    verifie(f"arret {nom}",
+            not fil.is_alive() and bilan.get("r") == "Annulee" and delai <= plafond,
+            f"{bilan.get('r', 'toujours en vie')}, {delai:.2f} s")
+
+
+def _lent(*a, **k):
+    time.sleep(0.4)
+    return '{"blocs": []}'
+
+
+def _quota(*a, **k):
+    raise relecture.fournisseurs.LimiteMinute("limite par minute", secondes=60.0)
+
+
+_arret("pendant les appels", _lent, 1.5)
+_arret("pendant une attente de quota", _quota, 1.0)
+
+# 9. le journal dit ce qui se passe
+#
+# Et surtout : le decompte d'attente se recrit sur sa ligne. Empile une
+# fois par seconde, il chassait tout le reste du journal en une minute,
+# et il ne reste plus que « reprise dans 3 s » repete douze fois.
+_lignes = []
+
+
+def _note(m, remplacer=False):
+    if remplacer and _lignes:
+        _lignes[-1] = m
+    else:
+        _lignes.append(m)
+
+
+relecture._decoupage = lambda b, m, n=None: [(0, i, i + 10) for i in range(0, 30, 10)]
+_tours = {"n": 0}
+
+
+def _repond(*a, **k):
+    _tours["n"] += 1
+    if _tours["n"] == 2:
+        raise relecture.fournisseurs.LimiteMinute("limite", secondes=2.0)
+    return ('{"blocs": [' + ",".join(
+        f'{{"bloc": {j}, "locuteur": "Annie"}}' for j in range(30)) + ']}')
+
+
+relecture.fournisseurs.appeler = _repond
+_corr = relecture.corriger_attribution(BLOCS[:30], NOMS, "cle", "gemini-flash",
+                                       note=_note)
+verifie("journal : la passe s'annonce",
+        any(l.startswith("attribution : 30 blocs") for l in _lignes), _lignes[:1])
+verifie("journal : les corrections se comptent au fil de l'eau",
+        any("correction(s) trouvee(s)" in l.replace("é", "e") for l in _lignes),
+        _lignes)
+verifie("journal : le decompte d'attente tient sur une seule ligne",
+        sum(1 for l in _lignes if l.startswith("limite par minute")) == 1,
+        [l for l in _lignes if l.startswith("limite par minute")])
+
+relecture.fournisseurs.appeler = _vrai_appeler
+relecture._decoupage = _vrai_decoupage
+
 print(f"\n{ok} reussis, {rate} echecs")
 sys.exit(1 if rate else 0)

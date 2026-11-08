@@ -59,6 +59,20 @@ SEG_FILE = MODELS_DIR / "sherpa-onnx-pyannote-segmentation-3-0" / "model.onnx"
 # qualité. Surprise de la mesure : à architecture et taille identiques, le
 # CAM++ VoxCeleb coûte près du double du CAM++ chinois+anglais.
 
+# `justesse` est la part du temps de parole correctement attribuée, mesurée
+# sur une conversation de 6,9 minutes à quatre voix — deux féminines, deux
+# masculines — avec le nombre de voix imposé. C'est le défaut signalé par
+# l'usage : les genres se séparent, les voix de même genre se confondent.
+#
+# Pourquoi ce champ existe : le classement se faisait sur `poids`,
+# c'est-à-dire sur le coût de calcul. « Choisir pour moi » prenait donc le
+# modèle le moins cher de la famille, et le faisait sans jamais regarder
+# s'il attribuait juste. Entre le premier et le dernier des multilingues,
+# il y a vingt-trois points d'écart.
+#
+# Mesuré sur des voix de synthèse, faute de corpus annoté sous la main :
+# le classement vaut, les valeurs absolues sont à prendre comme un ordre
+# de grandeur. 0.0 signifie « pas mesuré ».
 @dataclass(frozen=True)
 class Empreinte:
     cle: str
@@ -68,21 +82,27 @@ class Empreinte:
     famille: str      # 'multi', 'anglais' ou 'chinois' — langues d'entraînement
     poids: float
     note: str
+    justesse: float = 0.0
 
 
 CATALOGUE = (
     Empreinte("voxceleb_campplus", "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
-              28.2, "Multilingue CAM++", "multi", 1.8,
-              "Entraîné sur VoxCeleb, une centaine de nationalités. Rapide."),
+              28.2, "Multilingue CAM++", "multi", 0.9,
+              "Rapide, mais le moins juste des multilingues à la mesure : "
+              "il confond aussi des voix de genres différents.", 0.416),
     Empreinte("voxceleb_campplus_lm", "wespeaker_en_voxceleb_CAM++_LM.onnx",
-              27.9, "Multilingue CAM++ (LM)", "multi", 2.1,
-              "Même idée, autre équipe, affiné à marge large. Rapide."),
+              27.9, "Multilingue CAM++ (LM)", "multi", 0.9,
+              "Même idée, autre équipe, affiné à marge large. Rapide, et "
+              "plus juste que le CAM++ ordinaire sans l'être beaucoup.", 0.452),
     Empreinte("voxceleb_resnet", "wespeaker_en_voxceleb_resnet34_LM.onnx",
-              25.3, "Multilingue ResNet34", "multi", 1.7,
-              "Architecture différente : à essayer quand les CAM++ confondent deux voix."),
+              25.3, "Multilingue ResNet34", "multi", 1.4,
+              "Bon compromis, et le réglage retenu par défaut : nettement "
+              "plus juste que les CAM++ pour une fois et demie leur temps.", 0.605),
     Empreinte("voxceleb_eres2net", "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx",
-              25.3, "Multilingue ERes2Net", "multi", 1.8,
-              "Encore une autre architecture, sur les mêmes données."),
+              25.3, "Multilingue ERes2Net", "multi", 2.2,
+              "Le plus juste à la mesure, et le plus lent : deux fois et "
+              "demie le temps du CAM++. À prendre quand l'attribution "
+              "compte plus que l'attente.", 0.648),
     Empreinte("titanet_large", "nemo_en_titanet_large.onnx",
               96.7, "Anglais TitaNet (grand)", "anglais", 2.6,
               "Anglais uniquement, mais réputé solide. Lent et lourd."),
@@ -129,9 +149,19 @@ def resoudre(cle: str | None) -> str:
 
 
 def conseilles(langue: str | None = None) -> list[Empreinte]:
-    """Le catalogue, le plus adapté à la langue en tête."""
+    """Le catalogue, le plus adapté à la langue en tête.
+
+    La langue d'abord, puis la justesse mesurée, et le coût seulement
+    pour départager. L'ordre se faisait auparavant sur le coût seul :
+    « choisir pour moi » prenait le modèle le plus rapide de la famille
+    sans jamais regarder s'il attribuait juste, alors qu'il y a
+    vingt-trois points d'écart entre le premier et le dernier des
+    multilingues. Un modèle non mesuré garde son rang d'avant, derrière
+    ceux qui le sont."""
     familles = ORDRE.get((langue or "").lower()[:2], ORDRE_DEFAUT)
-    return sorted(CATALOGUE, key=lambda e: (familles.index(e.famille), e.poids, e.mo))
+    return sorted(CATALOGUE,
+                  key=lambda e: (familles.index(e.famille), -e.justesse,
+                                 e.poids, e.mo))
 
 
 def resoudre_pour_langue(langue: str | None) -> str:

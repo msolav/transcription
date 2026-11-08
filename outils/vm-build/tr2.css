@@ -25,7 +25,26 @@ body:has(.setup) .exportbar { display: none; }
 .exportbar button, .newjob, .linkbtn { position: relative; padding: 0 .85rem; min-height: 44px; font: 600 .9375rem/1 var(--vm-font-display); white-space: nowrap;
   background: linear-gradient(currentColor, currentColor) left calc(100% - 9px) / calc(100% - 1.7rem) 1px no-repeat; background-position-x: .85rem;
   transition: background-size .55s var(--vm-ease-out), color .4s var(--vm-ease); }
-.exportbar button:hover, .newjob:hover { background-size: calc(100% - 1.7rem) 5px; color: var(--vm-accent); }
+
+/* Un seul soulignement pour toute la barre, celui du sélecteur FR | EN :
+   1 px au repos, 2 px quand on le vise ou qu'il est ouvert, et c'est
+   l'opacité qui marque l'état plutôt que l'épaisseur. Avant, le trait
+   passait de 1 à 5 px et seul le menu ouvert portait la couleur de
+   signal : quatre boutons voisins, quatre traits différents. */
+/* `body:has(#doc) .newjob { opacity: 1 }` sert à faire paraître le
+   bouton ; il l'emportait sur l'opacité de repos et laissait « Nouveau »
+   seul en pleine encre au bout de la rangée. Même portée, posée après. */
+body:has(#doc) .exportbar button, body:has(#doc) .newjob,
+.exportbar button, .newjob {
+  opacity: .62;
+  transition: background-size .55s var(--vm-ease-out), opacity .4s var(--vm-ease),
+              color .4s var(--vm-ease); }
+.exportbar button:hover, .newjob:hover,
+.exportbar button[aria-expanded="true"],
+.exportbar button[aria-pressed="true"] {
+  opacity: 1; background-size: calc(100% - 1.7rem) 2px; color: var(--vm-accent); }
+/* Le bouton éteint reste lisible mais ne se propose pas. */
+.exportbar button:disabled { opacity: .3; }
 .exportbar button[hidden] { display: none; }
 .exportbar .said { font: 400 .8125rem var(--vm-font-mono); color: var(--vm-mute); margin-left: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .savewrap { display: inline-flex; align-items: center; }
@@ -85,7 +104,18 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 .giant.got { opacity: 0; pointer-events: none; font-size: clamp(3rem, min(12vw, 20svh), 12rem); }
 .drop.filled .giant.ask { opacity: 0; pointer-events: none; }
 .drop.filled .giant.got { opacity: 1; }
-.giant.got .a { font-size: 1em; }
+/* Le nom du fichier est borné à deux lignes, et sa taille suit sa
+   longueur. Sans cela, « Conseil d'administration du 6 novembre 2026
+   enregistrement complet » se composait à 12 rem sur six lignes : le
+   facteur d'ajustement tombait à son plancher de 0,55, le titre était
+   rogné de 405 px par le haut, et il n'en remontait jamais — le bloc
+   devenu invisible garde sa boîte, donc la mesure restait faussée même
+   après avoir retiré le fichier.
+   --n est posé par le script, d'après le nombre de caractères. */
+.giant.got .a { font-size: clamp(1.4rem, calc(1em / max(1, var(--n, 1))), 12rem);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere;
+  transition: font-size .7s var(--vm-ease-out); }
 .giant.got .b { font-family: var(--vm-font-mono); font-size: .18em; font-weight: 400; font-stretch: 100%; letter-spacing: .06em; margin-top: .9em; }
 .pctwrap { grid-row: 2; grid-column: 1; opacity: 0; pointer-events: none; transition: opacity .9s var(--vm-ease); }
 .pctwrap em { display: block; font: normal 900 clamp(6rem, min(30vw, 40svh), 26rem)/.8 var(--vm-font-display); font-stretch: 62%; font-weight: calc(100 + 800 * var(--prog, 0)); letter-spacing: -.03em;
@@ -110,7 +140,61 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 
 /* ---------- form fields: numbered like a form ---------- */
 .settings { display: grid; grid-template-columns: 1fr 1fr; gap: 0 clamp(20px, 4vw, 64px); padding: 14px var(--pad) 10px; border-top: 1px solid var(--vm-ink); transition: opacity .8s var(--vm-ease); }
-.capture:has(#status:not([hidden])) .settings { opacity: .3; pointer-events: none; }
+/* Le repli des réglages pendant le traitement.
+   grid-template-rows 1fr↔0fr et non display : la hauteur s'interpole,
+   rien ne disparaît d'un coup. Le contenu garde sa taille et se fait
+   rogner par overflow, donc le texte ne se recompose pas en chemin. */
+.plier { display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows .85s var(--vm-ease-shut); }
+.plier > * { min-height: 0; }
+/* Le rognage seulement pendant le traitement, c'est-à-dire seulement
+   quand le pli sert. Posé en permanence, il coupait les listes de choix
+   qui s'ouvrent en place sous leur champ — la langue et le modèle de
+   voix déroulaient dans le vide. */
+.capture:has(#status:not([hidden])) .plier > * { overflow: hidden; }
+.capture:has(#status:not([hidden])) .plier { grid-template-rows: 0fr;
+  transition: grid-template-rows .85s var(--vm-ease-shut); }
+/* Rouverts à la demande : visibles, jamais manipulables — ce sont les
+   réglages du travail en cours, les changer ne voudrait rien dire. */
+.capture:has(#status:not([hidden])) .plier[data-ouvert] {
+  grid-template-rows: 1fr; transition: grid-template-rows 1s var(--vm-ease-bloom); }
+/* Le remplissage propre du panneau n'est pas rogné par overflow : la
+   rangée tombait bien à zéro, mais les 24 px de padding restaient, et
+   une tranche des étiquettes dépassait sous le récapitulatif. Il
+   s'interpole donc avec le reste. padding-block seulement : toucher au
+   padding horizontal recomposerait les lignes pendant le mouvement. */
+.settings { transition: opacity .8s var(--vm-ease),
+  padding-block .85s var(--vm-ease-shut); }
+.capture:has(#status:not([hidden])) .settings { opacity: .55; pointer-events: none;
+  border-top-color: transparent; padding-block: 0; }
+.capture:has(#status:not([hidden])) .plier[data-ouvert] .settings {
+  padding-block: 14px 10px; }
+
+/* Les prévisions d'avant-lancement s'effacent : la ligne d'état donne
+   désormais le temps écoulé et le reste, mesurés et non prévus. Garder
+   « + 14 min » en face d'une option sur un calcul déjà parti ne
+   répondrait plus à aucune question. */
+.capture:has(#status:not([hidden])) .estim,
+.capture:has(#status:not([hidden])) .cout { opacity: 0; }
+
+/* La ligne qui remplace le panneau : ce qui tourne, en un coup d'œil. */
+.recap { display: flex; align-items: center; gap: 14px; width: 100%;
+  padding: 11px var(--pad); border: 0; border-top: 1px solid var(--vm-ink);
+  background: none; color: var(--vm-mute); cursor: pointer; text-align: left;
+  font: 500 .75rem var(--vm-font-mono); letter-spacing: .1em; text-transform: uppercase;
+  opacity: 0; pointer-events: none;
+  transition: opacity .7s var(--vm-ease), color .4s var(--vm-ease); }
+.recap[hidden] { display: flex; }
+.capture:has(#status:not([hidden])) .recap { opacity: 1; pointer-events: auto; }
+.recap:hover { color: var(--vm-ink); }
+.recap span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Le plus qui pivote en croix, comme partout ailleurs : pas de chevron. */
+.recap i { margin-left: auto; position: relative; width: 13px; height: 13px; flex: none;
+  transition: rotate .7s var(--vm-spring); }
+.recap i::before, .recap i::after { content: ''; position: absolute; inset: 50% 0 auto 0;
+  height: 1px; background: currentColor; }
+.recap i::after { rotate: 90deg; }
+.recap[aria-expanded="true"] i { rotate: 45deg; }
 .field { min-width: 0; }
 .lab { display: flex; align-items: center; gap: 10px; min-height: 28px; font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase; }
 .lab .no { color: var(--vm-accent); }
@@ -133,6 +217,18 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
   transition: --bar .8s var(--vm-ease-out), color .6s var(--vm-ease), background-color .5s var(--vm-ease); }
 .go:not(:disabled):hover { background-color: var(--vm-ink); color: var(--vm-paper); }
 .go:disabled { --bar: 3px; color: var(--vm-mute); cursor: not-allowed; }
+/* Le temps annoncé avant de lancer, et ce que chaque option ajoute.
+   Rien ne paraît tant que la durée du fichier n'est pas connue : la
+   ligne apparaît et disparaît en fondu, elle ne surgit pas. */
+.estim { margin: 0; padding: 0 var(--pad) 8px; font: 500 .8125rem var(--vm-font-mono);
+  letter-spacing: .04em; color: var(--vm-mute);
+  opacity: 1; transition: opacity .5s var(--vm-ease); }
+.estim[hidden] { display: block; opacity: 0; pointer-events: none; }
+.cout { margin-left: auto; font: 500 .6875rem var(--vm-font-mono); letter-spacing: .06em;
+  color: var(--vm-accent); white-space: nowrap;
+  opacity: 1; transition: opacity .5s var(--vm-ease); }
+.cout:empty { opacity: 0; }
+
 .launch #busyHost .vm-busy-bar { margin: 0; }
 .launch .vm-busyb-track { height: 3px; }
 .launch .vm-busy-bar.on .vm-busyb-track { height: 18px; }
@@ -223,6 +319,12 @@ body:has(#panneau:not([hidden])) .spine { opacity: 0; pointer-events: none; }
 .deck .follow { display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .deck .follow i { width: 10px; height: 10px; border: 1.5px solid currentColor; display: block; transition: background-color .3s; }
 .deck .follow.on i { background: var(--vm-accent); border-color: var(--vm-accent); }
+/* Le retour à la lecture : en couleur de signal, parce qu'il signale un
+   écart entre ce qu'on entend et ce qu'on lit. Il paraît et s'efface en
+   fondu — hidden ne cache pas, il met à zéro, sinon il surgirait. */
+.deck .revenir { color: var(--vm-accent); white-space: nowrap;
+  opacity: 1; transition: opacity .55s var(--vm-ease); }
+.deck .revenir[hidden] { display: inline-block; opacity: 0; pointer-events: none; }
 .deck .rate { font-family: var(--vm-font-mono); min-width: 52px; }
 
 /* ---------- drawer: review and summary ---------- */
@@ -343,3 +445,16 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
    HAUT, et le titre géant se retrouve coupé. « safe » empêche le
    débordement du côté du début, le zoom fait tenir le reste. */
 .capture > * { zoom: var(--fit, 1); }
+
+/* Les icônes de transport du lecteur : même poids optique que les
+   libellés « −10 s » à côté, sinon la rangée bascule d'un côté. */
+.deck .ico { display: inline-flex; align-items: center; justify-content: center;
+  padding: 0 .55rem; }
+.deck .ico svg { width: 17px; height: 17px; fill: currentColor; display: block; }
+
+/* Le nom devant chaque réplique mène à sa carte de nommage. Souligné au
+   survol seulement : une réunion en affiche des centaines, tous
+   soulignés en permanence ferait une page de liens. */
+.turn .who { cursor: pointer; text-underline-offset: 3px;
+  transition: color .35s var(--vm-ease); }
+.turn .who:hover { color: var(--vm-accent); text-decoration: underline; }
