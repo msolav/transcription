@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import assets
+from .texte import join_words  # noqa: F401  (réexporté : d'autres l'importent d'ici)
 
 GROQ_MODEL = "whisper-large-v3-turbo"
 
@@ -1197,15 +1198,10 @@ def decouper_sans_voix(words: list[dict]) -> list[dict]:
     return [b for b in blocs if b["text"]]
 
 
-def join_words(words: list[dict]) -> str:
-    """Recolle les mots avec des espaces, sans en mettre avant la ponctuation."""
-    out = ""
-    for word in words:
-        text = word["text"]
-        if out and not (text[:1] in ",.;:!?…%)]}" or out[-1:] in "\u2019'([{"):
-            out += " "
-        out += text
-    return out.strip()
+# join_words vit maintenant dans texte.py, qui n'importe rien : c'est
+# ce qui permet a sous_titres — et a la bibliotheque — de s'en servir
+# sans entrainer tout ce module derriere eux. Il reste importable
+# d'ici, puisque relecture.py et d'autres l'y cherchent encore.
 
 
 def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:

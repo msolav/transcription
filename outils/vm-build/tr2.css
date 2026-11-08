@@ -458,3 +458,28 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 .turn .who { cursor: pointer; text-underline-offset: 3px;
   transition: color .35s var(--vm-ease); }
 .turn .who:hover { color: var(--vm-accent); text-decoration: underline; }
+
+/* ---------- la bibliothèque : la même page, en moins ----------
+   Ce programme-là ne transcrit pas. L'écran de dépôt, les réglages de
+   traitement et la barre de lancement n'y mènent nulle part : ils se
+   replient, par hauteur et opacité comme partout ailleurs, jamais par
+   display. Ce qui reste est la liste des séances, le texte et l'écoute. */
+/* Surtout pas `.capture` : la liste des séances y est injectée, juste
+   après la rangée de dépôt. La replier emportait la bibliothèque
+   elle-même, et la page s'ouvrait entièrement vide — vérifié, et c'est
+   exactement ce qui est arrivé. On replie donc ses voisins, un par un. */
+body[data-biblio] .hero,
+body[data-biblio] .pickrow,
+body[data-biblio] .plier,
+body[data-biblio] .launch { height: 0; opacity: 0; overflow: hidden;
+  pointer-events: none; margin: 0; padding: 0; min-height: 0; }
+/* Le contenu du dépôt est calé en bas pour laisser respirer le titre
+   géant ; sans titre, la liste doit repartir du haut. */
+body[data-biblio] #dropzone { justify-content: flex-start; cursor: default;
+  overflow-y: auto; }
+body[data-biblio] #seances { opacity: 1; pointer-events: auto; }
+body[data-biblio] #reread,
+body[data-biblio] #sum,
+body[data-biblio] #changekey { opacity: 0; pointer-events: none; position: absolute; }
+/* « Nouveau » ramènerait à un écran de dépôt qui n'existe pas ici. */
+body[data-biblio] .newjob .l1 { opacity: 0; }

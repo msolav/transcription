@@ -35,7 +35,9 @@
      bloqué, et un détail caché au moment du blocage ne sert personne. */
   var OUVRIR = {
     mac: {
-      fr: [['Déplacer Transcripteur.app dans Applications.', ''],
+      fr: [['Décompresser le fichier téléchargé.',
+            'Safari le fait souvent tout seul ; sinon, double-cliquer dessus.'],
+           ['Déplacer Transcripteur.app dans Applications.', ''],
            ['Double-cliquer. macOS refuse l’ouverture : cliquer « Terminé ».',
             'Le paquet n’est pas signé. Depuis macOS 15, le clic droit → '
             + 'Ouvrir ne suffit plus.'],
@@ -45,7 +47,9 @@
            ['« Ouvrir quand même », puis s’authentifier.', ''],
            ['Le trousseau demande le mot de passe de session : « Toujours autoriser ».',
             'La demande revient après chaque mise à jour : la signature change.']],
-      en: [['Move Transcripteur.app to Applications.', ''],
+      en: [['Unzip the downloaded file.',
+            'Safari often does it on its own; otherwise double-click it.'],
+           ['Move Transcripteur.app to Applications.', ''],
            ['Double-click it. macOS refuses to open it: click Done.',
             'The package is unsigned. Since macOS 15, right-click → Open no '
             + 'longer works.'],

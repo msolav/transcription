@@ -66,7 +66,8 @@ jobs:
         run: |
           for m in verifier_memoire verifier_apercu verifier_soustitres \
                    verifier_guide verifier_fournisseurs verifier_interface \
-                   verifier_relecture verifier_tranches verifier_troncature; do
+                   verifier_relecture verifier_tranches verifier_troncature \
+                   verifier_bibliotheque; do
             echo "--- $m"
             python -m transcripteur.$m
           done
@@ -126,6 +127,12 @@ jobs:
       - name: Construire
         run: pyinstaller --noconfirm --clean Transcripteur.spec
 
+      # La bibliothèque : le même code, privé de tout ce qui transcrit.
+      # Même coureur, parce qu'elle ne compile rien de plus — elle
+      # exclut, au contraire.
+      - name: Construire la bibliothèque
+        run: pyinstaller --noconfirm --clean Bibliotheque.spec
+
       # ditto plutôt que zip : il préserve les attributs étendus et les
       # liens symboliques du paquet .app, qu'un zip ordinaire aplatit —
       # l'application arrive alors de l'autre côté sans pouvoir s'ouvrir.
@@ -135,17 +142,23 @@ jobs:
           cd dist
           ditto -c -k --sequesterRsrc --keepParent Transcripteur.app \
                 "Transcripteur-${{ matrix.nom }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent Bibliotheque.app \
+                "Bibliotheque-${{ matrix.nom }}.zip"
 
       - name: Emballer (Windows)
         if: runner.os == 'Windows'
-        run: Compress-Archive -Path dist/Transcripteur/* -DestinationPath "dist/Transcripteur-${{ matrix.nom }}.zip"
+        run: |
+          Compress-Archive -Path dist/Transcripteur/* -DestinationPath "dist/Transcripteur-${{ matrix.nom }}.zip"
+          Compress-Archive -Path dist/Bibliotheque/* -DestinationPath "dist/Bibliotheque-${{ matrix.nom }}.zip"
 
       # tar.gz et non zip : le zip ne transporte pas le bit exécutable,
       # et le programme arriverait de l'autre côté sans pouvoir être
       # lancé — une panne qui ressemble à un fichier corrompu.
       - name: Emballer (Linux)
         if: runner.os == 'Linux'
-        run: tar -C dist -czf "dist/Transcripteur-${{ matrix.nom }}.tar.gz" Transcripteur
+        run: |
+          tar -C dist -czf "dist/Transcripteur-${{ matrix.nom }}.tar.gz" Transcripteur
+          tar -C dist -czf "dist/Bibliotheque-${{ matrix.nom }}.tar.gz" Bibliotheque
 
       # Le paquet doit au moins démarrer et répondre. Une construction
       # qui réussit ne prouve rien : les pannes d'empaquetage — un
@@ -155,12 +168,21 @@ jobs:
         shell: bash
         run: python outils/eprouver_paquet.py
 
+      # Et la bibliothèque, dont tout l'intérêt est le poids : si une
+      # importation ajoutée sans y penser y ramène sherpa-onnx, elle
+      # passe de 34 Mo à 101 sans que rien ne cesse de marcher.
+      - name: Éprouver la bibliothèque
+        shell: bash
+        run: python outils/eprouver_bibliotheque.py
+
       - uses: actions/upload-artifact@v4
         with:
           name: Transcripteur-${{ matrix.nom }}
           path: |
             dist/Transcripteur-*.zip
             dist/Transcripteur-*.tar.gz
+            dist/Bibliotheque-*.zip
+            dist/Bibliotheque-*.tar.gz
           if-no-files-found: error
 
   publier:

@@ -510,6 +510,11 @@ let names = {};
 let ready = false;
 
 api('/api/health').then(h => {
+  /* La bibliothèque sert cette même page, et n'a ni clé ni traitement.
+     Lui réclamer une clé la bloquerait sur un écran qu'elle ne peut pas
+     franchir ; le marqueur sur <body> replie ce qui n'existe pas là-bas
+     plutôt que de l'afficher inerte. */
+  if (h.bibliotheque) { document.body.dataset.biblio = '1'; return; }
   ready = h.has_key;
   if (h.code_perime) banniereRedemarrer();
   if (!ready) askForKey();
