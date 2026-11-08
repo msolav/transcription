@@ -462,7 +462,7 @@ button{cursor:pointer;border:none;background:none}
       <button data-x="txt">Enregistrer .txt</button>
       <button data-x="srt">Sous-titres .srt</button>
       <button data-x="json">Données .json</button>
-      <button id="reread">Relire</button>
+      <button id="reread">Corriger</button>
       <button id="sum">Résumer</button>
       <button id="asread" hidden>Voir la version relue</button>
       <span class="said" id="said"></span>
@@ -595,9 +595,25 @@ let relOpts = null, relTimer = null, corrections = [];
 
 /* Le contexte saisi est retenu d'un panneau à l'autre : les sigles et les
    rôles valent pour la relecture comme pour le résumé, et personne n'a
-   envie de les retaper. */
-let contexteMemo = '';
+   envie de les retaper.
+
+   Et d'une séance à l'autre : c'est le seul texte que l'on écrit à la
+   main dans cette interface — sigles de l'organisme, noms des personnes,
+   objet de la réunion — et il ne changeait pas d'une réunion au mois
+   suivant. Tout le reste est déjà retenu : les clés par le trousseau,
+   les réglages par la base, le thème et la langue par le navigateur.
+   Lui seul se perdait au rechargement.
+
+   localStorage et non la base : c'est une commodité de saisie, propre à
+   ce navigateur, pas une donnée de l'application. */
+const CTX_CLE = 'transcripteur-contexte';
+let contexteMemo = (() => {
+  try { return localStorage.getItem(CTX_CLE) || ''; } catch (e) { return ''; }
+})();
 let modelesRelecture = null;
+// Les fiches des fournisseurs, retenues du dernier appel : l'écran de
+// saisie en a besoin sans refaire une requête.
+let fournisseursMemo = null;
 
 /* Le choix du modèle de relecture n'est pas un réglage de confort : un
    modèle à grand contexte lit la réunion entière d'un coup, un petit la
@@ -610,10 +626,16 @@ async function majModeles() {
   try { d = await api('/api/relecture/modeles'); } catch { return; }
   modelesRelecture = d.modeles;
   const choisi = sel.value || d.defaut;
+  /* Les modèles sans clé restent choisissables. Désactivés, ils
+     laissaient une ligne morte dans la liste : on la vise, rien ne se
+     passe, et rien ne dit comment y remédier. Les choisir ouvre
+     maintenant la saisie de la clé du bon fournisseur. */
   sel.innerHTML = d.modeles.map(m => `<option value="${m.cle}"
-    ${m.dispo ? '' : 'disabled'} ${m.cle === choisi && m.dispo ? 'selected' : ''}>
+    ${m.cle === choisi ? 'selected' : ''}>
     ${m.nom}${m.dispo ? '' : ' — clé manquante'}</option>`).join('');
+  fournisseursMemo = d.fournisseurs;
   const actuel = d.modeles.find(m => m.cle === sel.value) || {};
+  if (actuel.cle && !actuel.dispo) return panneauCle(d.fournisseurs, actuel.fournisseur);
   const manquants = d.modeles.filter(m => !m.dispo && m.gratuit);
   $('#rmodnote').innerHTML = (actuel.note || '')
     + (actuel.un_appel
@@ -627,19 +649,32 @@ async function majModeles() {
   if (lien) lien.onclick = (e) => { e.preventDefault(); panneauCle(d.fournisseurs); };
 }
 
-/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau. */
-function panneauCle(fiches) {
-  const f = fiches.google ? 'google' : Object.keys(fiches)[0];
+/* Saisie d'une clé pour un fournisseur donné, sans quitter le panneau.
+
+   `prefere` est le fournisseur du modèle qu'on vient de choisir. Sans
+   lui, on retombait toujours sur Google : choisir Claude Opus affichait
+   la marche à suivre pour obtenir une clé Gemini. */
+function panneauCle(fiches, prefere) {
+  const f = (prefere && fiches[prefere]) ? prefere
+    : (fiches.google ? 'google' : Object.keys(fiches)[0]);
   const fiche = fiches[f];
+  /* Gratuit ou payant se dit ici, d'après la fiche et non d'après une
+     phrase écrite une fois pour toutes : annoncer « gratuit, sans carte
+     bancaire » devant une clé Anthropic est un mensonge que la première
+     facture dément. */
+  const prix = fiche.gratuit
+    ? 'Gratuit, sans carte bancaire, sur'
+    : 'Compte payant, à l\'usage, sur';
   $('#rmodnote').innerHTML = `<div class="keyrow">
       <input type="password" id="kin" placeholder="${[].concat(fiche.prefixe).join(' ou ')}…"
              spellcheck="false" autocomplete="off">
       <button id="ksave">Enregistrer</button>
     </div>
-    <span class="hint">Gratuit, sans carte bancaire, sur
+    <span class="hint">Clé ${escapeHtml(fiche.nom)} requise pour ce modèle.
+    ${prix}
     <a href="https://${fiche.ou}" target="_blank" rel="noopener">${fiche.ou}</a>.
     La clé est rangée dans le trousseau du système et n'est envoyée qu'à
-    ${fiche.nom}.</span>`;
+    ${escapeHtml(fiche.nom)}.</span>`;
   $('#kin').focus();
   $('#ksave').onclick = async () => {
     const b = $('#ksave');
@@ -658,6 +693,7 @@ function panneauCle(fiches) {
 function ctx() {
   const champ = $('#rctx') || $('#sctx');
   contexteMemo = champ ? champ.value.trim() : contexteMemo;
+  try { localStorage.setItem(CTX_CLE, contexteMemo); } catch (e) {}
   return contexteMemo;
 }
 
@@ -741,8 +777,24 @@ function pollRelecture() {
     const r = fresh && fresh.relecture;
     if (!r) return;
     if (r.status === 'running') {
-      $('#panneau').innerHTML = `<h4>Relecture en cours</h4><pre>${
-        escapeHtml((r.notes || []).join('\n') || 'lecture des premiers blocs…')}</pre>`;
+      /* Le cadre est posé une fois, et seules les lignes changent
+         ensuite. Réécrire tout le panneau à chaque sondage détruisait
+         le bouton d'arrêt une fois et demie par seconde : le clic
+         tombait entre deux reconstructions. */
+      if (!$('#relnotes')) {
+        $('#panneau').innerHTML = `<h4>Relecture en cours</h4>
+          <pre id="relnotes" data-no-i18n lang="fr"></pre>
+          <div class="opts"><button id="relstop">Arrêter</button></div>`;
+        $('#relstop').onclick = async () => {
+          const b = $('#relstop');
+          b.disabled = true; b.textContent = 'Arrêt…';
+          await api(`/api/jobs/${job.id}/relire/annuler`, { method: 'POST' })
+            .catch(() => {});
+        };
+      }
+      const lignes = (r.notes || []).join('\n') || 'lecture des premiers blocs…';
+      const boite = $('#relnotes');
+      if (boite.dataset.t !== lignes) { boite.dataset.t = lignes; boite.textContent = lignes; }
       return;
     }
     clearInterval(relTimer);
@@ -752,6 +804,15 @@ function pollRelecture() {
       return;
     }
     corrections = r.corrections || [];
+    /* Arrêtée : ce qui a été trouvé avant l'arrêt est proposé quand même
+       — une passe d'attribution terminée vaut quelque chose même si l'on
+       a coupé avant celle du texte. Sans correction, on le dit. */
+    if (r.status === 'cancelled' && !corrections.length) {
+      $('#panneau').innerHTML = `<h4>Relecture arrêtée</h4>
+        <p>Aucune correction n'a été trouvée avant l'arrêt. Le transcript
+        est inchangé.</p>`;
+      return;
+    }
     showCorrections();
   }, 1500);
 }
@@ -1144,7 +1205,13 @@ let marks = [];
    sur la dernière minute, ce qui reflète l'étape en cours.
 
    Rien n'est affiché tant que la mesure n'est pas assez large pour être
-   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste. */
+   honnête : mieux vaut pas d'estimation qu'une estimation fantaisiste.
+
+   Cette pente ne vaut que si la barre avance en proportion du temps.
+   C'est pipeline.repartir() qui s'en charge, en découpant la barre selon
+   le coût mesuré de chaque étape. Tant qu'elle donnait 3 % au nettoyage
+   du son pour plus du dixième du travail, la pente lue pendant cette
+   étape annonçait des heures imaginaires. */
 function eta(ratio) {
   const now = Date.now();
   marks.push([now, ratio]);
@@ -1155,9 +1222,17 @@ function eta(ratio) {
   if (span < 15 || gained <= 0.002) return '';
   const left = (1 - ratio) / (gained / span);
   if (!isFinite(left) || left < 5) return '';
-  if (left > 5400) return ' — plus d\'une heure restante';
   const mins = Math.round(left / 60);
   if (mins < 1) return ' — moins d\'une minute restante';
+  /* Un chiffre, même grand, plutôt que « plus d'une heure » : sur un
+     enregistrement de trois heures, ce plafond cachait une attente de
+     quatre heures derrière une phrase qui en annonçait une. Qui lit
+     « encore 2 h 40 » peut décider de laisser tourner la nuit ; qui lit
+     « plus d'une heure » revient dans une heure pour rien. */
+  if (mins >= 60) {
+    const h = Math.floor(mins / 60), m = mins % 60;
+    return ` — encore ${h} h ${String(m).padStart(2, '0')} environ`;
+  }
   return ` — encore ${mins} min environ`;
 }
 

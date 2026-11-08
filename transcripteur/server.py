@@ -292,6 +292,13 @@ def health() -> dict:
         "models_ready": assets.models_ready(),
         # Vrai quand des fichiers ont changé depuis le démarrage.
         "code_perime": _empreinte_code() > _CODE_CHARGE + 1.0,
+        # Le coût de chaque étape, en multiple de la durée de
+        # l'enregistrement. L'interface s'en sert pour annoncer le temps
+        # AVANT de lancer, et ce que coûte chaque option : « séparer les
+        # voix, +46 min » se décide bien mieux avant deux heures
+        # d'attente qu'après. Une seule source, celle qui découpe aussi
+        # la barre de progression.
+        "couts": pipeline.COUT,
     }
 
 
@@ -423,8 +430,15 @@ def modeles_relecture() -> dict:
         })
     # Les utilisables d'abord, puis les gratuits.
     liste.sort(key=lambda x: (not x["dispo"], not x["gratuit"]))
+    # La fiche de chaque fournisseur, augmentée de ce que l'écran de
+    # saisie doit dire : une clé Anthropic n'est pas gratuite, et
+    # l'annoncer comme telle serait un mensonge que la facture dément.
+    fiches = {}
+    for nom, f in config.FOURNISSEURS.items():
+        fiches[nom] = dict(f, gratuit=bool(
+            fournisseurs.CLES.get(nom, {}).get("gratuit")))
     return {"modeles": liste, "defaut": fournisseurs.modele_par_defaut(cles),
-            "fournisseurs": config.FOURNISSEURS}
+            "fournisseurs": fiches}
 
 
 @app.get("/api/models")
@@ -531,9 +545,24 @@ def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
     if not job:
         return
 
-    def note(message: str) -> None:
+    def note(message: str, remplacer: bool = False) -> None:
+        """Ajoute une ligne au journal, ou récrit la dernière.
+
+        Le décompte d'une attente de quota s'écrit une fois par seconde :
+        empilé, il chasserait tout le reste du journal en une minute.
+        Remplacé, il tient sur sa ligne et le contexte reste lisible."""
         with _lock:
-            job["relecture"]["notes"] = (job["relecture"]["notes"] + [message])[-8:]
+            lignes = list(job["relecture"]["notes"])
+            if remplacer and lignes:
+                lignes[-1] = message
+            else:
+                lignes.append(message)
+            job["relecture"]["notes"] = lignes[-12:]
+
+    def stop() -> bool:
+        with _lock:
+            r = job.get("relecture") or {}
+        return bool(r.get("cancel"))
 
     try:
         blocs, noms = job["blocks"], job["names"]
@@ -541,14 +570,23 @@ def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
         if attribution:
             corrections += relecture.corriger_attribution(
                 blocs, noms, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte)
+                modele, note=note, contexte=contexte, stop=stop)
         if texte:
             corrections += relecture.corriger_texte(
                 blocs, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte)
+                modele, note=note, contexte=contexte, stop=stop)
         apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
         with _lock:
             job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
+    except relecture.Annulee:
+        # Les corrections déjà trouvées sont conservées : une passe
+        # d'attribution terminée vaut quelque chose même si l'on arrête
+        # avant celle du texte, et l'interface peut les proposer.
+        apercu = (relecture.appliquer(blocs, corrections, noms)
+                  if corrections else blocs)
+        with _lock:
+            job["relecture"].update(status="cancelled", corrections=corrections,
+                                    blocks=apercu, cancel=False)
     except Exception as exc:  # noqa: BLE001
         with _lock:
             job["relecture"].update(status="error", error=str(exc))
@@ -956,6 +994,25 @@ def cancel_job(job_id: str) -> dict:
     if job["status"] in ("queued", "running"):
         _set(job_id, cancel=True, stage="Arrêt en cours…")
     return {"status": _jobs[job_id]["status"]}
+
+
+@app.post("/api/jobs/{job_id}/relire/annuler")
+def annuler_relecture(job_id: str) -> dict:
+    """Demande l'arrêt de la relecture en cours.
+
+    Un drapeau, relu entre chaque fenêtre et pendant les attentes de
+    quota. Ces attentes durent de vingt à soixante-quinze secondes et
+    c'est là qu'on veut arrêter, puisque c'est là qu'il ne se passe
+    rien : elles sont donc découpées en quarts de seconde."""
+    with _lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Tâche inconnue.")
+        r = job.get("relecture") or {}
+        if r.get("status") == "running":
+            r["cancel"] = True
+            r["notes"] = (r.get("notes") or []) + ["arrêt demandé"]
+        return {"status": r.get("status") or "none"}
 
 
 @app.delete("/api/jobs/{job_id}")

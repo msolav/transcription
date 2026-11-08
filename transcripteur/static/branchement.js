@@ -218,9 +218,30 @@
   }
 
   function terminer() {
-    // Rechargement : les clés nouvelles changent l'état de la page
-    // entière (modèles de relecture, bouton des réglages, bandeau).
-    location.reload();
+    /* Les clés nouvelles changent l'état de la page entière — modèles
+       de relecture, bouton des réglages, bandeau de simulation — et le
+       plus court était de tout recharger. Trop court : un rechargement
+       ne s'interpole pas, donc l'écran de dépôt surgissait au lieu de
+       paraître, et tout ce qui n'était qu'en mémoire disparaissait avec
+       la page.
+
+       La page expose maintenant `apresCles()`, qui vide les caches qui
+       dépendent des clés sans rien détruire d'autre. Le repli de
+       l'écran des clés est celui du bouton « Retour », déjà réglé : la
+       classe `back` dévoile la capture pendant que l'écran s'efface,
+       et le CSS fait le reste. Le rechargement reste en repli pour une
+       page qui n'aurait pas la fonction. */
+    if (typeof window.apresCles !== 'function') return location.reload();
+    window.apresCles();
+    const sa = document.getElementById('stage-area');
+    if (!sa) return;
+    document.body.classList.add('back');
+    setTimeout(() => {
+      sa.innerHTML = '';
+      const d = document.getElementById('dock');
+      if (d) d.hidden = true;
+      document.body.classList.remove('back');
+    }, 1100);
   }
 
   function glisser(vers, sens) {

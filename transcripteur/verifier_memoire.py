@@ -219,5 +219,70 @@ for nom in ("index.html", "index-vm.html"):
     ok(f"{nom} : la rangée de dépôt existe",
        'class="pickrow"' in html or 'id="dropzone"' in html)
 
+# ---------------------------------------------------------------------
+# Le balayage des dossiers de travail abandonnés.
+#
+# Ce qui a mené à l'écrire : 5,7 Go de restes sur une machine, le disque
+# plein, et une transcription de deux heures et demie perdue à la fin du
+# nettoyage du son. Un travail crée son dossier avant de commencer et ne
+# le range qu'en arrivant au bout ; tout ce qui s'arrête avant — panne,
+# arrêt demandé, fenêtre fermée — laisse l'audio d'origine et sa
+# conversion, soit environ 290 Mo par heure d'enregistrement.
+#
+# Le risque du remède est pire que le mal : un balayage trop large
+# efface le travail de quelqu'un. D'où les quatre cas, et surtout les
+# trois derniers.
+import shutil
+import time as _t
+
+_bac = tempfile.mkdtemp(prefix="verif-balayage-")
+_avant = os.environ.get("TRANSCRIPTEUR_DONNEES")
+os.environ["TRANSCRIPTEUR_DONNEES"] = _bac
+try:
+    import importlib
+
+    from transcripteur import memoire
+    importlib.reload(memoire)
+    memoire.preparer()
+    _s = memoire.seances_dir()
+    _s.mkdir(parents=True, exist_ok=True)
+
+    _vieux = _t.time() - 24 * 3600
+    _cas = {}
+    for _nom, _age, _poids in [("reste_vieux", _vieux, 5_000_000),
+                               ("reste_recent", _t.time(), 3_000_000),
+                               ("en_cours", _vieux, 4_000_000),
+                               ("gardee", _vieux, 2_000_000)]:
+        _d = _s / _nom
+        _d.mkdir()
+        _f = _d / "audio16k.wav"
+        _f.write_bytes(b"\0" * _poids)
+        os.utime(_f, (_age, _age))
+        os.utime(_d, (_age, _age))
+        _cas[_nom] = _d
+
+    memoire.enregistrer({
+        "id": "gardee", "filename": "g.m4a", "duration": 1.0,
+        "blocks": [{"start": 0, "end": 1, "text": "bonjour"}],
+        "speakers": [], "names": {}, "relecture": {},
+        "source": "", "video": False})
+
+    _libere = memoire.balayer(actifs={"en_cours"})
+    ok("balayage : un reste d'hier part", not _cas["reste_vieux"].exists())
+    ok("balayage : un dossier récent reste", _cas["reste_recent"].exists(),
+       "une autre fenêtre peut être en train d'y écrire")
+    ok("balayage : un travail en cours reste", _cas["en_cours"].exists(),
+       "effacer sous les pieds d'un calcul en cours")
+    ok("balayage : une séance enregistrée reste", _cas["gardee"].exists(),
+       "c'est le travail de quelqu'un")
+    ok("balayage : la place récupérée est annoncée juste",
+       _libere == 5_000_000, f"{_libere} octets")
+finally:
+    if _avant is None:
+        os.environ.pop("TRANSCRIPTEUR_DONNEES", None)
+    else:
+        os.environ["TRANSCRIPTEUR_DONNEES"] = _avant
+    shutil.rmtree(_bac, ignore_errors=True)
+
 print(f"\n{'MÉMOIRE CONFORME' if not fails else str(len(fails)) + ' PROBLÈME(S)'}")
 sys.exit(1 if fails else 0)

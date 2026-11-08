@@ -29,59 +29,79 @@
 
   var NOMS = { mac: 'macOS', windows: 'Windows', linux: 'Linux' };
 
-  /* Gestes d'ouverture, par système. Les paquets ne sont pas signés :
-     chaque système prévient à sa façon, et le geste diffère. */
+  /* Gestes d'ouverture, par système. Chaque pas porte ce qu'il faut
+     faire et, sous lui, ce qu'il faut savoir pour le faire — rien n'est
+     replié derrière un bouton : le lecteur est ici parce qu'il est
+     bloqué, et un détail caché au moment du blocage ne sert personne. */
   var OUVRIR = {
     mac: {
-      fr: ['Déplacer Transcripteur.app dans Applications.',
-           'Double-cliquer. macOS refuse : cliquer « Terminé ».',
-           'Réglages Système → Confidentialité et sécurité, section Sécurité.',
-           '« Ouvrir quand même », puis s’authentifier.',
-           'Le trousseau demande le mot de passe de session : « Toujours autoriser ».'],
-      en: ['Move Transcripteur.app to Applications.',
-           'Double-click it. macOS refuses: click Done.',
-           'System Settings → Privacy & Security, Security section.',
-           'Click Open Anyway, then authenticate.',
-           'The keychain asks for your login password: choose Always Allow.'],
+      fr: [['Déplacer Transcripteur.app dans Applications.', ''],
+           ['Double-cliquer. macOS refuse l’ouverture : cliquer « Terminé ».',
+            'Le paquet n’est pas signé. Depuis macOS 15, le clic droit → '
+            + 'Ouvrir ne suffit plus.'],
+           ['Réglages Système → Confidentialité et sécurité, section Sécurité.',
+            'Le bouton n’apparaît que dans l’heure suivant une tentative. '
+            + 'S’il manque, double-cliquer de nouveau sur l’application.'],
+           ['« Ouvrir quand même », puis s’authentifier.', ''],
+           ['Le trousseau demande le mot de passe de session : « Toujours autoriser ».',
+            'La demande revient après chaque mise à jour : la signature change.']],
+      en: [['Move Transcripteur.app to Applications.', ''],
+           ['Double-click it. macOS refuses to open it: click Done.',
+            'The package is unsigned. Since macOS 15, right-click → Open no '
+            + 'longer works.'],
+           ['System Settings → Privacy & Security, Security section.',
+            'The button only appears within an hour of a launch attempt. If '
+            + 'it is missing, double-click the app again.'],
+           ['Click Open Anyway, then authenticate.', ''],
+           ['The keychain asks for your login password: choose Always Allow.',
+            'The prompt returns after each update: the signature changes.']],
     },
     windows: {
-      fr: ['Décompresser le dossier.',
-           'Lancer Transcripteur.exe.',
-           'Si Windows affiche un avertissement : Informations complémentaires, puis Exécuter quand même.'],
-      en: ['Extract the folder.',
-           'Run Transcripteur.exe.',
-           'If Windows shows a warning: More info, then Run anyway.'],
+      fr: [['Décompresser le dossier.', ''],
+           ['Lancer Transcripteur.exe.', ''],
+           ['Écran bleu « Windows a protégé votre ordinateur » : Informations '
+            + 'complémentaires, puis Exécuter quand même.',
+            'Le paquet n’est pas signé. Une seule fois par version.']],
+      en: [['Extract the folder.', ''],
+           ['Run Transcripteur.exe.', ''],
+           ['Blue screen "Windows protected your PC": More info, then Run anyway.',
+            'The package is unsigned. Once per version.']],
     },
     linux: {
-      fr: ['tar -xzf Transcripteur-Linux.tar.gz',
-           'cd Transcripteur && ./Transcripteur',
-           'WebKitGTK est requis : libwebkit2gtk-4.1 sur Debian et Ubuntu.'],
-      en: ['tar -xzf Transcripteur-Linux.tar.gz',
-           'cd Transcripteur && ./Transcripteur',
-           'WebKitGTK is required: libwebkit2gtk-4.1 on Debian and Ubuntu.'],
+      fr: [['tar -xzf Transcripteur-Linux.tar.gz', ''],
+           ['cd Transcripteur && ./Transcripteur', ''],
+           ['WebKitGTK est requis.',
+            'libwebkit2gtk-4.1 sur Debian et Ubuntu. Sans lui, l’interface '
+            + 's’ouvre dans le navigateur.']],
+      en: [['tar -xzf Transcripteur-Linux.tar.gz', ''],
+           ['cd Transcripteur && ./Transcripteur', ''],
+           ['WebKitGTK is required.',
+            'libwebkit2gtk-4.1 on Debian and Ubuntu. Without it, the '
+            + 'interface opens in the browser.']],
     },
   };
 
-  var POURQUOI = {
-    fr: 'Les paquets ne sont pas signés : 99 $ US par an chez Apple, un '
-      + 'certificat payant chez Microsoft. Depuis macOS 15, le clic droit → '
-      + 'Ouvrir ne suffit plus. Le bouton « Ouvrir quand même » n’apparaît '
-      + 'dans les Réglages que dans l’heure suivant une tentative : s’il '
-      + 'manque, double-cliquer de nouveau sur l’application. La demande du '
-      + 'trousseau revient après chaque mise à jour, pour la même raison.',
-    en: 'The packages are unsigned: US$99 a year from Apple, a paid '
-      + 'certificate from Microsoft. Since macOS 15, right-click → Open no '
-      + 'longer works. The Open Anyway button only appears in Settings '
-      + 'within an hour of a launch attempt: if it is missing, double-click '
-      + 'the app again. The keychain prompt returns after each update, for '
-      + 'the same reason.',
-  };
-
-  var PUCE = {
-    fr: 'Menu Pomme → À propos de ce Mac. La ligne « Puce » indique M1, M2, '
-      + 'M3 ou M4 ; « Processeur » indique Intel.',
-    en: 'Apple menu → About This Mac. A "Chip" line means M1, M2, M3 or M4; '
-      + 'a "Processor" line means Intel.',
+  /* La création de la clé Groq. Même source que l'application, recopiée
+     ici parce que le site est lu avant l'installation. */
+  var CLE = {
+    fr: [['Ouvrir console.groq.com/keys.', ''],
+         ['Se connecter avec Google ou une adresse courriel.',
+          'Aucune carte bancaire n’est demandée.'],
+         ['Bouton « Create API Key ».',
+          'Le nom demandé est libre : il sert à identifier la clé dans la console.'],
+         ['Copier la clé.',
+          'Format : gsk_… Groq ne l’affiche qu’une fois. En cas de perte, en créer une autre.'],
+         ['La coller dans l’application, au premier démarrage.',
+          'Elle est rangée dans le trousseau du système et n’est transmise qu’à Groq.']],
+    en: [['Open console.groq.com/keys.', ''],
+         ['Sign in with Google or an email address.',
+          'No credit card is required.'],
+         ['Button marked "Create API Key".',
+          'The name is free-form: it only identifies the key in the console.'],
+         ['Copy the key.',
+          'Format: gsk_… Groq displays it once only. If lost, create another.'],
+         ['Paste it into the app on first launch.',
+          'It is stored in the system keychain and is sent to Groq only.']],
   };
 
   /* ------------------------------------------------ les écrans */
@@ -99,16 +119,6 @@
     etat.i = 0;
     peindre(1);
     $('#retour').onclick = reculer;
-    document.addEventListener('click', function (e) {
-      var b = e.target.closest('.info');
-      document.querySelectorAll('.info[aria-expanded="true"]').forEach(function (x) {
-        if (x !== b) x.setAttribute('aria-expanded', 'false');
-      });
-      if (b) {
-        b.setAttribute('aria-expanded',
-          b.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
-      }
-    });
     document.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') reculer();
     });
@@ -169,10 +179,14 @@
     });
   }
 
-  function bulle(texte) {
-    return '<span class="tipwrap"><button class="info" type="button"'
-      + ' aria-expanded="false" aria-label="' + L('Détails', 'Details')
-      + '">i</button><span class="tipbody">' + esc(texte) + '</span></span>';
+  /* Une suite de gestes numérotés. Chaque entrée est [geste, détail] ;
+     le détail, quand il y en a un, s'écrit sous le geste. */
+  function pas(liste) {
+    return '<dl class="spec pas">' + liste.map(function (p, i) {
+      return '<dt>' + String(i + 1).padStart(2, '0') + '</dt><dd><b>'
+        + esc(p[0]) + '</b>'
+        + (p[1] ? '<i>' + esc(p[1]) + '</i>' : '') + '</dd>';
+    }).join('') + '</dl>';
   }
 
   var FLECHE = '<svg viewBox="0 0 24 24" aria-hidden="true">'
@@ -242,8 +256,11 @@
       + '<h2>' + L('Quelle puce ?', 'Which chip?') + '</h2>'
       + '<p class="dit">' + L(
         'Les deux paquets ne sont pas interchangeables : le mauvais ne '
-        + 'démarre pas.', 'The two packages are not interchangeable: the '
-        + 'wrong one will not start.') + ' ' + bulle(L(PUCE.fr, PUCE.en))
+        + 'démarre pas. Menu Pomme → À propos de ce Mac : la ligne '
+        + '« Puce » indique M1, M2, M3 ou M4 ; « Processeur » indique Intel.',
+        'The two packages are not interchangeable: the wrong one will not '
+        + 'start. Apple menu → About This Mac: a "Chip" line means M1, M2, '
+        + 'M3 or M4; a "Processor" line means Intel.')
       + '</p>'
       + '<div class="choix">'
       + puce2('mac-silicon', 'Apple M1 – M4', L('Puces Apple', 'Apple chips'))
@@ -258,32 +275,27 @@
 
   function vueOuvrir() {
     var os = etat.os || 'mac';
-    var pas = OUVRIR[os][(window.vm && vm.lang ? vm.lang.get() : 'fr')] || OUVRIR[os].fr;
+    var lg = (window.vm && vm.lang ? vm.lang.get() : 'fr');
     return '<span class="etiq">' + NOMS[os] + '</span>'
       + '<h2>' + L('Ouvrir', 'Open') + '</h2>'
-      + '<dl class="spec">'
-      + pas.map(function (p, i) {
-        return '<dt>' + String(i + 1).padStart(2, '0') + '</dt><dd>'
-          + esc(p) + '</dd>';
-      }).join('')
-      + '</dl>'
-      + '<p class="dit">' + L('Une seule fois.', 'Once only.') + ' '
-      + bulle(L(POURQUOI.fr, POURQUOI.en)) + '</p>'
+      + pas(OUVRIR[os][lg] || OUVRIR[os].fr)
       + '<button type="button" class="gros" data-x="suivant">'
       + L('Suite', 'Next') + '</button>';
   }
 
   function vueCle() {
+    var lg = (window.vm && vm.lang ? vm.lang.get() : 'fr');
     return '<span class="etiq">' + L('Clé d’API', 'API key') + '</span>'
       + '<h2>Groq</h2>'
       + '<p class="dit">' + L(
         'La reconnaissance de la parole passe par Groq. Une clé est requise : '
-        + 'gratuite, sans carte bancaire. L’application la demande au premier '
-        + 'démarrage et guide la création, étape par étape.',
+        + 'gratuite, sans carte bancaire. L’application reprend ces étapes au '
+        + 'premier démarrage.',
         'Speech recognition goes through Groq. A key is required: free, no '
-        + 'credit card. The app asks for it on first launch and walks through '
-        + 'creating one, step by step.') + '</p>'
-      + '<a class="gros" href="/aide/">' + L('Marche à suivre', 'Instructions')
+        + 'credit card. The app repeats these steps on first launch.') + '</p>'
+      + pas(CLE[lg] || CLE.fr)
+      + '<a class="gros" href="https://console.groq.com/keys" target="_blank"'
+      + ' rel="noopener">' + L('Ouvrir console.groq.com', 'Open console.groq.com')
       + '</a>';
   }
 

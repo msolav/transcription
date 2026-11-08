@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -154,6 +156,54 @@ def _co():
 def preparer() -> None:
     with _co() as co:
         co.executescript(SCHEMA)
+    balayer()
+
+
+# Un dossier de travail plus vieux que cela n'appartient plus à personne.
+# Généreux à dessein : la seule erreur coûteuse ici serait d'effacer le
+# travail d'une autre fenêtre encore ouverte. Deux instances tournant en
+# même temps est un cas réel — il y en avait deux sur cette machine — et
+# pendant une longue séparation des voix, rien n'est écrit dans le
+# dossier, donc sa date ne bouge pas de toute la durée du calcul.
+AGE_RESTE = 12 * 3600
+
+
+def balayer(actifs: set[str] | None = None, age: float = AGE_RESTE) -> int:
+    """Efface les dossiers de travail qui n'appartiennent plus à rien.
+
+    Un travail crée son dossier avant de commencer et n'y renonce qu'en
+    arrivant au bout : interrompu, en panne, ou l'application fermée
+    pendant qu'il tournait, le dossier reste. Il contient l'audio
+    d'origine et sa conversion en 16 kHz, soit environ 290 Mo par heure
+    d'enregistrement — quatre essais abandonnés sur une réunion de deux
+    heures et demie suffisent à remplir un disque, ce qui est arrivé.
+
+    La base fait foi : une séance qui compte y a une ligne. Tout dossier
+    sans ligne est un reste, sauf ceux d'un travail en cours — que
+    l'appelant énumère — et ceux d'il y a moins de douze heures.
+
+    Rend le nombre d'octets récupérés."""
+    racine = seances_dir()
+    if not racine.exists():
+        return 0
+    with _co() as co:
+        connues = {r[0] for r in co.execute("SELECT id FROM seances")}
+    garder = connues | (actifs or set())
+    limite = time.time() - age
+    liberes = 0
+    for d in racine.iterdir():
+        if not d.is_dir() or d.name in garder:
+            continue
+        try:
+            recent = max((f.stat().st_mtime for f in d.rglob("*")),
+                         default=d.stat().st_mtime)
+        except OSError:
+            continue
+        if recent > limite:
+            continue
+        liberes += _poids(d)
+        shutil.rmtree(d, ignore_errors=True)
+    return liberes
 
 
 def _maintenant() -> str:

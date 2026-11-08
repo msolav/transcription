@@ -260,6 +260,59 @@ class RelectureError(RuntimeError):
 RelectureError = FournisseurError
 
 
+class Annulee(Exception):
+    """L'arrêt a été demandé pendant la relecture.
+
+    Une exception, et non une valeur de retour : la relecture est une
+    pile de boucles imbriquées — fenêtres, essais, attentes de quota — et
+    un code de retour devrait être relu et propagé à chaque étage. Il
+    suffit d'en oublier un pour que l'arrêt soit sans effet, ce qui est
+    exactement la panne qu'on corrige ici."""
+
+
+def _halte(stop) -> None:
+    """Lève si l'arrêt est demandé. Appelée partout où l'on peut rendre
+    la main sans laisser de travail à moitié fait."""
+    if stop and stop():
+        raise Annulee()
+
+
+def _dire(note, message: str, remplacer: bool = False) -> None:
+    """Écrit une ligne au journal, en remplaçant la précédente si demandé.
+
+    Tolérant sur la signature : les appelants anciens et les essais
+    passent une fonction à un seul argument. Mieux vaut perdre le
+    remplacement que lever une TypeError au milieu d'une relecture."""
+    if not note:
+        return
+    try:
+        note(message, remplacer)
+    except TypeError:
+        note(message)
+
+
+def _patienter(secondes: float, stop=None, note=None) -> None:
+    """Attend, mais en restant à l'écoute, et en le disant.
+
+    L'attente de quota dure de vingt à soixante-quinze secondes. Dormir
+    d'un bloc rendait « Arrêter » muet pendant tout ce temps — et c'est
+    précisément le moment où l'on veut arrêter, puisque c'est le moment
+    où il ne se passe rien.
+
+    Le décompte sert au même constat vu de l'autre côté : une ligne figée
+    pendant une minute ne se distingue pas d'un programme planté."""
+    fin = time.time() + secondes
+    dernier = -1
+    while time.time() < fin:
+        _halte(stop)
+        reste = int(fin - time.time()) + 1
+        if reste != dernier:
+            dernier = reste
+            _dire(note, f"limite par minute atteinte, reprise dans {reste} s", True)
+        time.sleep(min(0.25, max(0.0, fin - time.time())))
+    _halte(stop)
+
+
 def _genre_limite_inutilise(exc: Exception) -> str:
     """« jour », « minute » ou « » — la distinction commande la conduite.
 
@@ -344,9 +397,10 @@ def _client(api_key: str):
 
 def _appeler(api_key: str, modele: str, systeme: str, requete: str,
              json_attendu: bool = True, note=None, plafond: int = 0,
-             schema: dict | None = None) -> str:
+             schema: dict | None = None, stop=None) -> str:
     """Un appel, en patientant si la limite est celle de la minute."""
     for essai in range(REESSAIS):
+        _halte(stop)
         try:
             return fournisseurs.appeler(api_key, modele, systeme, requete,
                                         schema=schema, note=note,
@@ -355,9 +409,9 @@ def _appeler(api_key: str, modele: str, systeme: str, requete: str,
             if essai == REESSAIS - 1:
                 raise
             delai = min(max(pause.secondes + 1.0, ATTENTE_MIN), ATTENTE_MAX)
-            if note:
-                note(f"limite par minute atteinte, reprise dans {delai:.0f} s")
-            time.sleep(delai)
+            # Le décompte est écrit par _patienter, seconde par seconde,
+            # en remplaçant sa propre ligne.
+            _patienter(delai, stop, note)
     raise FournisseurError("Appel impossible.")
 
 
@@ -480,7 +534,7 @@ def _plafond_attribution(combien: int) -> int:
 
 
 def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
-                          contexte, note):
+                          contexte, note, stop=None):
     """Le verdict du modèle sur une fenêtre, vérifié puis traduit.
 
     Rend la liste brute des jugements. La couverture est contrôlée par
@@ -493,24 +547,30 @@ def _demander_attribution(blocs, noms, connus, debut, fin, api_key, modele,
                + "\n".join(lignes))
     brut = _appeler(api_key, modele, SYSTEME_ATTRIBUTION, requete, note=note,
                     plafond=_plafond_attribution(fin - debut),
-                    schema=fournisseurs.SCHEMA_ATTRIBUTION)
+                    schema=fournisseurs.SCHEMA_ATTRIBUTION, stop=stop)
     return fournisseurs.lire_json(brut).get("blocs", [])
 
 
 def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                          modele: str = MODELE_DEFAUT, note=None,
-                         contexte: str = "") -> list[dict]:
+                         contexte: str = "", stop=None) -> list[dict]:
     """Corrections d'attribution proposées, sans rien appliquer."""
     connus = sorted({_nom(b, noms) for b in blocs})
     vers_id = {_nom(b, noms): b["speaker"] for b in blocs}
     corrections: list[dict] = []
+    _dire(note, f"attribution : {len(blocs)} blocs, "
+                f"{len(connus)} voix à départager")
 
     tentees = perdues = 0
     for _, debut, fin in _decoupage(blocs, modele, note):
+        _halte(stop)
         tentees += 1
         try:
             verdicts = _demander_attribution(blocs, noms, connus, debut, fin,
-                                             api_key, modele, contexte, note)
+                                             api_key, modele, contexte, note,
+                                             stop)
+        except Annulee:
+            raise                       # jamais confondu avec une panne
         except Exception as exc:  # noqa: BLE001
             if _est_quota(exc):
                 raise
@@ -552,7 +612,8 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
                     continue
                 corrections.append({"type": "frontiere", "bloc": index, "mots": n})
         if note:
-            note(f"relecture de l'attribution : {fin}/{len(blocs)} blocs")
+            note(f"attribution : {fin}/{len(blocs)} blocs, "
+                 f"{len(corrections)} correction(s) trouvée(s)")
 
     # Hors de la boucle : une fenêtre perdue y sort par `continue` et
     # sauterait le contrôle. Avec un seul grand appel, perdre cette
@@ -568,7 +629,7 @@ def corriger_attribution(blocs: list[dict], noms: dict, api_key: str,
 
 
 def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
-                    profondeur: int = 0):
+                    profondeur: int = 0, stop=None):
     """Une fenêtre de correction, coupée en deux si la réponse déborde.
 
     La passe de texte renvoie chaque bloc réécrit en entier : sur une
@@ -580,8 +641,11 @@ def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
     try:
         brut = _appeler(api_key, modele, SYSTEME_TEXTE,
                         _entete(contexte) + "\n".join(lignes), note=note,
-                        plafond=JETONS_TEXTE, schema=fournisseurs.SCHEMA_TEXTE)
+                        plafond=JETONS_TEXTE, schema=fournisseurs.SCHEMA_TEXTE,
+                        stop=stop)
         return fournisseurs.lire_json(brut).get("blocs", [])
+    except Annulee:
+        raise          # ne jamais prendre un arrêt pour une réponse tronquée
     except Exception as exc:  # noqa: BLE001
         if _est_quota(exc):
             raise
@@ -591,23 +655,29 @@ def _demander_texte(blocs, debut, fin, api_key, modele, contexte, note,
             if note:
                 note(f"réponse trop longue, fenêtre {debut}-{fin} coupée en deux")
             return (_demander_texte(blocs, debut, milieu, api_key, modele,
-                                    contexte, note, profondeur + 1)
+                                    contexte, note, profondeur + 1, stop)
                     + _demander_texte(blocs, milieu, fin, api_key, modele,
-                                      contexte, note, profondeur + 1))
+                                      contexte, note, profondeur + 1, stop))
         raise
 
 
 def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
-                   note=None, contexte: str = "") -> list[dict]:
+                   note=None, contexte: str = "", stop=None) -> list[dict]:
     """Corrections de texte proposées, filtrées sur leur fidélité."""
     corrections: list[dict] = []
     refusees = 0
+    _dire(note, f"texte : {len(blocs)} blocs à relire")
 
     for _, debut, fin in _fenetres(len(blocs), FENETRE_TEXTE):
+        _halte(stop)
         try:
             proposees = _demander_texte(blocs, debut, fin, api_key, modele,
-                                        contexte, note)
-        except QuotaError:
+                                        contexte, note, stop=stop)
+        except (QuotaError, Annulee):
+            # Annulee AVANT le filet à tout attraper. Sans cette ligne,
+            # l'arrêt est pris pour une fenêtre en panne, noté comme tel
+            # et la boucle enchaîne : le bouton ne fait rien, et rien ne
+            # dit pourquoi. C'est exactement la panne qu'on corrige.
             raise
         except Exception as exc:  # noqa: BLE001
             if note:
@@ -631,7 +701,8 @@ def corriger_texte(blocs: list[dict], api_key: str, modele: str = MODELE_DEFAUT,
             corrections.append({"type": "texte", "bloc": index,
                                 "avant": origine, "apres": texte.strip()})
         if note:
-            note(f"relecture du texte : {fin}/{len(blocs)} blocs")
+            note(f"texte : {fin}/{len(blocs)} blocs, "
+                 f"{len(corrections)} correction(s) trouvée(s)")
 
     if refusees and note:
         note(f"{refusees} réécriture(s) trop libre(s) écartée(s)")

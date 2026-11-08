@@ -74,6 +74,30 @@ MODELES = {
         "note": "Gratuit, voit la réunion entière d'un coup, et répond "
                 "de façon fiable. C'est le choix par défaut.",
     },
+    # ---- OpenAI : payant, et assez large pour le transcript entier
+    #
+    # Prix relevés sur la page de tarification d'OpenAI, par million de
+    # jetons, tarif standard sous 272 000 jetons d'entrée. Les agrégateurs
+    # tiers donnaient encore la génération précédente : c'est la source
+    # du fournisseur qui fait foi.
+    "gpt-6.1-sol": {
+        "nom": "GPT-6.1 Sol", "fournisseur": "openai",
+        "id": "gpt-6.1-sol", "contexte": 272_000, "sortie": 32_000,
+        "prix": (2.0, 10.0),
+        "note": "Le plus capable chez OpenAI. Voit la réunion entière.",
+    },
+    "gpt-6.1-terra": {
+        "nom": "GPT-6.1 Terra", "fournisseur": "openai",
+        "id": "gpt-6.1-terra", "contexte": 272_000, "sortie": 32_000,
+        "prix": (1.0, 5.0),
+        "note": "Deux fois moins cher que Sol, même contexte.",
+    },
+    "gpt-6-luna": {
+        "nom": "GPT-6 Luna", "fournisseur": "openai",
+        "id": "gpt-6-luna", "contexte": 272_000, "sortie": 32_000,
+        "prix": (0.10, 0.50),
+        "note": "Quelques centimes par réunion.",
+    },
     # ---- Groq : gratuit, mais par tranches
     "gpt-oss-120b": {
         "nom": "GPT-OSS 120B (gratuit)", "fournisseur": "groq",
@@ -120,6 +144,8 @@ CLES = {
              "gratuit": True},
     "google": {"nom": "Gemini (Google)", "prefixe": ("AIza", "AQ."),
                "ou": "aistudio.google.com/apikey", "gratuit": True},
+    "openai": {"nom": "ChatGPT (OpenAI)", "prefixe": "sk-",
+               "ou": "platform.openai.com/api-keys", "gratuit": False},
 }
 
 
@@ -203,7 +229,39 @@ def appeler(cle: str, modele: str, systeme: str, requete: str,
         return _anthropic(cle, f, systeme, requete, schema, sortie)
     if f["fournisseur"] == "google":
         return _google(cle, f, systeme, requete, schema, sortie)
+    if f["fournisseur"] == "openai":
+        return _openai(cle, f, systeme, requete, schema, sortie)
     return _groq(cle, f, systeme, requete, schema, sortie)
+
+
+def _openai(cle: str, f: dict, systeme: str, requete: str,
+            schema: dict | None, sortie: int = 0) -> str:
+    """Même forme de requête que Groq — c'est l'API d'OpenAI que Groq
+    imite — mais son propre paquet, et son propre nom de plafond."""
+    try:
+        from openai import OpenAI
+    except ImportError as exc:
+        raise FournisseurError(
+            "Le paquet openai n'est pas installé. Choisir un autre modèle, "
+            "ou l'installer avec : pip install openai") from exc
+
+    params = dict(
+        model=f["id"],
+        messages=[{"role": "system", "content": systeme},
+                  {"role": "user", "content": requete}],
+        max_completion_tokens=sortie or f["sortie"],
+    )
+    if schema:
+        params["response_format"] = {"type": "json_object"}
+
+    # Retenu dans une variable, comme ailleurs : un client construit dans
+    # l'expression peut être ramassé avant la fin de la requête.
+    client = OpenAI(api_key=cle)
+    try:
+        reponse = client.chat.completions.create(**params)
+    except Exception as exc:  # noqa: BLE001
+        raise _traduire(exc) from exc
+    return (reponse.choices[0].message.content or "").strip()
 
 
 def _anthropic(cle: str, f: dict, systeme: str, requete: str,

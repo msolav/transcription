@@ -23,6 +23,8 @@ L'un ne sert qu'à séparer les voix, l'autre qu'à traiter un
 enregistrement, et beaucoup de machines ont déjà ffmpeg.
 """
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
 binaries, datas, hiddenimports = [], [], []
@@ -60,6 +62,17 @@ a = Analysis(
     noarchive=False,
 )
 
+# L'icône, dessinée par outils/icone.py et versée telle quelle : chaque
+# système veut son format, .ico pour Windows et .icns pour le paquet
+# macOS, et iconutil n'existe que sur macOS — un coureur Windows ne
+# saurait pas la fabriquer. Si les fichiers manquent, la construction se
+# fait sans, avec l'icône par défaut de Python plutôt qu'un échec.
+_icones = Path(SPECPATH) / "outils" / "icone"
+_ico = _icones / "icone.ico"
+_icns = _icones / "icone.icns"
+ICO = str(_ico) if _ico.exists() else None
+ICNS = str(_icns) if _icns.exists() else None
+
 pyz = PYZ(a.pure)
 
 exe = EXE(
@@ -78,6 +91,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
+    icon=ICO,
 )
 
 coll = COLLECT(
@@ -92,7 +106,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Transcripteur.app",
-    icon=None,
+    icon=ICNS,
     bundle_identifier="com.vincentmarsolais.transcripteur",
     info_plist={
         "CFBundleName": "Transcripteur",

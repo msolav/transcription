@@ -27,9 +27,13 @@ body { margin: 0; height: 100svh; padding-top: var(--top);
   color: var(--vm-ink); }
 .outils { margin-left: auto; display: flex; align-items: center; gap: .9rem; }
 
+/* La colonne est centrée dans la fenêtre, le texte reste aligné à
+   gauche : sur un écran large, un bloc collé au bord gauche laisse la
+   moitié de la page vide et fait lire en diagonale. */
 .scene { position: relative; height: 100%;
   padding: 2rem var(--pad); display: flex;
-  flex-direction: column; justify-content: center; overflow: clip; }
+  flex-direction: column; justify-content: center; align-items: center;
+  overflow: clip; }
 .scene > * { zoom: var(--fit, 1); }
 
 .jauge { position: absolute; inset: 0 0 auto 0; height: 2px;
@@ -51,7 +55,7 @@ body { margin: 0; height: 100svh; padding-top: var(--top);
 
 /* La vue glisse ; le cadre ne bouge pas. */
 .vue { display: flex; flex-direction: column; align-items: flex-start;
-  gap: 1.1rem; max-width: 46rem; opacity: 1; translate: 0 0;
+  gap: 1.1rem; width: 100%; max-width: 46rem; opacity: 1; translate: 0 0;
   transition: opacity .36s var(--vm-ease), translate .36s var(--vm-ease); }
 .vue.part { opacity: 0; translate: -24px 0; }
 .vue.vient { opacity: 0; translate: 24px 0; transition: none; }
@@ -95,22 +99,13 @@ dl.spec dt { font: 500 .7rem/1.5 "IBM Plex Mono", monospace; letter-spacing: .1e
   text-transform: uppercase; color: var(--vm-mute); }
 dl.spec dd { margin: 0; }
 
-/* Le « i » : même composant que l'application. */
-.tipwrap { position: relative; display: inline-flex; vertical-align: middle; }
-.info { width: 24px; height: 24px; flex: none; border: 1px solid currentColor;
-  border-radius: 50%; font: 500 .75rem/1 "IBM Plex Mono", monospace;
-  display: grid; place-items: center; color: var(--vm-mute); background: none;
-  cursor: pointer; transition: background .3s var(--vm-ease), color .3s var(--vm-ease); }
-.info:hover, .info[aria-expanded="true"] { background: var(--vm-ink);
-  color: var(--vm-paper); border-color: var(--vm-ink); }
-.tipbody { position: absolute; z-index: 50; top: calc(100% + 12px); left: 0;
-  width: min(330px, 78vw); padding: 1rem 1.1rem; font-size: .92rem;
-  line-height: 1.45; background: var(--vm-paper-2);
-  border: 1px solid color-mix(in oklab, var(--vm-ink) 18%, transparent);
-  opacity: 0; translate: 0 -6px; pointer-events: none;
-  transition: opacity .35s var(--vm-ease), translate .35s var(--vm-ease); }
-.info[aria-expanded="true"] + .tipbody { opacity: 1; translate: 0 0;
-  pointer-events: auto; }
+/* Les gestes numérotés : le geste en premier, le détail sous lui. Rien
+   n'est replié — la page qui explique un blocage ne cache pas la moitié
+   de son explication derrière un bouton. */
+dl.spec.pas { gap: .95rem 1.4rem; }
+dl.spec.pas dd b { display: block; font-weight: 600; line-height: 1.35; }
+dl.spec.pas dd i { display: block; margin-top: .22rem; font-style: normal;
+  font-size: .9rem; line-height: 1.5; color: var(--vm-mute); }
 
 @media (max-width: 640px) {
   .choix { flex-direction: column; }
