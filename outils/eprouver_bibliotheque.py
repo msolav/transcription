@@ -28,11 +28,19 @@ RACINE = Path(__file__).resolve().parent.parent
 PORT = 7993
 BASE = f"http://127.0.0.1:{PORT}"
 
-# Au-delà, c'est qu'un module lourd est revenu. L'application complète
-# pèse 101 Mo ; la bibliothèque en mesurait 34 à l'écriture. La marge
-# laisse passer la croissance ordinaire des dépendances, pas le retour
-# de sherpa-onnx ni de numpy.
-PLAFOND_MO = 55
+# Au-delà, c'est qu'un module lourd est revenu.
+#
+# Un plafond par système, et non un seul : les trois ne pèsent pas la
+# même chose pour le même code. Mesuré — 33 Mo sur macOS, 68 sur Linux,
+# qui embarque davantage de bibliothèques système. Un plafond unique
+# calibré sur macOS faisait échouer Linux sur un paquet parfaitement
+# sain, et c'est exactement l'erreur déjà commise sur le contrôle de
+# taille de l'application complète.
+#
+# Ce plafond n'est qu'un second filet : le vrai contrôle est la liste
+# des modules interdits ci-dessous, qui ne dépend d'aucun système.
+PLAFONDS_MO = {"darwin": 50, "linux": 90, "win32": 75}
+PLAFOND_MO = PLAFONDS_MO.get(sys.platform, 90)
 
 INTERDITS = ("sherpa_onnx", "numpy", "keyring", "cryptography", "groq")
 
