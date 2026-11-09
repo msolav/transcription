@@ -138,6 +138,40 @@ try:
     verifie("une seance sans audio rend 404", _code == 404, str(_code))
     _code, _ = _get("/media/inconnue")
     verifie("une seance inconnue rend 404", _code == 404, str(_code))
+
+    # 5. Les chemins que la page connait deja.
+    #
+    # La bibliotheque sert la page de l'application complete : elle doit
+    # donc repondre aux memes adresses, sinon il faudrait deux versions
+    # de la page — et c'est exactement ce qu'on evite ici.
+    _chemins = {r.path for r in bibliotheque.app.routes if hasattr(r, "path")}
+    for _attendu in ("/api/health", "/api/seances", "/api/reglages",
+                     "/api/jobs/{seance_id}/media", "/api/jobs/import"):
+        verifie(f"elle repond a {_attendu}", _attendu in _chemins,
+                "la page de l'application appelle ce chemin")
+
+    # 6. Les purges.
+    #
+    # Jeter les sons garde tous les textes : c'est la purge qu'on fait
+    # en premier, et la seule a peu pres sans regret. Si elle emportait
+    # aussi les transcripts, personne ne s'en apercevrait avant d'en
+    # vouloir un.
+    memoire.enregistrer({
+        "id": "essai02", "filename": "autre.m4a", "duration": 60.0,
+        "blocks": [{"speaker": "SPEAKER_00", "start": 0.0, "end": 2.0,
+                    "text": "Deuxieme seance.", "words": []}],
+        "speakers": [], "names": {}, "relecture": None,
+        "source": "", "video": False})
+    _avant = len(memoire.liste())
+    _bilan = memoire.liberer_tous_audios()
+    verifie("jeter les sons garde tous les textes",
+            len(memoire.liste()) == _avant, f"{_avant} avant, {len(memoire.liste())} apres")
+
+    _bilan = memoire.tout_oublier()
+    verifie("tout effacer vide la bibliotheque",
+            memoire.liste() == [], str(memoire.liste())[:60])
+    verifie("tout effacer rend son bilan",
+            isinstance(_bilan.get("seances"), int), str(_bilan))
 finally:
     if _avant_dossier is None:
         os.environ.pop("TRANSCRIPTEUR_DONNEES", None)

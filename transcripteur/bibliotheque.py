@@ -157,6 +157,21 @@ def effacer(seance_id: str) -> dict:
             "place": memoire.place_occupee()}
 
 
+@app.delete("/api/seances")
+def tout_effacer(audio_seulement: int = 0) -> dict:
+    """Vide la bibliotheque, ou seulement ses enregistrements.
+
+    `audio_seulement=1` garde tous les textes et ne jette que le son :
+    c'est la purge presque sans regret, puisque les transcripts ne
+    pesent rien et que l'audio est tout le poids. Sans ce parametre,
+    tout part — et rien ne revient."""
+    with _verrou:
+        _ouvertes.clear()
+    bilan = (memoire.liberer_tous_audios() if audio_seulement
+             else memoire.tout_oublier())
+    return {**bilan, "place": memoire.place_occupee()}
+
+
 @app.delete("/api/seances/{seance_id}/audio")
 def effacer_audio(seance_id: str) -> dict:
     """Jette l'enregistrement, garde le texte."""
@@ -210,6 +225,19 @@ def extrait(seance_id: str, index: int) -> FileResponse:
 
 
 # ----------------------------------------------------------- l'import
+
+@app.post("/api/jobs/import")
+async def importer_comme_lapplication(file: UploadFile = File(...),
+                                      audio: UploadFile | None = File(None)) -> dict:
+    """Le même chemin et le même nom de champ que l'application.
+
+    La page poste déjà là pour rouvrir un .json ; lui demander un autre
+    chemin selon le programme qui la sert serait une divergence de plus.
+    `audio` en supplément, que l'application complète ignore et dont la
+    bibliothèque a besoin — sans l'enregistrement, la séance importée ne
+    se réécoute pas."""
+    return await importer(file, audio)
+
 
 @app.post("/api/import")
 async def importer(transcript: UploadFile = File(...),

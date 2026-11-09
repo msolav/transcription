@@ -33,6 +33,17 @@
   text-transform: uppercase; color: var(--vm-mute, #666); display: flex;
   gap: .6rem; align-items: baseline; }
 .tr-sc > h3 em { font-style: normal; margin-left: auto; font-size: .92em; }
+/* Les purges, au bout de la ligne de titre : discrètes au repos, elles
+   ne doivent pas se cliquer en visant autre chose. */
+.tr-sc .sc-purge { display: flex; gap: .4rem; align-items: center; }
+.tr-sc .sc-purge button { font: inherit; letter-spacing: inherit;
+  text-transform: inherit; background: none; border: 0; cursor: pointer;
+  padding: .25em .5em; color: var(--vm-mute, #666); opacity: .7;
+  white-space: nowrap; transition: opacity .3s, color .3s; }
+.tr-sc .sc-purge button:hover { opacity: 1; color: var(--vm-ink, #111); }
+.tr-sc .sc-purge button.danger:hover { color: var(--tr-warn, #b4341f); }
+.tr-sc .sc-purge button[data-sur="1"] { opacity: 1;
+  color: var(--tr-warn, #b4341f); }
 .tr-sc ul { list-style: none; margin: 0; padding: 0;
   border-top: 1px solid color-mix(in oklab, var(--vm-ink, #000) 15%, transparent); }
 .tr-sc li { display: flex; align-items: center; gap: .7rem; padding: .5rem 0;
@@ -124,10 +135,29 @@
     hote.hidden = false;
 
     const total = d.place && d.place.octets ? poids(d.place.octets) : '';
+    /* Deux purges, et l'ordre compte : jeter les sons récupère presque
+       toute la place sans perdre une ligne de texte, et c'est donc ce
+       qu'on propose en premier. Tout effacer vient après, et le dit. */
+    const avecSon = liste.filter(s => s.audio_present).length;
+    const octetsSon = liste.reduce((t, s) => t + (s.audio_present ? (s.octets || 0) : 0), 0);
     hote.innerHTML = `
       <h3><span>${L('Séances enregistrées', 'Saved sessions')}</span>
-        ${total ? `<em title="${escapeHtml(d.place.dossier)}">${total}</em>` : ''}</h3>
+        ${total ? `<em title="${escapeHtml(d.place.dossier)}">${total}</em>` : ''}
+        <span class="sc-purge">
+          ${avecSon ? `<button data-act="tous-sons"
+              title="${L('Garde tous les textes. L’aperçu et la séparation des voix ne seront plus possibles.',
+                         'Keeps every transcript. Preview and voice separation will no longer be possible.')}"
+            >${L('Jeter les sons', 'Drop all audio')} (${poids(octetsSon)})</button>` : ''}
+          <button class="danger" data-act="tout"
+            title="${L('Textes et enregistrements. Sans retour possible.',
+                       'Transcripts and recordings. No way back.')}"
+            >${L('Tout effacer', 'Delete everything')}</button>
+        </span></h3>
       <ul>${liste.map(ligne).join('')}</ul>`;
+
+    hote.querySelectorAll('.sc-purge button').forEach(b => {
+      b.onclick = () => purger(b.dataset.act, b, liste.length, avecSon, octetsSon);
+    });
 
     hote.querySelectorAll('button[data-id]').forEach(b => {
       b.onclick = () => agir(b.dataset.act, b.dataset.id, b);
@@ -176,6 +206,33 @@
     const url = acte === 'audio'
       ? `/api/seances/${id}/audio` : `/api/seances/${id}`;
     try { await api(url, { method: 'DELETE' }); } catch (e) { alert(e.message); }
+    peindre();
+  }
+
+
+  /* Les deux purges. Même geste en deux temps que pour une séance : le
+     premier clic change le mot du bouton, le second agit. Une fenêtre
+     de confirmation s'expédie sans lire ; un bouton qui dit ce qu'il va
+     emporter se remarque.
+     Six secondes plutôt que quatre : ce qui part ici ne revient pas. */
+  async function purger(acte, bouton, combien, avecSon, octetsSon) {
+    const tout = acte === 'tout';
+    if (bouton.dataset.sur !== '1') {
+      const avant = bouton.innerHTML;
+      bouton.dataset.sur = '1';
+      bouton.textContent = tout
+        ? L(`Effacer ${combien} séance${combien > 1 ? 's' : ''} — sans retour`,
+            `Delete ${combien} session${combien > 1 ? 's' : ''} — no way back`)
+        : L(`Jeter ${avecSon} enregistrement${avecSon > 1 ? 's' : ''} (${poids(octetsSon)})`,
+            `Drop ${avecSon} recording${avecSon > 1 ? 's' : ''} (${poids(octetsSon)})`);
+      setTimeout(() => {
+        if (bouton.dataset.sur === '1') { bouton.dataset.sur = ''; bouton.innerHTML = avant; }
+      }, 6000);
+      return;
+    }
+    try {
+      await api(`/api/seances${tout ? '' : '?audio_seulement=1'}`, { method: 'DELETE' });
+    } catch (e) { alert(e.message); }
     peindre();
   }
 
@@ -316,6 +373,11 @@
       + L('Télécharger', 'Download') + '</a>';
     ancre.after(el);
   }
+
+  /* Exposée pour l'import de la bibliothèque : après un dépôt, la liste
+     doit se remettre à jour sans recharger la page. `peindre` est une
+     fonction du module, invisible de l'extérieur sans cela. */
+  window.repeindreSeances = peindre;
 
   function demarrer() {
     retablir();

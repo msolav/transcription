@@ -514,6 +514,42 @@ window.apresCles = function () {
   }).catch(() => {});
 };
 
+
+/* ---------- la porte d'entrée de la bibliothèque ----------
+
+   Le .json et son enregistrement d'un seul geste. Importer le texte
+   sans le son donnerait une séance qu'on ne peut pas réécouter, ce qui
+   est exactement ce qu'on vient chercher ici. */
+{
+  const bouton = $('#importer'), champ = $('#importfile');
+  if (bouton && champ) {
+    bouton.onclick = e => { e.preventDefault(); champ.click(); };
+    champ.onchange = async () => {
+      const fichiers = [...champ.files];
+      champ.value = '';                 // sans quoi le même lot ne se redépose pas
+      if (!fichiers.length) return;
+      const json = fichiers.find(f => /\.json$/i.test(f.name));
+      if (!json) {
+        flash(vm.lang.t('Il faut le fichier .json du transcript.',
+                        'The transcript .json file is required.'));
+        return;
+      }
+      const son = fichiers.find(f => f !== json);
+      const corps = new FormData();
+      corps.append('file', json);
+      if (son) corps.append('audio', son);
+      try {
+        await api('/api/jobs/import', { method: 'POST', body: corps });
+        /* On revient à la liste plutôt que d'ouvrir la séance : on vient
+           souvent d'en déposer plusieurs, et la liste le montre. */
+        if (typeof window.repeindreSeances === 'function') window.repeindreSeances();
+      } catch (err) {
+        flash(err.message);
+      }
+    };
+  }
+}
+
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {
   const w = $('#perime'); w.hidden = false; w.removeAttribute('data-fr');

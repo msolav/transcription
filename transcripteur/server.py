@@ -1081,6 +1081,21 @@ def effacer_seance(seance_id: str) -> dict:
             "place": memoire.place_occupee()}
 
 
+@app.delete("/api/seances")
+def tout_effacer(audio_seulement: int = 0) -> dict:
+    """Vide la bibliotheque, ou seulement ses enregistrements.
+
+    `audio_seulement=1` garde tous les textes et ne jette que le son :
+    c'est la purge presque sans regret, puisque les transcripts ne
+    pesent rien et que l'audio est tout le poids. Sans ce parametre,
+    tout part — et rien ne revient."""
+    with _lock:
+        _jobs.clear()
+    bilan = (memoire.liberer_tous_audios() if audio_seulement
+             else memoire.tout_oublier())
+    return {**bilan, "place": memoire.place_occupee()}
+
+
 @app.delete("/api/seances/{seance_id}/audio")
 def effacer_audio(seance_id: str) -> dict:
     """Jette l'enregistrement et garde le texte.
