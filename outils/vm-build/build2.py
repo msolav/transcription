@@ -98,8 +98,8 @@ cut("  const strips = (expanded ? ranked", "  $('#dock').hidden = false;", r""" 
 cut("  $('#stage-area').innerHTML = `\n    ${multi ?", "  document.querySelectorAll('.strip input')", r"""  const fn = job.filename || '', dt = fn.lastIndexOf('.');
   const title = `${escapeHtml(dt > 0 ? fn.slice(0, dt) : fn)}${dt > 0 ? `<i>${escapeHtml(fn.slice(dt))}</i>` : ''}`;
   $('#stage-area').innerHTML = `<div class="sheet">
-    <h1 class="title" data-no-i18n>${title}</h1>
-    <p class="metaline"><span data-no-i18n>${clock(job.duration || 0)}</span>${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
+    <h1 class="title" data-no-i18n>${title}<em>${clock(job.duration || 0)}</em></h1>
+    <p class="metaline">${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
     ${multi ? `<section class="channels">
       <header>
         <h2><span data-en="Name the voices">Nommer les voix</span>

@@ -1440,8 +1440,28 @@ let follow = true, limit = null, liveIndex = -1, scrubbing = false;
 const RATES = [1, 1.25, 1.5, 0.75];
 let rateIndex = 0;
 
+/* D'où vient le son à écouter.
+
+   `objectUrl` n'existe que pour un fichier qu'on vient de déposer.
+   Une séance rouverte — depuis la liste, ou dans la bibliothèque — n'en
+   a pas, et le lecteur ne se montait donc jamais : on pouvait relire le
+   texte mais pas l'entendre, ce qui est précisément ce qu'on vient
+   chercher en rouvrant.
+
+   Le serveur sert l'enregistrement sur ce chemin, et honore l'en-tête
+   Range : on peut se déplacer dans deux heures d'audio sans tout
+   télécharger. La bibliothèque répond au même chemin, pour que la page
+   n'ait pas à savoir lequel des deux programmes la sert. */
+function sourceAudio() {
+  if (objectUrl) return objectUrl;
+  if (job && job.id && !job.sans_audio) return `/api/jobs/${job.id}/media`;
+  return '';
+}
+
 function setupDeck() {
-  if (!objectUrl) return;          // sans le fichier d'origine, pas de lecture
+  const src = sourceAudio();
+  if (!src) return;                // sans enregistrement, pas de lecture
+  if (player.getAttribute('src') !== src) player.src = src;
   $('#deck').hidden = false;
 
   $('#pp').onclick = () => player.paused ? play() : player.pause();
@@ -1493,12 +1513,12 @@ function setupDeck() {
 }
 
 function play() {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   player.play().catch(() => {});
 }
 
 function seek(seconds) {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   const span = player.duration || job.duration || 0;
   player.currentTime = Math.max(0, Math.min(seconds, span ? span - 0.05 : seconds));
   limit = null;                    // toute navigation manuelle libère la borne

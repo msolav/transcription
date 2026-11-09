@@ -251,6 +251,22 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 @keyframes rulethin { to { height: 1px; } }
 .title { margin: 0; font: 900 clamp(2.8rem, 10vw, 9rem)/.86 var(--vm-font-display); font-stretch: 62%; text-transform: uppercase; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .title i { font-style: normal; font-weight: 100; font-stretch: 75%; }
+/* La durée se lit à côté du nom, pas en dessous : c'est la première
+   chose qu'on cherche en rouvrant une séance. Assez grande pour se lire
+   d'un coup d'oeil, assez discrète pour ne pas disputer le titre. */
+.title em { font-style: normal; font-weight: 500; font-stretch: 100%;
+  font-family: var(--vm-font-mono); font-size: .26em; letter-spacing: .04em;
+  color: var(--vm-mute); margin-left: .5em; white-space: nowrap;
+  vertical-align: .35em; }
+
+/* La marque était 1,5 px plus haut que tout le reste de la barre :
+   `line-height: 1` sur des capitales laisse la masse visible au-dessus
+   du centre de sa boîte. Mesuré : −2,0 px contre −0,5 pour les six
+   autres éléments. `display: block` suffit : en ligne, la boîte
+   réservait la place d'un jambage que des capitales n'ont pas. Y
+   ajouter un décalage par-dessus renversait l'erreur de l'autre côté,
+   mesuré à +1,0. */
+.wordmark b { display: block; }
 .metaline { margin: 16px 0 0; display: flex; gap: 14px; align-items: center; font: 500 .8125rem var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--vm-mute); }
 .channels { margin-top: 38px; }
 .channels header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -402,7 +418,7 @@ body:has(#panneau:not([hidden])) .pager { opacity: 0; pointer-events: none; }
 .numchips button.on { background: var(--vm-ink); color: var(--vm-paper); border-color: var(--vm-ink); }
 
 /* back */
-.newjob .l2 { display: none; }
+.newjob .l2, .newjob .l3 { display: none; }
 body.back .newjob .l1 { display: none; }
 body.back .newjob .l2 { display: inline; }
 body.back .exportbar > :not(.newjob) { opacity: 0; pointer-events: none; }
@@ -478,8 +494,23 @@ body[data-biblio] .launch { height: 0; opacity: 0; overflow: hidden;
 body[data-biblio] #dropzone { justify-content: flex-start; cursor: default;
   overflow-y: auto; }
 body[data-biblio] #seances { opacity: 1; pointer-events: auto; }
+/* display:none, et non l'opacité : la règle du soulignement,
+   `body:has(#doc) .exportbar button`, pèse (1,1,2) contre (1,1,1) ici et
+   rendait son opacité au bouton. Corriger restait donc visible, et
+   `position: absolute` le posait par-dessus Copier — les deux mots se
+   lisaient superposés.
+   C'est aussi le bon outil : dans la bibliothèque ces boutons n'existent
+   jamais, ils ne changent pas d'état. La règle « rien ne saute » vise
+   les transitions, pas ce qui est absent de bout en bout. */
 body[data-biblio] #reread,
 body[data-biblio] #sum,
-body[data-biblio] #changekey { opacity: 0; pointer-events: none; position: absolute; }
+body[data-biblio] #asread,
+body[data-biblio] #changekey { display: none; }
 /* « Nouveau » ramènerait à un écran de dépôt qui n'existe pas ici. */
-body[data-biblio] .newjob .l1 { opacity: 0; }
+/* Le bouton portait « Nouveau », qu'on masquait à l'opacité : il
+   restait un soulignement sans texte, un bouton invisible au bout de la
+   barre. Il porte maintenant son vrai rôle ici — revenir à la liste. */
+body[data-biblio] .newjob .l1 { display: none; }
+body[data-biblio] .newjob .l3 { display: inline; }
+body[data-biblio].back .newjob .l3 { display: none; }
+body[data-biblio].back .newjob .l2 { display: inline; }

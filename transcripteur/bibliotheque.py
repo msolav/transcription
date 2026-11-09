@@ -170,6 +170,16 @@ def effacer_audio(seance_id: str) -> dict:
 
 # ----------------------------------------------------------- l'écoute
 
+@app.get("/api/jobs/{seance_id}/media")
+def media_comme_lapplication(seance_id: str) -> FileResponse:
+    """Le même chemin que dans l'application complète.
+
+    C'est la même page qui demande, et elle ne doit pas avoir à savoir
+    lequel des deux programmes la sert. Un second chemin pour le même
+    fichier, c'est un endroit de plus où les deux peuvent diverger."""
+    return media(seance_id)
+
+
 @app.get("/media/{seance_id}")
 def media(seance_id: str) -> FileResponse:
     """L'enregistrement d'une séance, pour le lecteur de la page."""
