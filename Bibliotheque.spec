@@ -24,14 +24,14 @@ _icns = _icones / "icone.icns"
 ICO = str(_ico) if _ico.exists() else None
 ICNS = str(_icns) if _icns.exists() else None
 
-# Ce que la bibliothèque n'ouvre jamais. `numpy` et `sherpa_onnx` pour
-# la séparation des voix, les clients des fournisseurs pour la
-# correction, `keyring` et `cryptography` pour les clés — il n'y en a
-# pas ici. `imageio_ffmpeg` est déjà écarté de l'application complète.
+# Groq et Gemini restent : la bibliothèque corrige et résume, et ce
+# sont les deux services gratuits. Anthropic et OpenAI partent — leurs
+# clients pèsent 29 et 27 Mo à eux seuls, ce qui ferait passer ce paquet
+# de 33 Mo à près de 90, soit presque l'application complète, pour des
+# services payants qu'on utilise de toute façon depuis celle-ci.
 EXCLUS = [
     "sherpa_onnx", "numpy",
-    "groq", "anthropic", "google", "openai", "httpx",
-    "keyring", "cryptography",
+    "anthropic", "openai",
     "imageio_ffmpeg",
 ]
 

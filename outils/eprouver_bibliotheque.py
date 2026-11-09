@@ -39,10 +39,13 @@ BASE = f"http://127.0.0.1:{PORT}"
 #
 # Ce plafond n'est qu'un second filet : le vrai contrôle est la liste
 # des modules interdits ci-dessous, qui ne dépend d'aucun système.
-PLAFONDS_MO = {"darwin": 50, "linux": 90, "win32": 75}
+PLAFONDS_MO = {"darwin": 75, "linux": 125, "win32": 105}
 PLAFOND_MO = PLAFONDS_MO.get(sys.platform, 90)
 
-INTERDITS = ("sherpa_onnx", "numpy", "keyring", "cryptography", "groq")
+# groq, google et keyring restent : la bibliotheque corrige et
+# resume. Ce qui doit rester dehors, c'est le calcul des voix et
+# les deux gros clients payants.
+INTERDITS = ("sherpa_onnx", "numpy", "anthropic", "openai")
 
 echecs: list[str] = []
 

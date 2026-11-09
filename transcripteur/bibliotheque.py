@@ -34,7 +34,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 
-from . import memoire
+from . import memoire, routes_relecture
 
 app = FastAPI(title="Transcripteur — bibliothèque")
 
@@ -352,3 +352,44 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ------------------------------------------- corriger et résumer
+
+class _Depot:
+    """Ce que les routes partagées ont besoin de savoir d'ici.
+
+    La bibliothèque n'a pas de travail en cours : elle tient les séances
+    qu'on vient d'ouvrir, et les range dès qu'elles changent."""
+
+    verrou = _verrou
+
+    def lire(self, job_id: str):
+        with _verrou:
+            deja = _ouvertes.get(job_id)
+        if deja:
+            return deja
+        job = memoire.charger(job_id)
+        if job:
+            with _verrou:
+                _ouvertes[job_id] = job
+        return job
+
+    def retenir(self, job_id: str) -> None:
+        with _verrou:
+            job = _ouvertes.get(job_id)
+        if not job:
+            return
+        try:
+            memoire.enregistrer(job)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Séance non enregistrée : {exc}")
+
+
+# Groq et Gemini seulement. Les clients d'Anthropic et d'OpenAI pèsent à
+# eux deux cinquante-six mégaoctets — ils feraient passer ce paquet de
+# 33 Mo à près de 90, soit presque l'application complète, pour des
+# services payants qu'on utilise de toute façon depuis celle-ci.
+FOURNISSEURS_ICI = ("groq", "google")
+
+routes_relecture.brancher(app, _Depot(), modeles=FOURNISSEURS_ICI)

@@ -506,10 +506,10 @@ body[data-biblio] #seances { opacity: 1; pointer-events: auto; }
    C'est aussi le bon outil : dans la bibliothèque ces boutons n'existent
    jamais, ils ne changent pas d'état. La règle « rien ne saute » vise
    les transitions, pas ce qui est absent de bout en bout. */
-body[data-biblio] #reread,
-body[data-biblio] #sum,
-body[data-biblio] #asread,
-body[data-biblio] #changekey { display: none; }
+/* Corriger et Résumer servent ici aussi : on relit un compte rendu des
+   mois après, et c'est souvent là qu'on veut le corriger ou le
+   résumer autrement. Seuls Groq et Gemini sont offerts — voir
+   FOURNISSEURS_ICI dans bibliotheque.py. */
 /* « Nouveau » ramènerait à un écran de dépôt qui n'existe pas ici. */
 /* Le bouton portait « Nouveau », qu'on masquait à l'opacité : il
    restait un soulignement sans texte, un bouton invisible au bout de la

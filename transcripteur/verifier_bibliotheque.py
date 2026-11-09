@@ -127,7 +127,10 @@ try:
     # lourd. La page le demande au demarrage ; sans reponse, l'ouverture
     # d'une seance s'arretait la — on cliquait « Rouvrir » et rien ne
     # s'ouvrait.
-    _interdits = {"/api/jobs", "/api/key", "/api/relecture"}
+    # /api/key et /api/relecture sont desormais offertes : la
+    # bibliotheque corrige et resume, avec Groq et Gemini seulement.
+    # Reste interdit ce qui appellerait le pipeline absent du paquet.
+    _interdits = {"/api/jobs"}
     verifie("elle n'offre aucune route de traitement",
             not (_chemins & _interdits), str(_chemins & _interdits))
 
@@ -154,7 +157,9 @@ try:
     # de la page — et c'est exactement ce qu'on evite ici.
     _chemins = {r.path for r in bibliotheque.app.routes if hasattr(r, "path")}
     for _attendu in ("/api/health", "/api/seances", "/api/reglages",
-                     "/api/jobs/{seance_id}/media", "/api/jobs/import"):
+                     "/api/jobs/{seance_id}/media", "/api/jobs/import",
+                     "/api/relecture", "/api/relecture/modeles", "/api/key",
+                     "/api/jobs/{job_id}/relire", "/api/jobs/{job_id}/resume"):
         verifie(f"elle repond a {_attendu}", _attendu in _chemins,
                 "la page de l'application appelle ce chemin")
 
