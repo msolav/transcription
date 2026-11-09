@@ -510,6 +510,11 @@ let names = {};
 let ready = false;
 
 api('/api/health').then(h => {
+  /* La bibliothèque sert cette même page, et n'a ni clé ni traitement.
+     Lui réclamer une clé la bloquerait sur un écran qu'elle ne peut pas
+     franchir ; le marqueur sur <body> replie ce qui n'existe pas là-bas
+     plutôt que de l'afficher inerte. */
+  if (h.bibliotheque) { document.body.dataset.biblio = '1'; return; }
   ready = h.has_key;
   if (h.code_perime) banniereRedemarrer();
   if (!ready) askForKey();
@@ -718,7 +723,7 @@ $('#reread').onclick = async () => {
   const o = await ensureRelOpts();
   const p = $('#panneau');
   p.hidden = false;
-  p.innerHTML = `<h4>Relecture</h4>
+  p.innerHTML = `<h4>Correction</h4>
     <div class="opts">
       <label><input type="checkbox" id="ratt" checked> Corriger l'attribution</label>
       <label><input type="checkbox" id="rtxt" checked> Corriger le texte</label>
@@ -766,7 +771,7 @@ $('#reread').onclick = async () => {
       await api(`/api/jobs/${job.id}/relire`, { method: 'POST',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       pollRelecture();
-    } catch (e) { p.innerHTML = `<h4>Relecture</h4><p>${escapeHtml(String(e))}</p>`; }
+    } catch (e) { p.innerHTML = `<h4>Correction</h4><p>${escapeHtml(String(e))}</p>`; }
   };
 };
 
@@ -782,7 +787,7 @@ function pollRelecture() {
          le bouton d'arrêt une fois et demie par seconde : le clic
          tombait entre deux reconstructions. */
       if (!$('#relnotes')) {
-        $('#panneau').innerHTML = `<h4>Relecture en cours</h4>
+        $('#panneau').innerHTML = `<h4>Correction en cours</h4>
           <pre id="relnotes" data-no-i18n lang="fr"></pre>
           <div class="opts"><button id="relstop">Arrêter</button></div>`;
         $('#relstop').onclick = async () => {
@@ -800,7 +805,7 @@ function pollRelecture() {
     clearInterval(relTimer);
     job.relecture = r;
     if (r.status === 'error') {
-      $('#panneau').innerHTML = `<h4>Relecture</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
+      $('#panneau').innerHTML = `<h4>Correction</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
       return;
     }
     corrections = r.corrections || [];
@@ -808,7 +813,7 @@ function pollRelecture() {
        — une passe d'attribution terminée vaut quelque chose même si l'on
        a coupé avant celle du texte. Sans correction, on le dit. */
     if (r.status === 'cancelled' && !corrections.length) {
-      $('#panneau').innerHTML = `<h4>Relecture arrêtée</h4>
+      $('#panneau').innerHTML = `<h4>Correction arrêtée</h4>
         <p>Aucune correction n'a été trouvée avant l'arrêt. Le transcript
         est inchangé.</p>`;
       return;
@@ -910,7 +915,7 @@ function describeCorrection(c, i) {
 function showCorrections() {
   const p = $('#panneau');
   if (!corrections.length) {
-    p.innerHTML = `<h4>Relecture</h4><p>Aucune correction proposée.</p>
+    p.innerHTML = `<h4>Correction</h4><p>Aucune correction proposée.</p>
       <div class="opts"><button id="rno">Fermer</button></div>`;
     $('#rno').onclick = closePanel;
     return;
@@ -1435,8 +1440,28 @@ let follow = true, limit = null, liveIndex = -1, scrubbing = false;
 const RATES = [1, 1.25, 1.5, 0.75];
 let rateIndex = 0;
 
+/* D'où vient le son à écouter.
+
+   `objectUrl` n'existe que pour un fichier qu'on vient de déposer.
+   Une séance rouverte — depuis la liste, ou dans la bibliothèque — n'en
+   a pas, et le lecteur ne se montait donc jamais : on pouvait relire le
+   texte mais pas l'entendre, ce qui est précisément ce qu'on vient
+   chercher en rouvrant.
+
+   Le serveur sert l'enregistrement sur ce chemin, et honore l'en-tête
+   Range : on peut se déplacer dans deux heures d'audio sans tout
+   télécharger. La bibliothèque répond au même chemin, pour que la page
+   n'ait pas à savoir lequel des deux programmes la sert. */
+function sourceAudio() {
+  if (objectUrl) return objectUrl;
+  if (job && job.id && !job.sans_audio) return `/api/jobs/${job.id}/media`;
+  return '';
+}
+
 function setupDeck() {
-  if (!objectUrl) return;          // sans le fichier d'origine, pas de lecture
+  const src = sourceAudio();
+  if (!src) return;                // sans enregistrement, pas de lecture
+  if (player.getAttribute('src') !== src) player.src = src;
   $('#deck').hidden = false;
 
   $('#pp').onclick = () => player.paused ? play() : player.pause();
@@ -1488,12 +1513,12 @@ function setupDeck() {
 }
 
 function play() {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   player.play().catch(() => {});
 }
 
 function seek(seconds) {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   const span = player.duration || job.duration || 0;
   player.currentTime = Math.max(0, Math.min(seconds, span ? span - 0.05 : seconds));
   limit = null;                    // toute navigation manuelle libère la borne

@@ -98,8 +98,8 @@ cut("  const strips = (expanded ? ranked", "  $('#dock').hidden = false;", r""" 
 cut("  $('#stage-area').innerHTML = `\n    ${multi ?", "  document.querySelectorAll('.strip input')", r"""  const fn = job.filename || '', dt = fn.lastIndexOf('.');
   const title = `${escapeHtml(dt > 0 ? fn.slice(0, dt) : fn)}${dt > 0 ? `<i>${escapeHtml(fn.slice(dt))}</i>` : ''}`;
   $('#stage-area').innerHTML = `<div class="sheet">
-    <h1 class="title" data-no-i18n>${title}</h1>
-    <p class="metaline"><span data-no-i18n>${clock(job.duration || 0)}</span>${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
+    <h1 class="title" data-no-i18n>${title}<em>${clock(job.duration || 0)}</em></h1>
+    <p class="metaline">${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
     ${multi ? `<section class="channels">
       <header>
         <h2><span data-en="Name the voices">Nommer les voix</span>
@@ -513,6 +513,42 @@ window.apresCles = function () {
     if (bandeau && h && !h.vierge) bandeau.remove();
   }).catch(() => {});
 };
+
+
+/* ---------- la porte d'entrée de la bibliothèque ----------
+
+   Le .json et son enregistrement d'un seul geste. Importer le texte
+   sans le son donnerait une séance qu'on ne peut pas réécouter, ce qui
+   est exactement ce qu'on vient chercher ici. */
+{
+  const bouton = $('#importer'), champ = $('#importfile');
+  if (bouton && champ) {
+    bouton.onclick = e => { e.preventDefault(); champ.click(); };
+    champ.onchange = async () => {
+      const fichiers = [...champ.files];
+      champ.value = '';                 // sans quoi le même lot ne se redépose pas
+      if (!fichiers.length) return;
+      const json = fichiers.find(f => /\.json$/i.test(f.name));
+      if (!json) {
+        flash(vm.lang.t('Il faut le fichier .json du transcript.',
+                        'The transcript .json file is required.'));
+        return;
+      }
+      const son = fichiers.find(f => f !== json);
+      const corps = new FormData();
+      corps.append('file', json);
+      if (son) corps.append('audio', son);
+      try {
+        await api('/api/jobs/import', { method: 'POST', body: corps });
+        /* On revient à la liste plutôt que d'ouvrir la séance : on vient
+           souvent d'en déposer plusieurs, et la liste le montre. */
+        if (typeof window.repeindreSeances === 'function') window.repeindreSeances();
+      } catch (err) {
+        flash(err.message);
+      }
+    };
+  }
+}
 
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {

@@ -54,8 +54,14 @@ body { margin: 0; height: 100svh; padding-top: var(--top);
   text-transform: uppercase; color: var(--vm-mute); }
 
 /* La vue glisse ; le cadre ne bouge pas. */
+/* 53rem et non 46 : le titre, composé jusqu'à 9rem, mesure environ
+   840 px — il débordait donc la colonne de cent pixels vers la droite.
+   La colonne était bien centrée, mais la masse la plus visible de
+   l'écran se retrouvait décalée de cinquante-cinq pixels, et c'est elle
+   qu'on lit comme « trop à droite ». Les textes gardent leurs propres
+   largeurs maximales et ne s'allongent pas pour autant. */
 .vue { display: flex; flex-direction: column; align-items: flex-start;
-  gap: 1.1rem; width: 100%; max-width: 46rem; opacity: 1; translate: 0 0;
+  gap: 1.1rem; width: 100%; max-width: 53rem; opacity: 1; translate: 0 0;
   transition: opacity .36s var(--vm-ease), translate .36s var(--vm-ease); }
 .vue.part { opacity: 0; translate: -24px 0; }
 .vue.vient { opacity: 0; translate: 24px 0; transition: none; }

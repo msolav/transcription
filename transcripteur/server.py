@@ -27,7 +27,8 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                Response)
 
-from . import (assets, config, fournisseurs, guide, memoire, relecture,
+from . import (assets, config, fournisseurs, guide, memoire,
+               routes_relecture,
                pipeline, sous_titres)
 from .pipeline import Cancelled, Options, PipelineError
 
@@ -228,31 +229,6 @@ def index_classique() -> HTMLResponse:
     return _page("index.html")
 
 
-def _expliquer_cle(exc: Exception, fournisseur: str) -> str:
-    """Rend un refus de clé lisible, en nommant d'où venait la clé.
-
-    Une variable d'environnement l'emporte sur le trousseau : une clé
-    révoquée oubliée dans un shell est envoyée à la place de la bonne, et
-    le message du fournisseur ne dit jamais laquelle il a reçue."""
-    message = str(exc)
-    if not message.startswith("CLE_REFUSEE::"):
-        return message
-    fiche = config.FOURNISSEURS.get(fournisseur, {})
-    source = config.source_cle(fournisseur)
-    ou = {"environnement": f"de la variable {fiche.get('env', '')}",
-          "trousseau": "du trousseau du système",
-          "simulation": "de la simulation de premier démarrage",
-          "fichier": "de l'ancien fichier de configuration"}.get(source, "de nulle part")
-    suite = ""
-    if source == "environnement":
-        suite = (f" Elle vient {ou}, qui l'emporte sur le trousseau : si une"
-                 f" clé valide y est enregistrée, relancer le programme après"
-                 f" « unset {fiche.get('env', '')} ».")
-    elif source:
-        suite = f" Elle vient {ou}."
-    return (f"Clé {fiche.get('nom', fournisseur)} refusée." + suite)
-
-
 def _empreinte_code() -> float:
     """Date du fichier source le plus récent de l'application.
 
@@ -394,60 +370,36 @@ def aide(langue: str = "fr") -> HTMLResponse:
     return HTMLResponse(guide.page_html(langue))
 
 
-@app.post("/api/key")
-def save_key(payload: dict) -> dict:
-    """Enregistre une clé. `fournisseur` vaut groq par défaut."""
-    key = str(payload.get("key", ""))
-    f = str(payload.get("fournisseur") or "groq")
-    langue = "en" if str(payload.get("langue") or "fr") == "en" else "fr"
-    if f not in config.FOURNISSEURS:
-        raise HTTPException(400, "Fournisseur inconnu.")
-    problem = config.check_key(key, f, langue)
-    if problem:
-        raise HTTPException(400, problem)
-    config.set_key(key, f)
-    return {"cles": config.cles_presentes()}
+# ---------------------------------------- corriger et résumer
+
+class _DepotServeur:
+    """Ce que les routes partagées ont besoin de savoir d'ici.
+
+    Elles vivent dans routes_relecture parce que la bibliothèque les
+    sert aussi : on corrige et on résume aussi bien juste après une
+    transcription que des mois plus tard en rouvrant une séance. Deux
+    copies auraient fini par ne plus se ressembler."""
+
+    verrou = _lock
+
+    def lire(self, job_id: str):
+        return _jobs.get(job_id)
+
+    def retenir(self, job_id: str) -> None:
+        _retenir(job_id)
 
 
-@app.delete("/api/key")
-def forget_key(fournisseur: str = "groq") -> dict:
-    config.clear_key(fournisseur)
-    return {"cles": config.cles_presentes()}
-
-
-@app.get("/api/relecture/modeles")
-def modeles_relecture() -> dict:
-    """Les modèles de relecture, avec ce qu'ils exigent et ce qu'ils coûtent."""
-    cles = config.cles_presentes()
-    liste = []
-    for cle, m in fournisseurs.MODELES.items():
-        liste.append({
-            "cle": cle, "nom": m["nom"], "note": m["note"],
-            "fournisseur": m["fournisseur"],
-            "gratuit": not fournisseurs.payant(cle),
-            "dispo": bool(cles.get(m["fournisseur"])),
-            "un_appel": m["contexte"] > 100_000,
-        })
-    # Les utilisables d'abord, puis les gratuits.
-    liste.sort(key=lambda x: (not x["dispo"], not x["gratuit"]))
-    # La fiche de chaque fournisseur, augmentée de ce que l'écran de
-    # saisie doit dire : une clé Anthropic n'est pas gratuite, et
-    # l'annoncer comme telle serait un mensonge que la facture dément.
-    fiches = {}
-    for nom, f in config.FOURNISSEURS.items():
-        fiches[nom] = dict(f, gratuit=bool(
-            fournisseurs.CLES.get(nom, {}).get("gratuit")))
-    return {"modeles": liste, "defaut": fournisseurs.modele_par_defaut(cles),
-            "fournisseurs": fiches}
+routes_relecture.brancher(app, _DepotServeur())
 
 
 @app.get("/api/models")
 def list_models(langue: str = "") -> dict:
     """Le catalogue des modèles de voix, le plus adapté à la langue en tête.
 
-    L'ordre suit la langue d'entraînement de chaque modèle. Ce n'est pas un
-    classement de précision : départager deux modèles d'une même famille
-    demanderait un enregistrement annoté que nous n'avons pas."""
+    L'ordre suit d'abord la langue d'entraînement, puis la justesse
+    mesurée — c'est un classement de précision depuis qu'il en existe
+    une mesure, et le coût de calcul ne sert plus qu'à départager.
+    Voir outils/mesure_attribution.py."""
     return {"modeles": assets.inventaire(langue or None),
             "defaut": assets.DEFAULT_EMBEDDING,
             "nettoyeurs": assets.inventaire_debruiteurs(),
@@ -532,159 +484,6 @@ async def create_job(
     # serveur se contente de les ranger et de les rendre.
     threading.Thread(target=_run_job, args=(job_id, options), daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
-
-
-def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
-                   contexte: str = "") -> None:
-    """Relit un transcript déjà produit, dans un fil à part.
-
-    Rien n'est appliqué ici : on range des propositions que l'interface
-    affiche côte à côte avec l'original. C'est l'utilisateur qui tranche."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        return
-
-    def note(message: str, remplacer: bool = False) -> None:
-        """Ajoute une ligne au journal, ou récrit la dernière.
-
-        Le décompte d'une attente de quota s'écrit une fois par seconde :
-        empilé, il chasserait tout le reste du journal en une minute.
-        Remplacé, il tient sur sa ligne et le contexte reste lisible."""
-        with _lock:
-            lignes = list(job["relecture"]["notes"])
-            if remplacer and lignes:
-                lignes[-1] = message
-            else:
-                lignes.append(message)
-            job["relecture"]["notes"] = lignes[-12:]
-
-    def stop() -> bool:
-        with _lock:
-            r = job.get("relecture") or {}
-        return bool(r.get("cancel"))
-
-    try:
-        blocs, noms = job["blocks"], job["names"]
-        corrections = []
-        if attribution:
-            corrections += relecture.corriger_attribution(
-                blocs, noms, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte, stop=stop)
-        if texte:
-            corrections += relecture.corriger_texte(
-                blocs, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte, stop=stop)
-        apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
-        with _lock:
-            job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
-    except relecture.Annulee:
-        # Les corrections déjà trouvées sont conservées : une passe
-        # d'attribution terminée vaut quelque chose même si l'on arrête
-        # avant celle du texte, et l'interface peut les proposer.
-        apercu = (relecture.appliquer(blocs, corrections, noms)
-                  if corrections else blocs)
-        with _lock:
-            job["relecture"].update(status="cancelled", corrections=corrections,
-                                    blocks=apercu, cancel=False)
-    except Exception as exc:  # noqa: BLE001
-        with _lock:
-            job["relecture"].update(status="error", error=str(exc))
-
-
-@app.get("/api/relecture")
-def relecture_options() -> dict:
-    cles = config.cles_presentes()
-    return {
-        "modeles": [{"cle": k, "nom": v["nom"], "note": v["note"],
-                     "dispo": bool(cles.get(v["fournisseur"]))}
-                    for k, v in fournisseurs.MODELES.items()],
-        "defaut": fournisseurs.modele_par_defaut(cles),
-        "resumes": [{"cle": k, "nom": v["nom"], "apercu": v["apercu"]}
-                    for k, v in relecture.RESUMES.items()],
-        "resume_defaut": relecture.RESUME_DEFAUT,
-    }
-
-
-@app.get("/api/jobs/{job_id}/cout")
-def cout_relecture(job_id: str, attribution: int = 1, texte: int = 1) -> dict:
-    """Estimation avant de lancer, pour ne pas épuiser un quota sans le voir."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Tâche inconnue.")
-    return {"jetons": relecture.estimer_jetons(
-        job["blocks"], bool(attribution), bool(texte)),
-        "blocs": len(job["blocks"])}
-
-
-@app.post("/api/jobs/{job_id}/relire")
-def relire(job_id: str, payload: dict) -> dict:
-    with _lock:
-        job = _jobs.get(job_id)
-        if not job:
-            raise HTTPException(404, "Tâche inconnue.")
-        if job["status"] != "done":
-            raise HTTPException(400, "La transcription n'est pas terminée.")
-        if job.get("relecture", {}) and job["relecture"].get("status") == "running":
-            raise HTTPException(409, "Une relecture est déjà en cours.")
-        job["relecture"] = {"status": "running", "notes": [], "corrections": [],
-                            "blocks": [], "error": None}
-    threading.Thread(
-        target=_run_relecture,
-        args=(job_id, bool(payload.get("attribution", True)),
-              bool(payload.get("texte", True)),
-              str(payload.get("modele") or fournisseurs.modele_par_defaut(config.cles_presentes())),
-              str(payload.get("contexte") or "")),
-        daemon=True).start()
-    return {"ok": True}
-
-
-@app.post("/api/jobs/{job_id}/resume")
-def resume(job_id: str, payload: dict) -> dict:
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Tâche inconnue.")
-    if job["status"] != "done":
-        raise HTTPException(400, "La transcription n'est pas terminée.")
-    blocs = job["relecture"]["blocks"] if (job.get("relecture") or {}).get("blocks") \
-        else job["blocks"]
-    modele = str(payload.get("modele")
-                 or fournisseurs.modele_par_defaut(config.cles_presentes()))
-    try:
-        texte = relecture.resumer(blocs, job["names"],
-                                  config.get_key(fournisseurs.fournisseur_de(modele)),
-                                  str(payload.get("forme") or relecture.RESUME_DEFAUT),
-                                  modele,
-                                  str(payload.get("contexte") or ""))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            502, "Résumé impossible : "
-            + _expliquer_cle(exc, fournisseurs.fournisseur_de(modele))) from exc
-    return {"texte": texte}
-
-
-@app.post("/api/jobs/{job_id}/appliquer")
-def appliquer(job_id: str, payload: dict) -> dict:
-    """Ré-applique un sous-ensemble de corrections.
-
-    L'utilisateur décoche ce qu'il refuse ; on recalcule à partir de
-    l'original, jamais à partir de la version déjà corrigée, sinon les
-    refus successifs s'empileraient sur un texte déjà modifié."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job or not job.get("relecture"):
-        raise HTTPException(404, "Aucune relecture pour cette tâche.")
-    gardees = payload.get("corrections") or []
-    try:
-        apercu = relecture.appliquer(job["blocks"], gardees, job["names"])
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"Corrections inapplicables : {exc}") from exc
-    with _lock:
-        job["relecture"]["blocks"] = apercu
-    _retenir(job_id)
-    return {"blocks": apercu}
 
 
 def _run_voix(job_id: str, options: Options, mots: list, duree: float) -> None:
@@ -996,25 +795,6 @@ def cancel_job(job_id: str) -> dict:
     return {"status": _jobs[job_id]["status"]}
 
 
-@app.post("/api/jobs/{job_id}/relire/annuler")
-def annuler_relecture(job_id: str) -> dict:
-    """Demande l'arrêt de la relecture en cours.
-
-    Un drapeau, relu entre chaque fenêtre et pendant les attentes de
-    quota. Ces attentes durent de vingt à soixante-quinze secondes et
-    c'est là qu'on veut arrêter, puisque c'est là qu'il ne se passe
-    rien : elles sont donc découpées en quarts de seconde."""
-    with _lock:
-        job = _jobs.get(job_id)
-        if not job:
-            raise HTTPException(404, "Tâche inconnue.")
-        r = job.get("relecture") or {}
-        if r.get("status") == "running":
-            r["cancel"] = True
-            r["notes"] = (r.get("notes") or []) + ["arrêt demandé"]
-        return {"status": r.get("status") or "none"}
-
-
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
     """Retire une tâche de la mémoire vive.
@@ -1079,6 +859,21 @@ def effacer_seance(seance_id: str) -> dict:
         _jobs.pop(seance_id, None)
     return {"efface": memoire.oublier(seance_id),
             "place": memoire.place_occupee()}
+
+
+@app.delete("/api/seances")
+def tout_effacer(audio_seulement: int = 0) -> dict:
+    """Vide la bibliotheque, ou seulement ses enregistrements.
+
+    `audio_seulement=1` garde tous les textes et ne jette que le son :
+    c'est la purge presque sans regret, puisque les transcripts ne
+    pesent rien et que l'audio est tout le poids. Sans ce parametre,
+    tout part — et rien ne revient."""
+    with _lock:
+        _jobs.clear()
+    bilan = (memoire.liberer_tous_audios() if audio_seulement
+             else memoire.tout_oublier())
+    return {**bilan, "place": memoire.place_occupee()}
 
 
 @app.delete("/api/seances/{seance_id}/audio")

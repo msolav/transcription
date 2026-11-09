@@ -421,7 +421,13 @@ button { cursor: pointer; border: 0; background: none; }
 .wordmark b { font: 900 1.5rem/1 var(--vm-font-display); font-stretch: 62%; letter-spacing: -.02em; text-transform: uppercase; }
 .exportbar { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; margin-left: 12px; opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .7s var(--vm-ease), visibility 0s .7s; }
-body:has(#doc) .exportbar, body:has(#doc) .newjob { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
+/* `.newjob` ne reçoit plus d'opacité ici. Elle l'obligeait à être
+   rendue ailleurs à spécificité égale, et cette règle-là (1,1,2)
+   écrasait alors `body.back .exportbar > :not(.newjob)` (0,3,1) qui
+   masque la barre sur l'écran de liste : « Copier » restait affiché
+   devant une liste de séances, sans document à copier. */
+body:has(#doc) .exportbar { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
+body:has(#doc) .newjob { visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
 body:has(.setup) .exportbar { display: none; }
 .exportbar button, .newjob, .linkbtn { position: relative; padding: 0 .85rem; min-height: 44px; font: 600 .9375rem/1 var(--vm-font-display); white-space: nowrap;
   background: linear-gradient(currentColor, currentColor) left calc(100% - 9px) / calc(100% - 1.7rem) 1px no-repeat; background-position-x: .85rem;
@@ -435,7 +441,6 @@ body:has(.setup) .exportbar { display: none; }
 /* `body:has(#doc) .newjob { opacity: 1 }` sert à faire paraître le
    bouton ; il l'emportait sur l'opacité de repos et laissait « Nouveau »
    seul en pleine encre au bout de la rangée. Même portée, posée après. */
-body:has(#doc) .exportbar button, body:has(#doc) .newjob,
 .exportbar button, .newjob {
   opacity: .62;
   transition: background-size .55s var(--vm-ease-out), opacity .4s var(--vm-ease),
@@ -652,6 +657,22 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 @keyframes rulethin { to { height: 1px; } }
 .title { margin: 0; font: 900 clamp(2.8rem, 10vw, 9rem)/.86 var(--vm-font-display); font-stretch: 62%; text-transform: uppercase; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .title i { font-style: normal; font-weight: 100; font-stretch: 75%; }
+/* La durée se lit à côté du nom, pas en dessous : c'est la première
+   chose qu'on cherche en rouvrant une séance. Assez grande pour se lire
+   d'un coup d'oeil, assez discrète pour ne pas disputer le titre. */
+.title em { font-style: normal; font-weight: 500; font-stretch: 100%;
+  font-family: var(--vm-font-mono); font-size: .26em; letter-spacing: .04em;
+  color: var(--vm-mute); margin-left: .5em; white-space: nowrap;
+  vertical-align: .35em; }
+
+/* La marque était 1,5 px plus haut que tout le reste de la barre :
+   `line-height: 1` sur des capitales laisse la masse visible au-dessus
+   du centre de sa boîte. Mesuré : −2,0 px contre −0,5 pour les six
+   autres éléments. `display: block` suffit : en ligne, la boîte
+   réservait la place d'un jambage que des capitales n'ont pas. Y
+   ajouter un décalage par-dessus renversait l'erreur de l'autre côté,
+   mesuré à +1,0. */
+.wordmark b { display: block; }
 .metaline { margin: 16px 0 0; display: flex; gap: 14px; align-items: center; font: 500 .8125rem var(--vm-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--vm-mute); }
 .channels { margin-top: 38px; }
 .channels header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -803,7 +824,7 @@ body:has(#panneau:not([hidden])) .pager { opacity: 0; pointer-events: none; }
 .numchips button.on { background: var(--vm-ink); color: var(--vm-paper); border-color: var(--vm-ink); }
 
 /* back */
-.newjob .l2 { display: none; }
+.newjob .l2, .newjob .l3 { display: none; }
 body.back .newjob .l1 { display: none; }
 body.back .newjob .l2 { display: inline; }
 body.back .exportbar > :not(.newjob) { opacity: 0; pointer-events: none; }
@@ -859,6 +880,62 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 .turn .who { cursor: pointer; text-underline-offset: 3px;
   transition: color .35s var(--vm-ease); }
 .turn .who:hover { color: var(--vm-accent); text-decoration: underline; }
+
+/* ---------- la bibliothèque : la même page, en moins ----------
+   Ce programme-là ne transcrit pas. L'écran de dépôt, les réglages de
+   traitement et la barre de lancement n'y mènent nulle part : ils se
+   replient, par hauteur et opacité comme partout ailleurs, jamais par
+   display. Ce qui reste est la liste des séances, le texte et l'écoute. */
+/* Surtout pas `.capture` : la liste des séances y est injectée, juste
+   après la rangée de dépôt. La replier emportait la bibliothèque
+   elle-même, et la page s'ouvrait entièrement vide — vérifié, et c'est
+   exactement ce qui est arrivé. On replie donc ses voisins, un par un. */
+body[data-biblio] .hero,
+body[data-biblio] .plier,
+body[data-biblio] .launch { height: 0; opacity: 0; overflow: hidden;
+  pointer-events: none; margin: 0; padding: 0; min-height: 0; }
+/* Le contenu du dépôt est calé en bas pour laisser respirer le titre
+   géant ; sans titre, la liste doit repartir du haut. */
+body[data-biblio] #dropzone { justify-content: flex-start; cursor: default;
+  overflow-y: auto; }
+body[data-biblio] #seances { opacity: 1; pointer-events: auto; }
+/* display:none, et non l'opacité : la règle du soulignement,
+   `body:has(#doc) .exportbar button`, pèse (1,1,2) contre (1,1,1) ici et
+   rendait son opacité au bouton. Corriger restait donc visible, et
+   `position: absolute` le posait par-dessus Copier — les deux mots se
+   lisaient superposés.
+   C'est aussi le bon outil : dans la bibliothèque ces boutons n'existent
+   jamais, ils ne changent pas d'état. La règle « rien ne saute » vise
+   les transitions, pas ce qui est absent de bout en bout. */
+/* Corriger et Résumer servent ici aussi : on relit un compte rendu des
+   mois après, et c'est souvent là qu'on veut le corriger ou le
+   résumer autrement. Seuls Groq et Gemini sont offerts — voir
+   FOURNISSEURS_ICI dans bibliotheque.py. */
+/* « Nouveau » ramènerait à un écran de dépôt qui n'existe pas ici. */
+/* Le bouton portait « Nouveau », qu'on masquait à l'opacité : il
+   restait un soulignement sans texte, un bouton invisible au bout de la
+   barre. Il porte maintenant son vrai rôle ici — revenir à la liste. */
+body[data-biblio] .newjob .l1 { display: none; }
+body[data-biblio] .newjob .l3 { display: inline; }
+body[data-biblio].back .newjob .l3 { display: none; }
+body[data-biblio].back .newjob .l2 { display: inline; }
+
+
+/* La rangée de dépôt survit dans la bibliothèque, mais réduite à sa
+   seule porte d'entrée : on n'y transcrit pas, on y dépose un
+   transcript déjà fait. */
+body[data-biblio] .pickrow > :not(#importer) { display: none; }
+body[data-biblio] #importer { display: inline; }
+#importer { display: none; }
+
+
+/* La liste des séances est une note de bas de page dans l'application —
+   sous l'écran de dépôt, qui est le sujet. Dans la bibliothèque elle
+   EST le sujet, et la même taille s'y lit comme une erreur. */
+body[data-biblio] .tr-sc { --vm-s: clamp(.9rem, 1.1vw, 1.05rem); }
+body[data-biblio] .tr-sc > h3 { margin-bottom: 1rem; }
+body[data-biblio] .tr-sc li { padding: .55rem 0; }
+body[data-biblio] #importer { font-size: 1.05rem; }
 </style>
 </head>
 <body>
@@ -888,7 +965,8 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
     <button id="sum" data-en="Summarize">Résumer</button>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
-    <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to notes">Retour aux notes</span></button>
+    <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to the open project">Retour au projet ouvert</span><!-- Dans la bibliothèque, « Nouveau » ne mène nulle part : rien ne
+         s'y transcrit. Le même bouton ramène à la liste. --><span class="l3" data-en="All sessions">Toutes les séances</span></button>
   </nav>
   <div class="tools">
     <div class="vm-lang"></div>
@@ -909,9 +987,16 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
     <div class="pickrow">
       <button type="button" id="pick" class="big"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M12 18L24 6l12 12M6 32v10h36V32"/></svg><span data-en="Choose a file">Choisir un fichier</span></button>
       <a href="#" id="reopen" data-en="Reopen a .json">Rouvrir un .json</a>
+      <!-- Dans la bibliothèque, c'est la seule porte d'entrée : rien ne
+           s'y transcrit, tout y vient d'ailleurs. -->
+      <a href="#" id="importer" data-en="Add a transcript">Ajouter un transcript</a>
       <button type="button" id="clear" class="linkbtn" data-en="Change file">Changer de fichier</button>
       <p class="working" id="working" hidden data-en="Keep this page open.">Garder cette page ouverte.</p>
       <input type="file" id="jsonfile" accept=".json,application/json" hidden>
+      <!-- Le .json et son enregistrement d'un seul geste : importer le
+           texte sans le son donnerait une séance qu'on ne peut pas
+           réécouter, ce qui est la raison d'être de la bibliothèque. -->
+      <input type="file" id="importfile" accept=".json,application/json,audio/*,video/*" multiple hidden>
       <input type="file" id="file" accept="audio/*,video/*" hidden>
     </div>
   </div>
@@ -1454,6 +1539,11 @@ function enh(root) { root.querySelectorAll('select').forEach(s => vm.select(s));
 let ready = false;
 
 api('/api/health').then(h => {
+  /* La bibliothèque sert cette même page, et n'a ni clé ni traitement.
+     Lui réclamer une clé la bloquerait sur un écran qu'elle ne peut pas
+     franchir ; le marqueur sur <body> replie ce qui n'existe pas là-bas
+     plutôt que de l'afficher inerte. */
+  if (h.bibliotheque) { document.body.dataset.biblio = '1'; return; }
   ready = h.has_key;
   if (h.code_perime) banniereRedemarrer();
   if (!ready) askForKey();
@@ -1671,7 +1761,7 @@ $('#reread').onclick = async () => {
   const o = await ensureRelOpts();
   const p = $('#panneau');
   p.hidden = false;
-  p.innerHTML = `<h4>Relecture</h4>
+  p.innerHTML = `<h4>Correction</h4>
     <div class="opts">
       <label><input type="checkbox" id="ratt" checked> Corriger l'attribution</label>
       <label><input type="checkbox" id="rtxt" checked> Corriger le texte</label>
@@ -1720,7 +1810,7 @@ $('#reread').onclick = async () => {
       await api(`/api/jobs/${job.id}/relire`, { method: 'POST',
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       pollRelecture();
-    } catch (e) { p.innerHTML = `<h4>Relecture</h4><p>${escapeHtml(String(e))}</p>`; }
+    } catch (e) { p.innerHTML = `<h4>Correction</h4><p>${escapeHtml(String(e))}</p>`; }
   };
 };
 
@@ -1736,7 +1826,7 @@ function pollRelecture() {
          le bouton d'arrêt une fois et demie par seconde : le clic
          tombait entre deux reconstructions. */
       if (!$('#relnotes')) {
-        $('#panneau').innerHTML = `<h4>Relecture en cours</h4>
+        $('#panneau').innerHTML = `<h4>Correction en cours</h4>
           <pre id="relnotes" data-no-i18n lang="fr"></pre>
           <div class="opts"><button id="relstop">Arrêter</button></div>`;
         $('#relstop').onclick = async () => {
@@ -1754,7 +1844,7 @@ function pollRelecture() {
     clearInterval(relTimer);
     job.relecture = r;
     if (r.status === 'error') {
-      $('#panneau').innerHTML = `<h4>Relecture</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
+      $('#panneau').innerHTML = `<h4>Correction</h4><p>${escapeHtml(r.error || 'échec')}</p>`;
       return;
     }
     corrections = r.corrections || [];
@@ -1762,7 +1852,7 @@ function pollRelecture() {
        — une passe d'attribution terminée vaut quelque chose même si l'on
        a coupé avant celle du texte. Sans correction, on le dit. */
     if (r.status === 'cancelled' && !corrections.length) {
-      $('#panneau').innerHTML = `<h4>Relecture arrêtée</h4>
+      $('#panneau').innerHTML = `<h4>Correction arrêtée</h4>
         <p>Aucune correction n'a été trouvée avant l'arrêt. Le transcript
         est inchangé.</p>`;
       return;
@@ -1864,7 +1954,7 @@ function describeCorrection(c, i) {
 function showCorrections() {
   const p = $('#panneau');
   if (!corrections.length) {
-    p.innerHTML = `<h4>Relecture</h4><p>Aucune correction proposée.</p>
+    p.innerHTML = `<h4>Correction</h4><p>Aucune correction proposée.</p>
       <div class="opts"><button id="rno">Fermer</button></div>`;
     $('#rno').onclick = closePanel;
     return;
@@ -2345,8 +2435,8 @@ function render() {
   const fn = job.filename || '', dt = fn.lastIndexOf('.');
   const title = `${escapeHtml(dt > 0 ? fn.slice(0, dt) : fn)}${dt > 0 ? `<i>${escapeHtml(fn.slice(dt))}</i>` : ''}`;
   $('#stage-area').innerHTML = `<div class="pageview" id="pageview"><div class="sheet" id="sheet">
-    <h1 class="title" data-no-i18n>${title}</h1>
-    <p class="metaline"><span data-no-i18n>${clock(job.duration || 0)}</span>${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
+    <h1 class="title" data-no-i18n>${title}<em>${clock(job.duration || 0)}</em></h1>
+    <p class="metaline">${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
     ${multi ? `<section class="channels">
       <header>
         <h2><span data-en="Name the voices">Nommer les voix</span>
@@ -2416,8 +2506,28 @@ let follow = true, limit = null, liveIndex = -1, scrubbing = false;
 const RATES = [1, 1.25, 1.5, 0.75];
 let rateIndex = 0;
 
+/* D'où vient le son à écouter.
+
+   `objectUrl` n'existe que pour un fichier qu'on vient de déposer.
+   Une séance rouverte — depuis la liste, ou dans la bibliothèque — n'en
+   a pas, et le lecteur ne se montait donc jamais : on pouvait relire le
+   texte mais pas l'entendre, ce qui est précisément ce qu'on vient
+   chercher en rouvrant.
+
+   Le serveur sert l'enregistrement sur ce chemin, et honore l'en-tête
+   Range : on peut se déplacer dans deux heures d'audio sans tout
+   télécharger. La bibliothèque répond au même chemin, pour que la page
+   n'ait pas à savoir lequel des deux programmes la sert. */
+function sourceAudio() {
+  if (objectUrl) return objectUrl;
+  if (job && job.id && !job.sans_audio) return `/api/jobs/${job.id}/media`;
+  return '';
+}
+
 function setupDeck() {
-  if (!objectUrl) return;          // sans le fichier d'origine, pas de lecture
+  const src = sourceAudio();
+  if (!src) return;                // sans enregistrement, pas de lecture
+  if (player.getAttribute('src') !== src) player.src = src;
   $('#deck').hidden = false;
 
   $('#pp').onclick = () => player.paused ? play() : player.pause();
@@ -2469,12 +2579,12 @@ function setupDeck() {
 }
 
 function play() {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   player.play().catch(() => {});
 }
 
 function seek(seconds) {
-  if (!objectUrl) return;
+  if (!sourceAudio()) return;
   const span = player.duration || job.duration || 0;
   player.currentTime = Math.max(0, Math.min(seconds, span ? span - 0.05 : seconds));
   limit = null;                    // toute navigation manuelle libère la borne
@@ -3062,6 +3172,42 @@ window.apresCles = function () {
   }).catch(() => {});
 };
 
+
+/* ---------- la porte d'entrée de la bibliothèque ----------
+
+   Le .json et son enregistrement d'un seul geste. Importer le texte
+   sans le son donnerait une séance qu'on ne peut pas réécouter, ce qui
+   est exactement ce qu'on vient chercher ici. */
+{
+  const bouton = $('#importer'), champ = $('#importfile');
+  if (bouton && champ) {
+    bouton.onclick = e => { e.preventDefault(); champ.click(); };
+    champ.onchange = async () => {
+      const fichiers = [...champ.files];
+      champ.value = '';                 // sans quoi le même lot ne se redépose pas
+      if (!fichiers.length) return;
+      const json = fichiers.find(f => /\.json$/i.test(f.name));
+      if (!json) {
+        flash(vm.lang.t('Il faut le fichier .json du transcript.',
+                        'The transcript .json file is required.'));
+        return;
+      }
+      const son = fichiers.find(f => f !== json);
+      const corps = new FormData();
+      corps.append('file', json);
+      if (son) corps.append('audio', son);
+      try {
+        await api('/api/jobs/import', { method: 'POST', body: corps });
+        /* On revient à la liste plutôt que d'ouvrir la séance : on vient
+           souvent d'en déposer plusieurs, et la liste le montre. */
+        if (typeof window.repeindreSeances === 'function') window.repeindreSeances();
+      } catch (err) {
+        flash(err.message);
+      }
+    };
+  }
+}
+
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {
   const w = $('#perime'); w.hidden = false; w.removeAttribute('data-fr');
@@ -3327,8 +3473,9 @@ vm.lang.add({
     [`Texte copié.`]: `Text copied.`, [`Copie refusée par le navigateur.`]: `Copy refused by the browser.`
   },
   rules: [
-    [/^Relecture en cours$/, () => `Correction in progress`],
-    [/^Relecture arrêtée$/, () => `Correction stopped`],
+    [/^Correction$/, () => `Correction`],
+    [/^Correction en cours$/, () => `Correction in progress`],
+    [/^Correction arrêtée$/, () => `Correction stopped`],
     [/^Arrêt…$/, () => `Stopping…`],
     [/^arrêt demandé$/, () => `stop requested`],
     [/^Aucune correction n'a été trouvée avant l'arrêt\. Le transcript\s+est inchangé\.$/, () => `No correction was found before the stop. The transcript is unchanged.`],
