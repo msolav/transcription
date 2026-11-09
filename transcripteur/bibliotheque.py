@@ -109,6 +109,22 @@ def sante() -> dict:
             "place": memoire.place_occupee()}
 
 
+@app.get("/api/models")
+def modeles_de_voix(langue: str = "") -> dict:
+    """Le catalogue des modèles de voix.
+
+    La bibliothèque ne sépare aucune voix. Mais c'est la page de
+    l'application qu'elle sert, et cette page remplit ses listes au
+    démarrage : sans cette réponse, l'appel échouait en 404 et le rendu
+    d'une séance s'arrêtait là — on cliquait « Rouvrir » et rien ne
+    s'ouvrait. `assets` n'entraîne rien de lourd, vérifié."""
+    from . import assets
+    return {"modeles": assets.inventaire(langue or None),
+            "defaut": assets.DEFAULT_EMBEDDING,
+            "nettoyeurs": assets.inventaire_debruiteurs(),
+            "nettoyeur_defaut": assets.DEBRUITEUR_DEFAUT}
+
+
 @app.get("/api/reglages")
 def lire_reglages() -> dict:
     """Les réglages d'affichage. La page les lit au démarrage.

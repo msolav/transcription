@@ -445,9 +445,10 @@ def modeles_relecture() -> dict:
 def list_models(langue: str = "") -> dict:
     """Le catalogue des modèles de voix, le plus adapté à la langue en tête.
 
-    L'ordre suit la langue d'entraînement de chaque modèle. Ce n'est pas un
-    classement de précision : départager deux modèles d'une même famille
-    demanderait un enregistrement annoté que nous n'avons pas."""
+    L'ordre suit d'abord la langue d'entraînement, puis la justesse
+    mesurée — c'est un classement de précision depuis qu'il en existe
+    une mesure, et le coût de calcul ne sert plus qu'à départager.
+    Voir outils/mesure_attribution.py."""
     return {"modeles": assets.inventaire(langue or None),
             "defaut": assets.DEFAULT_EMBEDDING,
             "nettoyeurs": assets.inventaire_debruiteurs(),

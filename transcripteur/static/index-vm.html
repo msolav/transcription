@@ -421,7 +421,13 @@ button { cursor: pointer; border: 0; background: none; }
 .wordmark b { font: 900 1.5rem/1 var(--vm-font-display); font-stretch: 62%; letter-spacing: -.02em; text-transform: uppercase; }
 .exportbar { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; margin-left: 12px; opacity: 0; visibility: hidden; pointer-events: none;
   transition: opacity .7s var(--vm-ease), visibility 0s .7s; }
-body:has(#doc) .exportbar, body:has(#doc) .newjob { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
+/* `.newjob` ne reçoit plus d'opacité ici. Elle l'obligeait à être
+   rendue ailleurs à spécificité égale, et cette règle-là (1,1,2)
+   écrasait alors `body.back .exportbar > :not(.newjob)` (0,3,1) qui
+   masque la barre sur l'écran de liste : « Copier » restait affiché
+   devant une liste de séances, sans document à copier. */
+body:has(#doc) .exportbar { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
+body:has(#doc) .newjob { visibility: visible; pointer-events: auto; transition: opacity .8s var(--vm-ease) .25s, visibility 0s; }
 body:has(.setup) .exportbar { display: none; }
 .exportbar button, .newjob, .linkbtn { position: relative; padding: 0 .85rem; min-height: 44px; font: 600 .9375rem/1 var(--vm-font-display); white-space: nowrap;
   background: linear-gradient(currentColor, currentColor) left calc(100% - 9px) / calc(100% - 1.7rem) 1px no-repeat; background-position-x: .85rem;
@@ -435,7 +441,6 @@ body:has(.setup) .exportbar { display: none; }
 /* `body:has(#doc) .newjob { opacity: 1 }` sert à faire paraître le
    bouton ; il l'emportait sur l'opacité de repos et laissait « Nouveau »
    seul en pleine encre au bout de la rangée. Même portée, posée après. */
-body:has(#doc) .exportbar button, body:has(#doc) .newjob,
 .exportbar button, .newjob {
   opacity: .62;
   transition: background-size .55s var(--vm-ease-out), opacity .4s var(--vm-ease),
@@ -922,6 +927,15 @@ body[data-biblio].back .newjob .l2 { display: inline; }
 body[data-biblio] .pickrow > :not(#importer) { display: none; }
 body[data-biblio] #importer { display: inline; }
 #importer { display: none; }
+
+
+/* La liste des séances est une note de bas de page dans l'application —
+   sous l'écran de dépôt, qui est le sujet. Dans la bibliothèque elle
+   EST le sujet, et la même taille s'y lit comme une erreur. */
+body[data-biblio] .tr-sc { --vm-s: clamp(.9rem, 1.1vw, 1.05rem); }
+body[data-biblio] .tr-sc > h3 { margin-bottom: 1rem; }
+body[data-biblio] .tr-sc li { padding: .55rem 0; }
+body[data-biblio] #importer { font-size: 1.05rem; }
 </style>
 </head>
 <body>

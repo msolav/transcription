@@ -119,7 +119,15 @@ try:
     # un pipeline absent du paquet, et echouerait sur une trace de
     # ImportError au lieu d'un refus clair.
     _chemins = {r.path for r in bibliotheque.app.routes if hasattr(r, "path")}
-    _interdits = {"/api/jobs", "/api/key", "/api/relecture", "/api/models"}
+    # Ce qui appellerait un pipeline absent du paquet, et echouerait sur
+    # une trace de ImportError au lieu d'un refus clair.
+    #
+    # /api/models n'en fait pas partie, et c'est delibere : c'est un
+    # catalogue en lecture seule, qu'`assets` rend sans rien importer de
+    # lourd. La page le demande au demarrage ; sans reponse, l'ouverture
+    # d'une seance s'arretait la — on cliquait « Rouvrir » et rien ne
+    # s'ouvrait.
+    _interdits = {"/api/jobs", "/api/key", "/api/relecture"}
     verifie("elle n'offre aucune route de traitement",
             not (_chemins & _interdits), str(_chemins & _interdits))
 
