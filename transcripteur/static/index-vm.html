@@ -500,14 +500,14 @@ body:has(#doc) .capture, body:has(.setup) .capture { height: 0; opacity: 0; poin
 .hero { display: grid; grid-template-rows: auto auto; row-gap: clamp(26px, 5svh, 52px); }
 .stamp {  font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .16em; text-transform: uppercase; padding: .6em .8em .5em; border: 1px solid currentColor; rotate: -1.5deg; }
 .giant { grid-row: 2; grid-column: 1; margin: 0; display: flex; flex-direction: column; font-family: var(--vm-font-display); text-transform: uppercase; letter-spacing: -.02em;
-  font-size: clamp(4rem, min(19vw, 27svh), 17rem); line-height: .84; font-stretch: 62%; min-width: 0; overflow-wrap: anywhere;
+  font-size: clamp(3rem, min(9vw, 12svh), 9rem); line-height: .84; font-stretch: 62%; min-width: 0; overflow-wrap: anywhere;
   transition: opacity .8s var(--vm-ease); }
 .giant .a, .giant .b { display: block; transition: font-weight 1.1s var(--vm-ease-out), font-stretch 1.1s var(--vm-ease-out), color .7s var(--vm-ease); }
 .giant .a { font-weight: 900; }
 .giant .b { font-weight: 100; font-stretch: 75%; font-size: .56em; line-height: 1; margin-top: .06em; }
 .drop:not(.filled):hover .a, .drop.hot .a { font-weight: 100; font-stretch: 75%; }
 .drop:not(.filled):hover .b, .drop.hot .b { font-weight: 900; font-stretch: 62%; }
-.giant.got { opacity: 0; pointer-events: none; font-size: clamp(3rem, min(12vw, 20svh), 12rem); }
+.giant.got { opacity: 0; pointer-events: none; font-size: clamp(2.6rem, min(8vw, 10svh), 8rem); }
 .drop.filled .giant.ask { opacity: 0; pointer-events: none; }
 .drop.filled .giant.got { opacity: 1; }
 /* Le nom du fichier est borné à deux lignes, et sa taille suit sa
@@ -855,8 +855,7 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
 .setup .role { font-weight: 300; margin-bottom: 14px; transition: font-weight 1.1s var(--vm-ease-out); }
 .setup .ecran:hover .role { font-weight: 700; }
 .backbtn { z-index: 2; }
-.giant { transition: opacity .8s var(--vm-ease), font-size .9s var(--vm-ease); }
-.capture:has(.more[data-open]) .giant.ask { font-size: clamp(3rem, min(11vw, 13svh), 10rem); }
+.giant { transition: opacity .8s var(--vm-ease); }
 .capture:has(.more[data-open]) .stampline { opacity: 0; }
 /* option markers: pinned to the first text line, so rows of unequal height stay aligned */
 .settings .vm-sel li { align-self: start; }
@@ -866,7 +865,7 @@ body.back .dock { opacity: 0; pointer-events: none; transition: opacity .5s var(
    Le contenu est calé en bas : quand il dépasse, il dépasse par le
    HAUT, et le titre géant se retrouve coupé. « safe » empêche le
    débordement du côté du début, le zoom fait tenir le reste. */
-.capture > * { zoom: var(--fit, 1); }
+.capture > * { zoom: 1; }
 
 /* Les icônes de transport du lecteur : même poids optique que les
    libellés « −10 s » à côté, sinon la rangée bascule d'un côté. */
@@ -936,6 +935,48 @@ body[data-biblio] .tr-sc { --vm-s: clamp(.9rem, 1.1vw, 1.05rem); }
 body[data-biblio] .tr-sc > h3 { margin-bottom: 1rem; }
 body[data-biblio] .tr-sc li { padding: .55rem 0; }
 body[data-biblio] #importer { font-size: 1.05rem; }
+
+.alert .alertkey { margin-left: 1rem; min-height: 0; padding: 0; text-decoration: underline; text-underline-offset: 4px; }
+#keysbtn { min-height: 44px; }
+
+.pctwrap { display: flex; flex-direction: column; }
+.etaline { margin: .6rem 0 0; font: 500 clamp(.95rem, 1.6vw, 1.25rem)/1.3 var(--vm-font-mono); letter-spacing: .04em; color: var(--vm-ink); min-height: 1.3em; }
+.estim { font-size: 1rem; color: var(--vm-ink); }
+
+.verbose { position: absolute; right: var(--pad); top: 24px; bottom: 22px; width: min(52vw, 760px); display: flex; flex-direction: column; justify-content: flex-end; gap: .35rem;
+  font: 400 clamp(.8rem, 1.1vw, .95rem)/1.45 var(--vm-font-mono); overflow: clip; opacity: 0; pointer-events: none; transition: opacity .9s var(--vm-ease); }
+.verbose b { font-weight: 600; letter-spacing: .12em; text-transform: uppercase; margin-bottom: .5rem; color: var(--vm-accent); }
+.verbose div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body.detail-on .capture:has(#status:not([hidden])) .verbose { opacity: 1; }
+#verbosebtn[aria-pressed="true"] { text-decoration: underline; text-underline-offset: 5px; }
+#verbosebtn:not(:has(~ *)) { }
+
+/* Sous-options d'« Enregistrer » : un autre registre que les actions de la barre.
+   Les actions : sans-empattement gras, soulignées. Les sous-options : mono capitales
+   fines, couleur de signal, sans soulignement, séparées par un trait vertical. */
+.savewrap { flex: none; }
+.savegroup .sg { align-items: center; gap: 0; margin-left: .35rem; padding-left: .5rem; border-left: 1px solid var(--vm-accent); }
+.exportbar .savegroup button { font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--vm-accent);
+  background-image: none; padding: 0 .75rem; opacity: .8; }
+.exportbar .savegroup button:hover { opacity: 1; color: var(--vm-ink); background-image: linear-gradient(currentColor, currentColor);
+  background-size: calc(100% - 1.5rem) 1px; background-position: .75rem calc(100% - 12px); background-repeat: no-repeat; }
+
+/* séparer après coup */
+.sepwrap { position: relative; display: inline-flex; }
+.sepbox { position: absolute; top: calc(100% + 6px); left: 0; z-index: 70; width: 340px; display: flex; flex-direction: column; gap: .7rem; padding: 1rem 1.1rem 1.1rem;
+  background: var(--vm-ink); color: var(--vm-paper); font: 400 .9rem/1.45 var(--vm-font-display);
+  opacity: 0; visibility: hidden; translate: 0 -6px; transition: opacity .6s var(--vm-ease), translate .6s var(--vm-ease), visibility 0s .6s; }
+.sepwrap.open .sepbox { opacity: 1; visibility: visible; translate: 0 0; transition: opacity .6s var(--vm-ease), translate .6s var(--vm-ease), visibility 0s; }
+.sepbox b { font: 600 .75rem var(--vm-font-mono); letter-spacing: .12em; text-transform: uppercase; color: var(--vm-accent); }
+.sepbox .numchips button { border-color: color-mix(in oklab, var(--vm-paper) 45%, transparent); color: var(--vm-paper); min-width: 34px; height: 34px; }
+.sepbox .numchips button.on { background: var(--vm-paper); color: var(--vm-ink); }
+.sepbox .linkbtn { color: var(--vm-paper); align-self: flex-start; padding: 0; opacity: 1; }
+.sepbox { width: 380px; }
+.exportbar .sepbox button { background-image: none; opacity: 1; padding: 0; }
+.sepbox .numchips { gap: 3px; flex-wrap: nowrap; }
+.sepbox .numchips button { min-width: 0; flex: 1 1 0; height: 36px; font: 500 .8125rem var(--vm-font-mono); color: var(--vm-paper); }
+.exportbar .sepbox .linkbtn { background: var(--vm-paper); color: var(--vm-ink); padding: 0 1.2rem; align-self: flex-start; font-weight: 700; }
+.exportbar .sepbox .linkbtn:hover { background: var(--vm-accent); color: var(--vm-paper); }
 </style>
 </head>
 <body>
@@ -946,7 +987,7 @@ body[data-biblio] #importer { font-size: 1.05rem; }
     <span class="tipwrap">
       <button class="info" type="button" aria-expanded="false" aria-label="Confidentialité" data-en-aria-label="Privacy">i</button>
       <span class="tipbody">
-        <b data-en="Stays on this computer">Reste sur cet ordinateur</b>
+        <b data-en="Privacy">Confidentialité</b>
         <span data-en="Voices are separated here. Only the audio, compressed to mono MP3, goes to Groq for speech recognition. Nothing is kept once the program is closed.">La séparation des voix se fait ici. Seul l'audio, compressé en MP3 mono, part chez Groq pour la reconnaissance de la parole. Rien n'est conservé après la fermeture du programme.</span>
         <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
       </span>
@@ -963,12 +1004,18 @@ body[data-biblio] #importer { font-size: 1.05rem; }
     </span>
     <button id="reread" data-en="Correct">Corriger</button>
     <button id="sum" data-en="Summarize">Résumer</button>
+    <span class="sepwrap" id="sepwrap"><button id="sepafter" type="button" hidden aria-expanded="false" data-en="Separate voices">Séparer les voix</button>
+      <span class="sepbox" id="sepbox"><b data-en="Separate the voices now">Séparer les voix maintenant</b>
+        <span data-en="No new upload to Groq: only computing time. Say how many people speak if known.">Aucun nouvel envoi à Groq : seulement du temps de calcul. Indiquer le nombre de personnes si connu.</span>
+        <span class="numchips" id="afterchips" role="radiogroup"><button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button></span>
+        <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
     <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to the open project">Retour au projet ouvert</span><!-- Dans la bibliothèque, « Nouveau » ne mène nulle part : rien ne
          s'y transcrit. Le même bouton ramène à la liste. --><span class="l3" data-en="All sessions">Toutes les séances</span></button>
   </nav>
   <div class="tools">
+    <button class="linkbtn" id="keysbtn" type="button" data-en="Keys">Clés</button>
     <div class="vm-lang"></div>
     <button class="vm-theme" type="button" aria-label="Changer de thème" data-en-aria-label="Switch light / dark"></button>
   </div>
@@ -982,7 +1029,8 @@ body[data-biblio] #importer { font-size: 1.05rem; }
       <div class="stampline"><div class="stamp" data-en="Audio or video">Audio ou vidéo</div></div>
       <h1 class="giant ask"><span class="a" data-en="Drop">Déposer</span><span class="b" data-en="a file.">un fichier.</span></h1>
       <h1 class="giant got" aria-live="polite"><span class="a" id="fname" data-no-i18n></span><span class="b" id="fmeta" data-no-i18n></span></h1>
-      <div class="pctwrap" aria-hidden="true"><em id="pct">0 %</em></div>
+      <div class="verbose" id="verbose" data-no-i18n aria-live="off"></div>
+      <div class="pctwrap"><em id="pct" aria-hidden="true">0 %</em><p class="etaline" id="eta" data-no-i18n></p></div>
     </div>
     <div class="pickrow">
       <button type="button" id="pick" class="big"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M12 18L24 6l12 12M6 32v10h36V32"/></svg><span data-en="Choose a file">Choisir un fichier</span></button>
@@ -992,6 +1040,7 @@ body[data-biblio] #importer { font-size: 1.05rem; }
       <a href="#" id="importer" data-en="Add a transcript">Ajouter un transcript</a>
       <button type="button" id="clear" class="linkbtn" data-en="Change file">Changer de fichier</button>
       <p class="working" id="working" hidden data-en="Keep this page open.">Garder cette page ouverte.</p>
+      <input type="file" id="voixfile" accept="audio/*,video/mp4,video/quicktime" hidden>
       <input type="file" id="jsonfile" accept=".json,application/json" hidden>
       <!-- Le .json et son enregistrement d'un seul geste : importer le
            texte sans le son donnerait une séance qu'on ne peut pas
@@ -1087,6 +1136,7 @@ body[data-biblio] #importer { font-size: 1.05rem; }
     <span id="stage" aria-live="polite">En attente</span>
     <span id="elapsed"></span>
     <button class="stop" id="stop" hidden data-en="Stop">Arrêter</button>
+    <button class="linkbtn" id="verbosebtn" type="button" aria-pressed="false" data-en="Details">Détails</button>
     <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Détails techniques" data-en-aria-label="Technical details">i</button><span class="tipbody wide"><div class="journal" id="journal" data-no-i18n lang="fr"></div></span></span>
   </div>
 </section>
@@ -2343,6 +2393,7 @@ async function tick() {
     if (data.status === 'done') {
       job = await api(`/api/jobs/${jobId}`);
       names = { ...job.names };
+      if (job.error) $('#alerts').innerHTML = `<div class="alert">${escapeHtml(job.error)}</div>`;
       idle('Transcrire à nouveau');
       render();
     }
@@ -2792,10 +2843,18 @@ function exportAs(kind) {
     : JSON.stringify({ file: job.filename, duration: job.duration, names,
         speakers: job.speakers, blocks: mergedBlocks() }, null, 2);
   const ext = kind === 'json' ? 'json' : kind;
-  download(payload, `${base}.${ext}`);
-  flash(`${base}.${ext} enregistré.`);
+  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));
 }
 
+/* Dans la fenêtre de l'application, un lien « download » navigue au lieu d'enregistrer : le programme écrit le fichier. Dans un navigateur ordinaire, téléchargement normal. */
+async function enregistrerFichier(text, filename) {
+  const fenetre = !!window.pywebview || !/Safari|Chrome|Firefox/.test(navigator.userAgent);
+  if (fenetre) {
+    try { const r = await api('/api/enregistrer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: filename, texte: text }) });
+      return `${r.nom} ${vm.lang.t('enregistré dans', 'saved in')} ${r.dossier}.`; } catch (e) { /* repli : téléchargement du navigateur */ }
+  }
+  download(text, filename); return null;
+}
 function download(text, filename) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
   const a = document.createElement('a');
@@ -3298,7 +3357,7 @@ if (location.protocol === 'file:') {
     clearTimeout(repos);
     repos = setTimeout(mesurer, 1200);
   };
-  if (cap) {
+  if (cap && false) { /* mise à l'échelle retirée : un titre qui change de taille est pire qu'un titre un peu grand */
     new ResizeObserver(fitCap).observe(cap);
     new MutationObserver(fitCap).observe(cap, { childList: true, subtree: true });
     addEventListener('resize', fitCap);
@@ -3382,12 +3441,67 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.info[aria-expanded="true"]').forEach(x => x.setAttribute('aria-expanded', 'false')); });
 $('#newjob').onclick = () => document.body.classList.toggle('back');
+/* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
+{ const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
+  setInterval(() => { btn.hidden = !(typeof job !== 'undefined' && job && job.blocks && job.speakers && job.speakers.length <= 1 && document.querySelector('#doc')); }, 500);
+  btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
+  $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
+  async function lancer(fichier) {
+    const form = new FormData(); form.append('embedding', 'auto'); form.append('denoise', '');
+    if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
+    wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = [];
+    document.body.classList.remove('back'); $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Séparation des voix', 0.01);
+    try { await api(`/api/jobs/${jobId}/voix`, { method: 'POST', body: form }); poll = setInterval(tick, 1000); tick(); }
+    catch (err) {
+      idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true;
+      if (/plus sur cette machine|de nouveau/i.test(err.message) && !fichier) { $('#voixfile').click(); return; }
+      fail(err.message); }
+  }
+  $('#sepgo').onclick = () => lancer();
+  $('#voixfile').onchange = e => { if (e.target.files[0]) lancer(e.target.files[0]); };
+  document.addEventListener('click', e => { if (wrap.classList.contains('open') && !e.target.closest('#sepwrap')) { wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } }); }
+/* Mode détaillé : les lignes du journal, en direct, à côté du pourcentage. */
+{ const vb = $('#verbosebtn'), box = $('#verbose'), j = $('#journal');
+  const poser = on => { document.body.classList.toggle('detail-on', on); vb.setAttribute('aria-pressed', String(on)); try { localStorage.setItem('tr-verbose', on ? '1' : '0'); } catch (e) {} };
+  const peindre = () => { const l = [...j.querySelectorAll('div')].map(d => d.textContent).slice(-12);
+    box.innerHTML = l.map((t, i) => `<div style="opacity:${(.35 + .65 * (i + 1) / l.length).toFixed(2)}">${t.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`).join('');
+    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('afterbegin', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
+  vb.onclick = () => poser(!document.body.classList.contains('detail-on'));
+  new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
+  new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });
+  let v = false; try { v = localStorage.getItem('tr-verbose') === '1'; } catch (e) {} poser(v); }
+/* Durée restante : moyenne depuis le début, donc stable ; affichée dès 1 %, avec l'heure de fin. */
+{ let t0 = 0, last = 0; const eta = $('#eta'), pct = $('#pct');
+  const dire = s => { const m = Math.max(1, Math.round(s / 60)); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') : m + ' min'; };
+  new MutationObserver(() => { const p = parseInt(pct.textContent, 10) || 0, now = Date.now();
+    if (p < last || !t0 || p === 0) { t0 = now; } last = p;
+    if (p <= 0) { eta.textContent = ''; return; }
+    if (p >= 100) { eta.textContent = ''; return; }
+    const el = (now - t0) / 1000; if (p < 1 || el < 20) { eta.textContent = vm.lang.t('Calcul de la durée…', 'Working out the time left…'); return; }
+    const left = el * (100 - p) / p, fin = new Date(now + left * 1000);
+    eta.textContent = vm.lang.t('Encore environ ', 'About ') + dire(left) + vm.lang.t(' · fin vers ', ' left · done around ') + fin.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); })
+    .observe(pct, { childList: true, characterData: true, subtree: true }); }
+/* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
+const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
+$('#keysbtn').onclick = ouvrirCles;
+new MutationObserver(() => { document.querySelectorAll('#alerts .alert').forEach(a => {
+  if (!a.querySelector('.alertkey') && /cl[ée]/i.test(a.textContent) && /(refus|aucune|invalide|absente)/i.test(a.textContent)) {
+    const k = document.createElement('button'); k.type = 'button'; k.className = 'linkbtn alertkey'; k.textContent = vm.lang.t('Changer la clé', 'Change the key'); k.onclick = ouvrirCles; a.appendChild(k); } }); }).observe($('#alerts'), { childList: true, subtree: true, characterData: true });
+/* Au lancement, l'interrupteur fait foi : éteint, jamais de séparation, quoi que #count ait gardé en mémoire. */
+$('#go').addEventListener('click', () => { const sw = $('#sep'), c = $('#count'); if (sw && c && sw.getAttribute('aria-checked') !== 'true' && c.value !== 'none') { c.value = 'none'; c.dispatchEvent(new Event('change')); } }, true);
 const setCount = v => { const c = $('#count'); c.value = v; c.dispatchEvent(new Event('change')); };
 let lastN = 'auto';
 document.addEventListener('click', e => {
   const t = e.target.closest('#sep'), c = e.target.closest('#numchips button'), pg = e.target.closest('#pgprev, #pgnext');
   if (t) { const on = !t.classList.contains('on'); t.classList.toggle('on', on); t.setAttribute('aria-checked', String(on)); setCount(on ? lastN : 'none'); }
-  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c)); setCount(lastN); }
+  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c));
+    /* Le nombre de voix ne vaut que si l'interrupteur est allumé : le choisir l'allume, il ne peut jamais séparer en cachette. */
+    const sw = $('#sep'); if (!sw.classList.contains('on')) { sw.classList.add('on'); sw.setAttribute('aria-checked', 'true'); }
+    setCount(lastN); }
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });

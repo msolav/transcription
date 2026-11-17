@@ -621,15 +621,28 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
             # lit par blocs et ne rend la main qu'une fois son tampon
             # rempli, ce qui retardait la lecture de la demande d'arrêt
             # de plusieurs secondes.
+            # La lecture se fait dans un fil à part : readline() bloque tant
+            # que l'enfant n'écrit rien, et pendant un long calcul il
+            # n'écrit rien — la demande d'arrêt n'était vue qu'à la ligne
+            # suivante, parfois des minutes plus tard.
+            import queue, threading
+            file = queue.Queue()
+            def _lire():
+                for l in iter(proc.stdout.readline, ""):
+                    file.put(l)
+                file.put(None)
+            threading.Thread(target=_lire, daemon=True).start()
             while True:
-                ligne = proc.stdout.readline()
-                if not ligne:
-                    break
+                try:
+                    ligne = file.get(timeout=0.2)
+                except queue.Empty:
+                    ligne = ""
+                    vide = True
+                else:
+                    vide = False
+                    if ligne is None:
+                        break
                 if _stop and _stop():
-                    # SIGTERM ne peut pas être traité tant que l'appel
-                    # C++ n'a pas rendu la main à Python : attendre cinq
-                    # secondes ne faisait qu'ajouter cinq secondes. Le
-                    # travail est jetable, on tue.
                     proc.terminate()
                     try:
                         proc.wait(timeout=0.5)
@@ -637,6 +650,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
                         proc.kill()
                         proc.wait()
                     raise Cancelled()
+                if vide:
+                    continue
                 ligne = ligne.strip()
                 if ligne.startswith("P "):
                     _, faits, total = ligne.split()

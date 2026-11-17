@@ -328,6 +328,41 @@ def version() -> dict:
     return _VERSION_VUE["resultat"]
 
 
+@app.post("/api/enregistrer")
+def enregistrer_fichier(payload: dict) -> dict:
+    """Écrit un export dans le dossier Téléchargements, puis le montre.
+
+    La fenêtre de l'application (WebKit intégré) ignore l'attribut
+    `download` d'un lien interne : au lieu d'enregistrer, elle navigue
+    vers le texte et remplace toute l'interface. Le programme écrit donc
+    le fichier lui-même, sans passer par la fenêtre."""
+    nom = Path(str(payload.get("nom") or "transcription.txt")).name
+    nom = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", nom).strip(". ") or "transcription.txt"
+    texte = payload.get("texte")
+    if not isinstance(texte, str):
+        raise HTTPException(400, "Rien à enregistrer.")
+    dossier = Path.home() / "Downloads"
+    if not dossier.is_dir():
+        dossier = Path.home()
+    cible = dossier / nom
+    n = 1
+    while cible.exists():
+        cible = dossier / f"{Path(nom).stem} ({n}){Path(nom).suffix}"
+        n += 1
+    cible.write_text(texte, encoding="utf-8")
+    try:
+        import subprocess, sys
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(cible)])
+        elif sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", "/select,", str(cible)])
+        else:
+            subprocess.Popen(["xdg-open", str(dossier)])
+    except Exception:  # noqa: BLE001
+        pass
+    return {"nom": cible.name, "dossier": dossier.name}
+
+
 @app.post("/api/ouvrir")
 def ouvrir_lien(payload: dict) -> dict:
     """Ouvre une adresse de fournisseur dans le navigateur du système.
@@ -421,6 +456,15 @@ async def create_job(
 
     if not config.get_key("groq"):
         raise HTTPException(400, "Aucune clé Groq enregistrée.")
+    # La clé est éprouvée avant tout travail : sinon un refus de Groq ne se
+    # découvre qu'à l'étape de transcription, après des heures de calcul.
+    try:
+        _verdict = await run_in_threadpool(
+            config.check_key, config.get_key("groq"), "groq")
+    except Exception:  # noqa: BLE001
+        _verdict = None
+    if _verdict:
+        raise HTTPException(400, _verdict if isinstance(_verdict, str) else str(_verdict))
 
     job_id = uuid.uuid4().hex[:12]
     # Dans le dossier de données et non dans un dossier temporaire. Le

@@ -177,3 +177,14 @@ env -i HOME=/tmp/fakehome python -m transcripteur --port 7992 --no-browser   # s
 ```
 Tester à 1440×900, 1280×720 et 390×844 : `document.documentElement.scrollHeight - innerHeight`
 doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
+
+## 6. Mise à jour du 17 novembre (après une transcription de 2 h perdue)
+
+- `server.py` : la clé Groq est éprouvée (`config.check_key`) avant de lancer un traitement.
+- `pipeline.py` : la demande d'arrêt est surveillée toutes les 0,2 s (lecture du processus de séparation dans un fil). À vérifier avec une vraie séparation.
+- Interface : bouton « Clés » dans la barre, « Changer la clé » dans l'alerte, durée restante + heure de fin sous le pourcentage, interrupteur « Détails » (journal en direct), titre à taille stable (plus de mise à l'échelle automatique), séparation forcée à « aucune » si l'interrupteur est éteint au lancement.
+- **À examiner côté serveur** : l'estimation affichée avant le lancement (« Environ 18 min » pour un fichier de 45,8 Mo sans séparation) paraît trop haute ; revoir `couts` dans `/api/health`. Une transcription seule devrait prendre quelques minutes.
+- L'application installée (`/Applications/Transcripteur.app`) ne contient aucun de ces correctifs tant que le paquet n'est pas reconstruit.
+- Séparer les voix après coup : bouton « Séparer les voix » dans la barre (visible seulement si le transcript n'a qu'une voix) → `POST /api/jobs/{id}/voix` (nombre de voix Auto/1–8), même écran de progression, ETA, Arrêter, Détails. Si l'audio n'est plus sur la machine, le sélecteur de fichier s'ouvre. Éprouvé seulement contre une simulation de la route.
+- Barre d'actions : les sous-options d'« Enregistrer » ont un autre registre (mono capitales, couleur de signal, trait vertical) que les actions de la barre.
+- Écart à vérifier : l'application empaquetée affiche « Sous-titres nommés » ; le `index-vm.html` construit ici n'a pas cette entrée (Texte / Sous-titres / Données). Reporter dans `body2.html` si le serveur la gère.

@@ -17,6 +17,19 @@ rep("$('#fill').style.width = (ratio * 100) + '%';", "busy.set(ratio);")
 rep("$('#status').hidden = false;", "$('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; }")
 rep("function idle(label) {\n  clearInterval(poll);", "function idle(label) {\n  clearInterval(poll);\n  busy.stop();\n  { const wk = $('#working'); if (wk) wk.hidden = true; }")
 rep("idle('Terminé');", "idle('Transcrire à nouveau');")
+rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
+    "  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));")
+rep("function download(text, filename) {", """/* Dans la fenêtre de l'application, un lien « download » navigue au lieu d'enregistrer : le programme écrit le fichier. Dans un navigateur ordinaire, téléchargement normal. */
+async function enregistrerFichier(text, filename) {
+  const fenetre = !!window.pywebview || !/Safari|Chrome|Firefox/.test(navigator.userAgent);
+  if (fenetre) {
+    try { const r = await api('/api/enregistrer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: filename, texte: text }) });
+      return `${r.nom} ${vm.lang.t('enregistré dans', 'saved in')} ${r.dossier}.`; } catch (e) { /* repli : téléchargement du navigateur */ }
+  }
+  download(text, filename); return null;
+}
+function download(text, filename) {""")
+rep("      names = { ...job.names };", "      names = { ...job.names };\n      if (job.error) $('#alerts').innerHTML = `<div class=\"alert\">${escapeHtml(job.error)}</div>`;")
 rep("  $('#go').disabled = false;\n}\n\n/* ---------- lancement", "  $('#go').disabled = false;\n  const gh = $('#gohint'); if (gh) gh.hidden = true;\n}\n\n/* ---------- lancement")
 # ---- dropdowns created inside panels ----
 rep("  const majCout = async () => {", "  enh(p);\n  const majCout = async () => {")
@@ -640,7 +653,7 @@ if (location.protocol === 'file:') {
     clearTimeout(repos);
     repos = setTimeout(mesurer, 1200);
   };
-  if (cap) {
+  if (cap && false) { /* mise à l'échelle retirée : un titre qui change de taille est pire qu'un titre un peu grand */
     new ResizeObserver(fitCap).observe(cap);
     new MutationObserver(fitCap).observe(cap, { childList: true, subtree: true });
     addEventListener('resize', fitCap);
@@ -724,12 +737,67 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.info[aria-expanded="true"]').forEach(x => x.setAttribute('aria-expanded', 'false')); });
 $('#newjob').onclick = () => document.body.classList.toggle('back');
+/* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
+{ const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
+  setInterval(() => { btn.hidden = !(typeof job !== 'undefined' && job && job.blocks && job.speakers && job.speakers.length <= 1 && document.querySelector('#doc')); }, 500);
+  btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
+  $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
+  async function lancer(fichier) {
+    const form = new FormData(); form.append('embedding', 'auto'); form.append('denoise', '');
+    if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
+    wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = [];
+    document.body.classList.remove('back'); $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Séparation des voix', 0.01);
+    try { await api(`/api/jobs/${jobId}/voix`, { method: 'POST', body: form }); poll = setInterval(tick, 1000); tick(); }
+    catch (err) {
+      idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true;
+      if (/plus sur cette machine|de nouveau/i.test(err.message) && !fichier) { $('#voixfile').click(); return; }
+      fail(err.message); }
+  }
+  $('#sepgo').onclick = () => lancer();
+  $('#voixfile').onchange = e => { if (e.target.files[0]) lancer(e.target.files[0]); };
+  document.addEventListener('click', e => { if (wrap.classList.contains('open') && !e.target.closest('#sepwrap')) { wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } }); }
+/* Mode détaillé : les lignes du journal, en direct, à côté du pourcentage. */
+{ const vb = $('#verbosebtn'), box = $('#verbose'), j = $('#journal');
+  const poser = on => { document.body.classList.toggle('detail-on', on); vb.setAttribute('aria-pressed', String(on)); try { localStorage.setItem('tr-verbose', on ? '1' : '0'); } catch (e) {} };
+  const peindre = () => { const l = [...j.querySelectorAll('div')].map(d => d.textContent).slice(-12);
+    box.innerHTML = l.map((t, i) => `<div style="opacity:${(.35 + .65 * (i + 1) / l.length).toFixed(2)}">${t.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`).join('');
+    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('afterbegin', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
+  vb.onclick = () => poser(!document.body.classList.contains('detail-on'));
+  new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
+  new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });
+  let v = false; try { v = localStorage.getItem('tr-verbose') === '1'; } catch (e) {} poser(v); }
+/* Durée restante : moyenne depuis le début, donc stable ; affichée dès 1 %, avec l'heure de fin. */
+{ let t0 = 0, last = 0; const eta = $('#eta'), pct = $('#pct');
+  const dire = s => { const m = Math.max(1, Math.round(s / 60)); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') : m + ' min'; };
+  new MutationObserver(() => { const p = parseInt(pct.textContent, 10) || 0, now = Date.now();
+    if (p < last || !t0 || p === 0) { t0 = now; } last = p;
+    if (p <= 0) { eta.textContent = ''; return; }
+    if (p >= 100) { eta.textContent = ''; return; }
+    const el = (now - t0) / 1000; if (p < 1 || el < 20) { eta.textContent = vm.lang.t('Calcul de la durée…', 'Working out the time left…'); return; }
+    const left = el * (100 - p) / p, fin = new Date(now + left * 1000);
+    eta.textContent = vm.lang.t('Encore environ ', 'About ') + dire(left) + vm.lang.t(' · fin vers ', ' left · done around ') + fin.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); })
+    .observe(pct, { childList: true, characterData: true, subtree: true }); }
+/* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
+const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
+$('#keysbtn').onclick = ouvrirCles;
+new MutationObserver(() => { document.querySelectorAll('#alerts .alert').forEach(a => {
+  if (!a.querySelector('.alertkey') && /cl[ée]/i.test(a.textContent) && /(refus|aucune|invalide|absente)/i.test(a.textContent)) {
+    const k = document.createElement('button'); k.type = 'button'; k.className = 'linkbtn alertkey'; k.textContent = vm.lang.t('Changer la clé', 'Change the key'); k.onclick = ouvrirCles; a.appendChild(k); } }); }).observe($('#alerts'), { childList: true, subtree: true, characterData: true });
+/* Au lancement, l'interrupteur fait foi : éteint, jamais de séparation, quoi que #count ait gardé en mémoire. */
+$('#go').addEventListener('click', () => { const sw = $('#sep'), c = $('#count'); if (sw && c && sw.getAttribute('aria-checked') !== 'true' && c.value !== 'none') { c.value = 'none'; c.dispatchEvent(new Event('change')); } }, true);
 const setCount = v => { const c = $('#count'); c.value = v; c.dispatchEvent(new Event('change')); };
 let lastN = 'auto';
 document.addEventListener('click', e => {
   const t = e.target.closest('#sep'), c = e.target.closest('#numchips button'), pg = e.target.closest('#pgprev, #pgnext');
   if (t) { const on = !t.classList.contains('on'); t.classList.toggle('on', on); t.setAttribute('aria-checked', String(on)); setCount(on ? lastN : 'none'); }
-  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c)); setCount(lastN); }
+  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c));
+    /* Le nombre de voix ne vaut que si l'interrupteur est allumé : le choisir l'allume, il ne peut jamais séparer en cachette. */
+    const sw = $('#sep'); if (!sw.classList.contains('on')) { sw.classList.add('on'); sw.setAttribute('aria-checked', 'true'); }
+    setCount(lastN); }
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
