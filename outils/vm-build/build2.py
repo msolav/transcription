@@ -17,6 +17,7 @@ rep("$('#fill').style.width = (ratio * 100) + '%';", "busy.set(ratio);")
 rep("$('#status').hidden = false;", "$('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; }")
 rep("function idle(label) {\n  clearInterval(poll);", "function idle(label) {\n  clearInterval(poll);\n  busy.stop();\n  { const wk = $('#working'); if (wk) wk.hidden = true; }")
 rep("idle('Terminé');", "idle('Transcrire à nouveau');")
+rep("  form.append('denoise', $('#clean').value);","  form.append('denoise', $('#clean').value);\n  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');",1)
 rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
     "  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));")
 rep("function download(text, filename) {", """/* Dans la fenêtre de l'application, un lien « download » navigue au lieu d'enregistrer : le programme écrit le fichier. Dans un navigateur ordinaire, téléchargement normal. */
@@ -737,6 +738,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.info[aria-expanded="true"]').forEach(x => x.setAttribute('aria-expanded', 'false')); });
 $('#newjob').onclick = () => document.body.classList.toggle('back');
+/* Raffiner la séparation : retenu d'une fois à l'autre. */
+{ const r1 = $('#refine'), r2 = $('#refine2'); let on = false; try { on = localStorage.getItem('tr-refine') === '1'; } catch (e) {}
+  const poser = v => { on = v; [r1, r2].forEach(b => { b.classList.toggle('on', v); b.setAttribute('aria-checked', String(v)); }); try { localStorage.setItem('tr-refine', v ? '1' : '0'); } catch (e) {} };
+  r1.onclick = () => poser(!on); r2.onclick = () => poser(!on); poser(on); }
 /* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
 { const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
   setInterval(() => { btn.hidden = !(typeof job !== 'undefined' && job && job.blocks && job.speakers && job.speakers.length <= 1 && document.querySelector('#doc')); }, 500);
@@ -744,7 +749,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
   async function lancer(fichier) {
     const form = new FormData(); form.append('embedding', 'auto'); form.append('denoise', '');
-    if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
+    if ($('#refine2').getAttribute('aria-checked') === 'true') form.append('raffiner', '1'); if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
     wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
     $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = [];
     document.body.classList.remove('back'); $('#stage-area').innerHTML = '';
@@ -765,7 +770,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   const poser = on => { document.body.classList.toggle('detail-on', on); vb.setAttribute('aria-pressed', String(on)); try { localStorage.setItem('tr-verbose', on ? '1' : '0'); } catch (e) {} };
   const peindre = () => { const l = [...j.querySelectorAll('div')].map(d => d.textContent).slice(-12);
     box.innerHTML = l.map((t, i) => `<div style="opacity:${(.35 + .65 * (i + 1) / l.length).toFixed(2)}">${t.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`).join('');
-    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('afterbegin', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
+    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('beforeend', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
   vb.onclick = () => poser(!document.body.classList.contains('detail-on'));
   new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
   new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });

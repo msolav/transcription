@@ -977,6 +977,38 @@ body.detail-on .capture:has(#status:not([hidden])) .verbose { opacity: 1; }
 .sepbox .numchips button { min-width: 0; flex: 1 1 0; height: 36px; font: 500 .8125rem var(--vm-font-mono); color: var(--vm-paper); }
 .exportbar .sepbox .linkbtn { background: var(--vm-paper); color: var(--vm-ink); padding: 0 1.2rem; align-self: flex-start; font-weight: 700; }
 .exportbar .sepbox .linkbtn:hover { background: var(--vm-accent); color: var(--vm-paper); }
+
+/* Détails ouverts : deux colonnes qui ne se touchent jamais. */
+body.detail-on .capture:has(#status:not([hidden])) .pctwrap { max-width: 40vw; }
+body.detail-on .etaline { white-space: normal; overflow-wrap: anywhere; }
+.verbose { width: min(46vw, 760px); }
+
+.verbose b { margin: .5rem 0 0; }
+
+/* raffiner la séparation */
+.refine { display: flex; align-items: center; gap: .7rem; margin-top: .8rem; transition: opacity .7s var(--vm-ease); }
+.refine label, .refine2 label { font: 500 .8125rem/1.2 var(--vm-font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.field.voices:has(#sep:not(.on)) .refine { opacity: .22; pointer-events: none; }
+.refine .tgl { transform: scale(.8); transform-origin: left center; flex: none; }
+.refine .tipwrap { margin-left: 0; }
+.refine2 { display: flex; align-items: center; gap: .6rem; }
+.refine2 .tgl { transform: scale(.7); transform-origin: left center; flex: none; margin-right: -.5rem; }
+.sepbox .refine2 label { font-size: .7rem; color: var(--vm-paper); }
+
+/* Fenêtres basses : le titre se réduit plutôt que de passer sous l'en-tête. */
+@media (max-height: 800px) and (min-width: 700px) {
+  .giant { font-size: clamp(2.4rem, min(9vw, 8svh), 9rem); }
+  .giant.got { font-size: clamp(2.2rem, min(8vw, 7svh), 8rem); }
+  .hero { row-gap: clamp(10px, 2svh, 26px); }
+}
+@media (max-height: 760px) and (min-width: 700px) { .stampline { display: none; } .drop { padding-top: 12px; } }
+@media (max-height: 760px) and (min-width: 700px) {
+  .numchips button { height: 32px; min-width: 34px; }
+  .refine { margin-top: .35rem; }
+  .settings .vm-sel-btn { min-height: 42px; }
+  .go { min-height: 0; padding-top: 6px; padding-bottom: 6px; font-size: clamp(1.6rem, 4.4vw, 3rem); }
+  .settings { row-gap: 4px; }
+}
 </style>
 </head>
 <body>
@@ -1008,6 +1040,7 @@ body.detail-on .capture:has(#status:not([hidden])) .verbose { opacity: 1; }
       <span class="sepbox" id="sepbox"><b data-en="Separate the voices now">Séparer les voix maintenant</b>
         <span data-en="No new upload to Groq: only computing time. Say how many people speak if known.">Aucun nouvel envoi à Groq : seulement du temps de calcul. Indiquer le nombre de personnes si connu.</span>
         <span class="numchips" id="afterchips" role="radiogroup"><button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button></span>
+        <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label></span>
         <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
@@ -1102,6 +1135,9 @@ body.detail-on .capture:has(#status:not([hidden])) .verbose { opacity: 1; }
           <button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button>
         </div>
       </div>
+      <div class="refine"><button type="button" class="tgl" id="refine" role="switch" aria-checked="false" aria-labelledby="refinelab"><i></i></button>
+        <label id="refinelab" data-en="Refine voice separation">Raffiner la séparation des voix</label>
+        <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><b data-en="Refine voice separation">Raffiner la séparation des voix</b><span data-en="First groups the long, reliable passages of each person, builds a profile of each voice, then sorts the short ones against those profiles. More reliable, especially for short interjections, and a little longer.">Regroupe d'abord les passages longs et sûrs de chaque personne, fait un profil de chaque voix, puis classe les passages courts sur ces profils. Plus fiable, surtout pour les interjections, et un peu plus long.</span></span></span></div>
       <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
     </div>
     <details class="vm-acc more">
@@ -2262,6 +2298,7 @@ $('#go').onclick = async () => {
   form.append('diarize', separe ? 'true' : 'false');
   form.append('embedding', $('#emb').value);
   form.append('denoise', $('#clean').value);
+  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');
   if (separe && count !== 'auto') form.append('speakers', count);
 
   $('#go').disabled = true;
@@ -3441,6 +3478,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.info[aria-expanded="true"]').forEach(x => x.setAttribute('aria-expanded', 'false')); });
 $('#newjob').onclick = () => document.body.classList.toggle('back');
+/* Raffiner la séparation : retenu d'une fois à l'autre. */
+{ const r1 = $('#refine'), r2 = $('#refine2'); let on = false; try { on = localStorage.getItem('tr-refine') === '1'; } catch (e) {}
+  const poser = v => { on = v; [r1, r2].forEach(b => { b.classList.toggle('on', v); b.setAttribute('aria-checked', String(v)); }); try { localStorage.setItem('tr-refine', v ? '1' : '0'); } catch (e) {} };
+  r1.onclick = () => poser(!on); r2.onclick = () => poser(!on); poser(on); }
 /* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
 { const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
   setInterval(() => { btn.hidden = !(typeof job !== 'undefined' && job && job.blocks && job.speakers && job.speakers.length <= 1 && document.querySelector('#doc')); }, 500);
@@ -3448,7 +3489,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
   async function lancer(fichier) {
     const form = new FormData(); form.append('embedding', 'auto'); form.append('denoise', '');
-    if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
+    if ($('#refine2').getAttribute('aria-checked') === 'true') form.append('raffiner', '1'); if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
     wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
     $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = [];
     document.body.classList.remove('back'); $('#stage-area').innerHTML = '';
@@ -3469,7 +3510,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   const poser = on => { document.body.classList.toggle('detail-on', on); vb.setAttribute('aria-pressed', String(on)); try { localStorage.setItem('tr-verbose', on ? '1' : '0'); } catch (e) {} };
   const peindre = () => { const l = [...j.querySelectorAll('div')].map(d => d.textContent).slice(-12);
     box.innerHTML = l.map((t, i) => `<div style="opacity:${(.35 + .65 * (i + 1) / l.length).toFixed(2)}">${t.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`).join('');
-    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('afterbegin', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
+    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('beforeend', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
   vb.onclick = () => poser(!document.body.classList.contains('detail-on'));
   new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
   new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });

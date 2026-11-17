@@ -66,7 +66,9 @@
   var(--vm-font-mono, ui-monospace, monospace); letter-spacing: .04em;
   text-transform: uppercase; color: var(--vm-mute, #666); }
 .tr-maj a { color: var(--vm-accent, #ff3d12); }
-`;
+.tr-maj-go { font: 600 .8125rem/1 inherit; margin: 0 .5rem; padding: .55rem .9rem; background: var(--vm-ink, #0c0c0b); color: var(--vm-paper, #f1efe9); border: 0; cursor: pointer; transition: background-color .5s var(--vm-ease, ease); }
+.tr-maj-go:hover:not(:disabled) { background: var(--vm-accent, #ff3d12); }
+.tr-maj-go:disabled { opacity: .5; }`;
 
   function styler() {
     if (document.getElementById('tr-sc-css')) return;
@@ -369,8 +371,33 @@
     el.innerHTML = L(
       `Version ${v.publiee} disponible — installée : ${v.installee}.`,
       `Version ${v.publiee} available — installed: ${v.installee}.`)
-      + ` <a href="${v.url}" target="_blank" rel="noopener">`
-      + L('Télécharger', 'Download') + '</a>';
+      + ' <button type="button" id="tr-maj-go" class="tr-maj-go">'
+      + L('Télécharger la mise à jour', 'Download the update') + '</button>'
+      + ' <span id="tr-maj-etat"></span>';
+    /* Le programme télécharge lui-même la bonne version dans Téléchargements
+       et la montre ; il reste à l'ouvrir (clic droit, Ouvrir, la première
+       fois : le paquet n'est pas signé). */
+    const go = el.querySelector('#tr-maj-go'), etat = el.querySelector('#tr-maj-etat');
+    go.onclick = async () => {
+      go.disabled = true;
+      try { await api('/api/mise-a-jour', { method: 'POST' }); } catch (e) { go.disabled = false; return; }
+      const t = setInterval(async () => {
+        let m; try { m = await api('/api/mise-a-jour'); } catch (e) { return; }
+        if (m.etat === 'cours') {
+          const mo = n => (n / 1048576).toFixed(0);
+          etat.textContent = m.total ? `${Math.round(100 * m.octets / m.total)} % (${mo(m.octets)}/${mo(m.total)} Mo)` : `${mo(m.octets)} Mo`;
+        } else {
+          clearInterval(t);
+          if (m.etat === 'fini') {
+            go.hidden = true;
+            etat.textContent = L(`${m.nom} est dans Téléchargements. Quitter l'application, puis ouvrir le nouveau fichier.`,
+              `${m.nom} is in Downloads. Quit the app, then open the new file.`);
+          } else {
+            go.disabled = false; etat.textContent = L('Téléchargement impossible. Réessayer plus tard.', 'Download failed. Try again later.');
+          }
+        }
+      }, 700);
+    };
     ancre.after(el);
   }
 

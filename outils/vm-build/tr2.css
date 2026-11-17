@@ -576,3 +576,35 @@ body.detail-on .capture:has(#status:not([hidden])) .verbose { opacity: 1; }
 .sepbox .numchips button { min-width: 0; flex: 1 1 0; height: 36px; font: 500 .8125rem var(--vm-font-mono); color: var(--vm-paper); }
 .exportbar .sepbox .linkbtn { background: var(--vm-paper); color: var(--vm-ink); padding: 0 1.2rem; align-self: flex-start; font-weight: 700; }
 .exportbar .sepbox .linkbtn:hover { background: var(--vm-accent); color: var(--vm-paper); }
+
+/* Détails ouverts : deux colonnes qui ne se touchent jamais. */
+body.detail-on .capture:has(#status:not([hidden])) .pctwrap { max-width: 40vw; }
+body.detail-on .etaline { white-space: normal; overflow-wrap: anywhere; }
+.verbose { width: min(46vw, 760px); }
+
+.verbose b { margin: .5rem 0 0; }
+
+/* raffiner la séparation */
+.refine { display: flex; align-items: center; gap: .7rem; margin-top: .8rem; transition: opacity .7s var(--vm-ease); }
+.refine label, .refine2 label { font: 500 .8125rem/1.2 var(--vm-font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.field.voices:has(#sep:not(.on)) .refine { opacity: .22; pointer-events: none; }
+.refine .tgl { transform: scale(.8); transform-origin: left center; flex: none; }
+.refine .tipwrap { margin-left: 0; }
+.refine2 { display: flex; align-items: center; gap: .6rem; }
+.refine2 .tgl { transform: scale(.7); transform-origin: left center; flex: none; margin-right: -.5rem; }
+.sepbox .refine2 label { font-size: .7rem; color: var(--vm-paper); }
+
+/* Fenêtres basses : le titre se réduit plutôt que de passer sous l'en-tête. */
+@media (max-height: 800px) and (min-width: 700px) {
+  .giant { font-size: clamp(2.4rem, min(9vw, 8svh), 9rem); }
+  .giant.got { font-size: clamp(2.2rem, min(8vw, 7svh), 8rem); }
+  .hero { row-gap: clamp(10px, 2svh, 26px); }
+}
+@media (max-height: 760px) and (min-width: 700px) { .stampline { display: none; } .drop { padding-top: 12px; } }
+@media (max-height: 760px) and (min-width: 700px) {
+  .numchips button { height: 32px; min-width: 34px; }
+  .refine { margin-top: .35rem; }
+  .settings .vm-sel-btn { min-height: 42px; }
+  .go { min-height: 0; padding-top: 6px; padding-bottom: 6px; font-size: clamp(1.6rem, 4.4vw, 3rem); }
+  .settings { row-gap: 4px; }
+}

@@ -328,6 +328,85 @@ def version() -> dict:
     return _VERSION_VUE["resultat"]
 
 
+# ------------------------------------------------ mise à jour assistée
+#
+# Pas de remplacement automatique : les paquets ne sont pas signés, et un
+# programme qui s'écrase lui-même déclencherait les alertes du système.
+# On télécharge la bonne version, on la range dans Téléchargements, on la
+# montre : il reste à l'ouvrir.
+
+_MAJ: dict = {"etat": "repos", "octets": 0, "total": 0, "nom": "", "erreur": ""}
+
+
+def _plateforme() -> str:
+    import platform
+    import sys
+    if sys.platform == "darwin":
+        return "mac-silicon" if platform.machine() == "arm64" else "mac-intel"
+    if sys.platform.startswith("win"):
+        return "windows"
+    return "linux"
+
+
+def _telecharger_maj() -> None:
+    import urllib.request
+    try:
+        url = f"{SITE}/telecharger/{_plateforme()}"
+        requete = urllib.request.Request(
+            url, headers={"User-Agent": "Transcripteur"})
+        with urllib.request.urlopen(requete, timeout=30) as r:
+            nom = Path(url).name
+            cd = r.headers.get("content-disposition", "")
+            m = re.search(r'filename="?([^";]+)"?', cd)
+            if m:
+                nom = Path(m.group(1)).name
+            _MAJ.update(total=int(r.headers.get("content-length") or 0), nom=nom)
+            dossier = Path.home() / "Downloads"
+            if not dossier.is_dir():
+                dossier = Path.home()
+            cible = dossier / nom
+            n = 1
+            while cible.exists():
+                cible = dossier / f"{Path(nom).stem} ({n}){''.join(Path(nom).suffixes)}"
+                n += 1
+            partiel = cible.with_name(cible.name + ".part")
+            with open(partiel, "wb") as out:
+                while True:
+                    bloc = r.read(1024 * 256)
+                    if not bloc:
+                        break
+                    out.write(bloc)
+                    _MAJ["octets"] += len(bloc)
+            partiel.rename(cible)
+        _MAJ.update(etat="fini", nom=cible.name)
+        try:
+            import subprocess
+            import sys
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(cible)])
+            elif sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", "/select,", str(cible)])
+            else:
+                subprocess.Popen(["xdg-open", str(dossier)])
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as exc:  # noqa: BLE001
+        _MAJ.update(etat="erreur", erreur=str(exc))
+
+
+@app.post("/api/mise-a-jour")
+def lancer_maj() -> dict:
+    if _MAJ["etat"] != "cours":
+        _MAJ.update(etat="cours", octets=0, total=0, nom="", erreur="")
+        threading.Thread(target=_telecharger_maj, daemon=True).start()
+    return dict(_MAJ)
+
+
+@app.get("/api/mise-a-jour")
+def etat_maj() -> dict:
+    return dict(_MAJ)
+
+
 @app.post("/api/enregistrer")
 def enregistrer_fichier(payload: dict) -> dict:
     """Écrit un export dans le dossier Téléchargements, puis le montre.
@@ -449,6 +528,7 @@ async def create_job(
     diarize: str = Form("true"),
     embedding: str = Form(""),
     denoise: str = Form(""),
+    raffiner: str = Form(""),
 ) -> JSONResponse:
     def as_int(value: str) -> int | None:
         value = (value or "").strip()
@@ -520,6 +600,7 @@ async def create_job(
         diarize=diarize.lower() != "false",
         embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
+        raffiner=raffiner == "1",
         api_key=config.get_key("groq"),
     )
 
@@ -601,6 +682,7 @@ async def separer_voix(
     speakers: str = Form(""),
     embedding: str = Form(""),
     denoise: str = Form(""),
+    raffiner: str = Form(""),
     language: str = Form(""),
 ) -> JSONResponse:
     """Sépare les voix d'un transcript existant, à partir de son audio.
@@ -660,6 +742,7 @@ async def separer_voix(
         diarize=True,
         embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
+        raffiner=raffiner == "1",
         # Facultative : elle ne sert qu'à reconnaître la langue quand le
         # modèle de voix est laissé en automatique.
         api_key=config.get_key("groq"),

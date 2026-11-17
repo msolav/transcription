@@ -572,7 +572,7 @@ def _commande_diariseur() -> list[str] | None:
 
 
 def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
-                     seuil: float, avance) -> list | None:
+                     seuil: float, avance, raffiner: bool = False) -> list | None:
     """Sépare les voix dans un processus qu'on peut tuer.
 
     Rend None si c'est impossible — l'appelant calcule alors sur place."""
@@ -595,7 +595,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
             w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
 
         args = commande + [chemin, str(seg_model), str(emb_model),
-                           str(nombre), str(seuil), str(DIARIZE_THREADS)]
+                           str(nombre), str(seuil), str(DIARIZE_THREADS),
+                           '1' if raffiner else '0']
         # PYTHONPATH explicite : un sous-processus n'hérite pas des
         # modifications de sys.path du parent, et `-m transcripteur…`
         # échouait alors selon le dossier courant — sans un mot, puisque
@@ -685,7 +686,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
 def diarize(audio, num_speakers: int | None, progress: Progress,
             span: tuple[float, float],
             threshold: float = CLUSTER_THRESHOLD,
-            embedding: str = "standard") -> list[tuple[float, float, str]]:
+            embedding: str = "standard",
+            raffiner: bool = False) -> list[tuple[float, float, str]]:
     try:
         import sherpa_onnx
     except ImportError as exc:
@@ -725,7 +727,7 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     # une réunion de deux heures, « Arrêter » ne pouvait donc rien
     # pendant les trois quarts d'heure que dure cette étape.
     turns = _diariser_dehors(audio, seg_model, emb_model, num_speakers or -1,
-                             threshold, avance)
+                             threshold, avance, raffiner)
     if turns is None:
         # Pas de processus séparé possible : on calcule ici, en sachant
         # que l'arrêt ne sera lu qu'à la fin.
@@ -739,6 +741,12 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         result = engine.process(audio, callback=report).sort_by_start_time()
         turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}")
                  for r in result]
+        if raffiner and turns:
+            ext = sherpa_onnx.SpeakerEmbeddingExtractor(
+                sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                    model=str(emb_model), num_threads=DIARIZE_THREADS))
+            from . import raffinage
+            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1)
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
     trouvees = len({t[2] for t in turns})
@@ -785,7 +793,8 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
 
 
 def diarize_auto(audio, progress: Progress, span: tuple[float, float],
-                 threshold: float, embedding: str = "standard"):
+                 threshold: float, embedding: str = "standard",
+                 raffiner: bool = False):
     """Détection automatique, avec garde-fou sur le nombre de voix.
 
     Sur un enregistrement bruité ou à plusieurs micros, le regroupement
@@ -794,7 +803,7 @@ def diarize_auto(audio, progress: Progress, span: tuple[float, float],
     resserre le seuil et on recommence."""
     attempt = 0
     while True:
-        turns = diarize(audio, None, progress, span, threshold, embedding)
+        turns = diarize(audio, None, progress, span, threshold, embedding, raffiner)
         found = len({t[2] for t in turns})
         if found <= MAX_AUTO_SPEAKERS or attempt >= AUTO_RETRIES:
             if found > MAX_AUTO_SPEAKERS:
@@ -1287,6 +1296,7 @@ class Options:
     diarize: bool = True
     embedding: str = "standard"
     denoise: str = ""     # "" = pas de nettoyage
+    raffiner: bool = False  # raffiner la séparation des voix (voir raffinage.py)
     api_key: str = ""
 
 
@@ -1394,11 +1404,11 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
         log(f"séparation des voix, {options.num_speakers} demandées "
             f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
         turns = diarize(audio, options.num_speakers, progress, voix,
-                        CLUSTER_THRESHOLD, embedding)
+                        CLUSTER_THRESHOLD, embedding, options.raffiner)
     else:
         log("séparation des voix, nombre à déterminer")
         turns = diarize_auto(audio, progress, voix,
-                             CLUSTER_THRESHOLD, embedding)
+                             CLUSTER_THRESHOLD, embedding, options.raffiner)
     del audio
     wav.unlink(missing_ok=True)
     checkpoint()
@@ -1483,11 +1493,11 @@ def process(src: Path, work_dir: Path, options: Options,
             log(f"séparation des voix, {options.num_speakers} demandées "
                 f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
             turns = diarize(audio, options.num_speakers, progress, voix,
-                            CLUSTER_THRESHOLD, embedding)
+                            CLUSTER_THRESHOLD, embedding, options.raffiner)
         else:
             log("séparation des voix, nombre à déterminer")
             turns = diarize_auto(audio, progress, voix,
-                                 CLUSTER_THRESHOLD, embedding)
+                                 CLUSTER_THRESHOLD, embedding, options.raffiner)
     del audio
     wav.unlink(missing_ok=True)
 

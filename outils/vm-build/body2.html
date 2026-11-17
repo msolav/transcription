@@ -27,6 +27,7 @@
       <span class="sepbox" id="sepbox"><b data-en="Separate the voices now">Séparer les voix maintenant</b>
         <span data-en="No new upload to Groq: only computing time. Say how many people speak if known.">Aucun nouvel envoi à Groq : seulement du temps de calcul. Indiquer le nombre de personnes si connu.</span>
         <span class="numchips" id="afterchips" role="radiogroup"><button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button></span>
+        <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label></span>
         <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
@@ -121,6 +122,9 @@
           <button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button>
         </div>
       </div>
+      <div class="refine"><button type="button" class="tgl" id="refine" role="switch" aria-checked="false" aria-labelledby="refinelab"><i></i></button>
+        <label id="refinelab" data-en="Refine voice separation">Raffiner la séparation des voix</label>
+        <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><b data-en="Refine voice separation">Raffiner la séparation des voix</b><span data-en="First groups the long, reliable passages of each person, builds a profile of each voice, then sorts the short ones against those profiles. More reliable, especially for short interjections, and a little longer.">Regroupe d'abord les passages longs et sûrs de chaque personne, fait un profil de chaque voix, puis classe les passages courts sur ces profils. Plus fiable, surtout pour les interjections, et un peu plus long.</span></span></span></div>
       <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
     </div>
     <details class="vm-acc more">
