@@ -122,6 +122,7 @@ def _public(job: dict) -> dict:
         "notes": job["notes"][-12:],
         "relecture": job.get("relecture"),
         "raffinage": job.get("raffinage"),
+        "enrolement_pret": bool(job.get("work_dir") and (Path(job["work_dir"]) / "enrolement.npz").exists()),
         "created_at": job["created_at"],
         # De quoi décider s'il y a lieu de proposer la séparation des
         # voix après coup, et s'il faudra redemander l'enregistrement.
@@ -913,6 +914,158 @@ async def raffiner_noms(job_id: str, payload: dict) -> JSONResponse:
                       api_key=config.get_key("groq"), raffiner=True)
     threading.Thread(target=_run_guide,
                      args=(job_id, options, noms, exemples, float(job["duration"] or 0.0)),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+def _contexte_enrolement(job_id: str, exiger_pret: bool = False):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    if job["status"] not in ("done", "error"):
+        raise HTTPException(400, "Un traitement est déjà en cours.")
+    src = Path(job["source"]) if job.get("source") else None
+    if not (src and src.exists()):
+        raise HTTPException(
+            400, "L'enregistrement n'est plus sur cette machine. Il faut le fournir "
+                 "de nouveau pour identifier les voix.")
+    if not pipeline.mots_des_blocs(job["blocks"]):
+        raise HTTPException(400, "Ce transcript ne porte pas les horodatages des mots.")
+    work_dir = Path(job["work_dir"])
+    if exiger_pret and not (work_dir / "enrolement.npz").exists():
+        raise HTTPException(400, "Les empreintes ne sont pas encore calculées.")
+    return job, src, work_dir
+
+
+def _exemples(payload: dict) -> list:
+    sortie = []
+    for e in payload.get("exemples") or []:
+        try:
+            sortie.append({"start": float(e["start"]), "end": float(e["end"]),
+                           "nom": str(e.get("nom") or "").strip()})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sortie
+
+
+def _notifier(job_id: str):
+    def notify(message: str) -> None:
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"].append(message)
+                del current["notes"][:-60]
+    return notify
+
+
+def _run_enrol_prep(job_id: str, options: Options, duree: float) -> None:
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None:
+            return
+        src, work_dir = Path(job["source"]), Path(job["work_dir"])
+        anciens = job["blocks"]
+        _set(job_id, status="running", stage="Empreintes des voix", progress=0.0,
+             error=None, cancel=False)
+        with _lock:
+            job["notes"] = []
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+        try:
+            pipeline.preparer_enrolement(
+                src, work_dir, options, anciens, duree,
+                lambda stage, ratio: _set(job_id, stage=stage, progress=ratio),
+                _notifier(job_id), stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Préparation annulée", progress=1.0)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Préparation abandonnée", progress=1.0, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("préparation de l'identification des voix", exc)
+            _set(job_id, status="done", stage="Préparation abandonnée", progress=1.0,
+                 error=f"Erreur inattendue : {exc}")
+            return
+        _set(job_id, status="done", stage="Empreintes prêtes", progress=1.0, enrolement_pret=True)
+
+
+def _run_enrol_fin(job_id: str, options: Options, exemples: list) -> None:
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None:
+            return
+        src, work_dir = Path(job["source"]), Path(job["work_dir"])
+        anciens = job["blocks"]
+        _set(job_id, status="running", stage="Attribution des voix", progress=0.0,
+             error=None, cancel=False)
+        with _lock:
+            job["notes"] = []
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+        try:
+            resultat, noms = pipeline.terminer_enrolement(
+                src, work_dir, options, anciens, exemples,
+                lambda stage, ratio: _set(job_id, stage=stage, progress=ratio),
+                _notifier(job_id), stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Attribution annulée", progress=1.0, blocks=anciens)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Attribution abandonnée", progress=1.0,
+                 blocks=anciens, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("attribution des voix", exc)
+            _set(job_id, status="done", stage="Attribution abandonnée", progress=1.0,
+                 blocks=anciens, error=f"Erreur inattendue : {exc}")
+            return
+        _set(job_id, status="done", stage="Terminé", progress=1.0,
+             duration=resultat.duration, speakers=resultat.speakers,
+             blocks=resultat.blocks, names=noms, sans_audio=False, relecture=None)
+        _retenir(job_id)
+
+
+def _options_enrol(payload: dict) -> Options:
+    return Options(language=(payload.get("langue") or "").strip() or None, diarize=True,
+                   embedding="auto", denoise="", api_key=config.get_key("groq"), raffiner=True)
+
+
+@app.post("/api/jobs/{job_id}/enrolement/preparer")
+async def enrolement_preparer(job_id: str, payload: dict | None = None) -> JSONResponse:
+    """Calcule l'empreinte de chaque passage de parole (quelques minutes)."""
+    job, src, work_dir = _contexte_enrolement(job_id)
+    threading.Thread(target=_run_enrol_prep,
+                     args=(job_id, _options_enrol(payload or {}), float(job["duration"] or 0.0)),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+@app.post("/api/jobs/{job_id}/enrolement/classer")
+async def enrolement_classer(job_id: str, payload: dict) -> dict:
+    """Où en est-on d'après les exemples, et quels passages montrer ensuite."""
+    from . import enrolement
+    job, src, work_dir = _contexte_enrolement(job_id, exiger_pret=True)
+    wav = work_dir / "audio16k.wav"
+    try:
+        return await run_in_threadpool(enrolement.classer, work_dir, _exemples(payload),
+                                       wav if wav.exists() else None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/enrolement/terminer")
+async def enrolement_terminer(job_id: str, payload: dict) -> JSONResponse:
+    """Attribue chaque mot d'après les exemples, et remplace le texte à une voix."""
+    job, src, work_dir = _contexte_enrolement(job_id, exiger_pret=True)
+    exemples = _exemples(payload)
+    if len({e["nom"] for e in exemples if e["nom"]}) < 2:
+        raise HTTPException(400, "Il faut au moins deux personnes avec des exemples.")
+    threading.Thread(target=_run_enrol_fin, args=(job_id, _options_enrol(payload), exemples),
                      daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
 

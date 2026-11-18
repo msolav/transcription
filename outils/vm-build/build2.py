@@ -757,7 +757,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
     btn.textContent = vm.lang.t(t[0], t[1]); btn.dataset.en = t[1];
     const titre = $('#sepbox b'); if (titre) { titre.textContent = vm.lang.t(multi ? 'Raffiner la séparation des voix' : 'Séparer les voix maintenant', multi ? 'Refine the voice separation' : 'Separate the voices now'); titre.dataset.en = multi ? 'Refine the voice separation' : 'Separate the voices now'; }
     const r2 = $('#refine2'); if (multi && r2.getAttribute('aria-checked') !== 'true') r2.click();
-    { const ag = $('#aidego'); if (ag) ag.hidden = !multi; }
+    { const ag = $('#aidego'); if (ag) ag.hidden = false; }
   }, 500);
   btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
@@ -856,112 +856,139 @@ document.addEventListener('click', e => {
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
 
-/* Raffiner avec votre aide : les noms, les passages à vérifier (qu'on peut couper pour dire qui parle quand),
-   et des repères pour savoir quand s'arrêter. Les calculs lourds sont gardés : recalculer prend quelques secondes. */
-{ let rows = [], page = 0, onglet = 1, timer = 0;
+/* Identifier les voix avec votre aide, AVANT l'analyse : le programme propose des passages choisis dans
+   l'enregistrement, vous dites qui parle (en coupant au besoin), et tout le reste est classé d'après ces échantillons.
+   Les empreintes sont calculées une fois (quelques minutes) ; la suite prend des secondes. */
+{ let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
   const hms = t => clock(Math.round(t));
   const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  const personnes = () => [...new Set(Object.values(names || {}).map(x => (x || '').trim()).filter(Boolean))];
-  const partInc = () => {
-    if (job.raffinage && job.raffinage.part_incertaine != null) return job.raffinage.part_incertaine;
-    const bl = job.blocks.filter(x => x.conf != null); if (!bl.length) return null;
-    const tot = bl.reduce((a, x) => a + (x.end - x.start), 0) || 1;
-    return bl.filter(x => x.conf < 0.3).reduce((a, x) => a + (x.end - x.start), 0) / tot;
-  };
-  const candidats = () => job.blocks.filter(x => x.conf != null && x.conf < 0.3 && (x.end - x.start) >= 1.5)
-    .sort((a, x) => a.conf - x.conf || (x.end - x.start) - (a.end - a.start)).slice(0, 60)
-    .map(x => ({ start: x.start, end: x.end, text: x.text, cuts: [], aff: {} }));
+  const T = (f, e) => vm.lang.t(f, e);
+  const personnes = () => [...new Set([...(rapport ? rapport.personnes : []), ...extra])];
   const bornes = r => [r.start, ...r.cuts.slice().sort((a, z) => a - z), r.end];
+  const post = (url, corps) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps || {}) });
 
   function repere() {
-    const rf = job.raffinage || {}, mesure = !!rf.secondes_exemples, sec = rf.secondes_exemples || {}, pi = partInc(), noms = personnes();
-    const part = pi == null ? vm.lang.t("Pas encore de mesure de confiance : recalculez d'après vos noms, ou lancez « Raffiner les voix ».", "No confidence measure yet: recalculate from your names, or run “Refine voices”.")
-      : vm.lang.t('Part de parole incertaine : ', 'Uncertain speech: ') + Math.round(pi * 100) + ' %'
-        + (rf.part_avant != null ? vm.lang.t(' (avant : ', ' (before: ') + Math.round(rf.part_avant * 100) + ' %)' : '');
-    const faibles = mesure ? noms.filter(n => (sec[n] || 0) < 20) : [];
-    const verdict = pi == null ? ''
-      : (pi < 0.05 && !faibles.length) ? vm.lang.t('Vous pouvez vous arrêter ici.', 'You can stop here.')
-      : faibles.length ? vm.lang.t('Peu d’exemples pour ' + faibles.join(', ') + ' : visez environ 20 s chacun (3 à 5 passages nets).', 'Few examples for ' + faibles.join(', ') + ': aim for about 20 s each (3 to 5 clear passages).')
-      : vm.lang.t('Vérifiez quelques passages puis recalculez : si la part incertaine baisse peu, vous pouvez vous arrêter.', 'Check a few passages then recalculate: if the uncertain share drops little, you can stop.');
-    return '<div class="ar-part">' + echap(part) + '</div>'
-      + (noms.length ? '<div class="ar-pers">' + noms.map(n => '<span>' + echap(n) + (mesure ? ' · ' + Math.round(sec[n] || 0) + ' s' : '') + '</span>').join('') + '</div>' : '')
-      + (verdict ? '<div class="ar-verdict">' + echap(verdict) + '</div>' : '')
-      + '<div class="ar-note">' + vm.lang.t('Repères indicatifs, non calibrés : la confiance mesure l’hésitation entre voix, pas une probabilité d’exactitude.', 'Indicative guides, not calibrated: confidence measures hesitation between voices, not a probability of being right.') + '</div>';
+    if (!rapport) return '';
+    const sec = rapport.secondes || {}, noms = personnes(), pi = rapport.part_incertaine, c = rapport.controle;
+    const lignes = [];
+    if (noms.length) lignes.push('<div class="ar-pers">' + noms.map(n => '<span>' + echap(n) + ' · ' + Math.round(sec[n] || 0) + ' s</span>').join('') + '</div>');
+    if (c && c.sur > 0) lignes.push('<div class="ar-part">' + T('Contrôle sur vos exemples : le programme retrouve la bonne personne ' + c.justes + ' fois sur ' + c.sur + '.', 'Check on your examples: the program finds the right person ' + c.justes + ' times out of ' + c.sur + '.') + '</div>');
+    if (verif.sur > 0) lignes.push('<div class="ar-part">' + T('Ses suggestions : ' + verif.ok + ' confirmées sur ' + verif.sur + '.', 'Its suggestions: ' + verif.ok + ' confirmed out of ' + verif.sur + '.') + '</div>');
+    if (pi != null) lignes.push('<div class="ar-part">' + T('Parole encore incertaine : ' + Math.round(pi * 100) + ' %', 'Speech still uncertain: ' + Math.round(pi * 100) + ' %') + '</div>');
+    (rapport.suspects || []).slice(0, 2).forEach(x => lignes.push('<div class="ar-susp">' + T('Un exemple de ' + x.nom + ' ne ressemble pas aux autres : ', 'An example of ' + x.nom + ' does not look like the others: ') + hms(x.start) + ' <button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button></div>'));
+    const faibles = noms.filter(n => (sec[n] || 0) < 20);
+    let verdict = '';
+    if (noms.length >= 2) {
+      const bon = !c || c.sur === 0 || c.justes / c.sur >= 0.9;
+      verdict = (pi != null && pi < 0.05 && !faibles.length && bon) ? T('Vous pouvez terminer l’analyse.', 'You can finish the analysis.')
+        : faibles.length ? T('Peu d’exemples pour ' + faibles.join(', ') + ' : visez environ 20 s chacun.', 'Few examples for ' + faibles.join(', ') + ': aim for about 20 s each.')
+        : !bon ? T('Le contrôle se trompe sur certains de vos exemples : vérifiez-les, ou ajoutez-en.', 'The check gets some of your examples wrong: review them, or add more.')
+        : T('Continuez avec quelques passages : si la part incertaine baisse peu, vous pouvez terminer.', 'Continue with a few passages: if the uncertain share drops little, you can finish.');
+    }
+    if (verdict) lignes.push('<div class="ar-verdict">' + echap(verdict) + '</div>');
+    lignes.push('<div class="ar-note">' + T('Repères indicatifs. La confiance mesure la ressemblance avec VOS exemples : si ceux-ci sont mélangés ou faux, elle peut rester élevée à tort.', 'Indicative guides. Confidence measures similarity to YOUR examples: if those are mixed or wrong, it can stay high wrongly.') + '</div>');
+    return lignes.join('');
   }
 
-  function vueNoms() {
-    const total = job.speakers.reduce((a, x) => a + (x.speaking_seconds || 0), 0) || 1;
-    return '<p class="ar-dit">' + vm.lang.t('Écoutez chaque voix et donnez le même nom à celles qui sont la même personne. Les noms ne changent rien tant que vous ne recalculez pas : le recalcul sert à rattacher chaque passage à la bonne personne et à corriger ceux qui étaient mal attribués. Premier calcul : quelques minutes ; ensuite, quelques secondes.', 'Listen to each voice and give the same name to the ones that are the same person. Names change nothing until you recalculate: the recalculation re-attaches each passage to the right person and fixes the misattributed ones. First run: a few minutes; after that, a few seconds.') + '</p>'
-      + job.speakers.map(x => '<div class="ar-voix"><i style="background:' + x.color + '"></i>'
-        + '<button type="button" data-a="ecouter" data-i="' + x.index + '"' + (x.has_sample ? '' : ' disabled') + '>' + vm.lang.t('Écouter', 'Listen') + '</button>'
-        + '<input type="text" data-id="' + echap(x.id) + '" value="' + echap(names[x.id] || '') + '" placeholder="' + vm.lang.t('Voix', 'Voice') + ' ' + (x.index + 1) + '">'
-        + '<span>' + Math.round(100 * (x.speaking_seconds || 0) / total) + ' %</span></div>').join('');
-  }
-
-  function vuePassages() {
+  function vueLot() {
+    if (msg) return '<p class="ar-dit">' + echap(msg) + '</p>';
     const noms = personnes();
-    if (noms.length < 2) return '<p class="ar-dit">' + vm.lang.t('Nommez d’abord au moins deux personnes (onglet « Qui est qui »).', 'First name at least two people (“Who is who” tab).') + '</p>';
-    if (!rows.length) return '<p class="ar-dit">' + vm.lang.t('Aucun passage incertain à vérifier. Recalculez d’après vos noms pour mesurer la confiance.', 'No uncertain passage to check. Recalculate from your names to measure confidence.') + '</p>';
-    const par = 3, pages = Math.ceil(rows.length / par); page = Math.min(page, pages - 1);
-    return '<p class="ar-dit">' + vm.lang.t('Écoutez, puis dites qui parle. Si plusieurs personnes parlent dans le passage, coupez à l’instant du changement avec « Couper ici » pendant la lecture.', 'Listen, then say who speaks. If several people speak in the passage, cut at the change with “Cut here” while playing.') + '</p>'
-      + rows.slice(page * par, page * par + par).map((r, n) => { const k = page * par + n, bs = bornes(r);
-        return '<div class="ar-pass"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
-          + '<button type="button" data-a="lire" data-r="' + k + '">' + vm.lang.t('Écouter', 'Listen') + '</button>'
-          + '<button type="button" data-a="couper" data-r="' + k + '">' + vm.lang.t('Couper ici', 'Cut here') + '</button>'
-          + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + vm.lang.t('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
-          + '<p>' + echap(r.text.slice(0, 220)) + (r.text.length > 220 ? '…' : '') + '</p>'
-          + bs.slice(0, -1).map((a, j) => '<div class="ar-seg"><span>' + hms(a) + ' – ' + hms(bs[j + 1]) + '</span>'
-            + noms.map(nm => '<button type="button" class="chip' + (r.aff[j] === nm ? ' on' : '') + '" data-a="aff" data-r="' + k + '" data-j="' + j + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('') + '</div>').join('')
-          + '</div>'; }).join('')
-      + (pages > 1 ? '<div class="ar-pg"><button type="button" data-a="pm">−</button><span>' + (page + 1) + ' / ' + pages + '</span><button type="button" data-a="pp">+</button></div>' : '');
+    const intro = !noms.length || noms.length < 2
+      ? T('Voici des passages pris à des endroits très différents de l’enregistrement. Pour chacun, dites qui parle : choisissez un nom, ou ajoutez une nouvelle personne. Si plusieurs personnes parlent dans un passage, écoutez-le et coupez à l’instant du changement.', 'Here are passages taken from very different places in the recording. For each one, say who speaks: pick a name, or add a new person. If several people speak in a passage, listen and cut at the moment the voice changes.')
+      : T('Voici les passages dont le programme est le moins sûr. Il propose un nom : confirmez-le ou corrigez-le.', 'Here are the passages the program is least sure about. It suggests a name: confirm or correct it.');
+    if (!rows.length) return '<p class="ar-dit">' + T('Plus aucun passage douteux à vous montrer. Vous pouvez terminer l’analyse.', 'No doubtful passage left to show. You can finish the analysis.') + '</p>';
+    return '<p class="ar-dit">' + intro + '</p>' + rows.map((r, k) => { const bs = bornes(r);
+      return '<div class="ar-pass"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
+        + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '')
+        + '<button type="button" data-a="lire" data-r="' + k + '">' + T('Écouter', 'Listen') + '</button>'
+        + '<button type="button" data-a="couper" data-r="' + k + '">' + T('Couper ici', 'Cut here') + '</button>'
+        + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + T('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
+        + '<p>' + echap(r.text.slice(0, 200)) + (r.text.length > 200 ? '…' : '') + '</p>'
+        + bs.slice(0, -1).map((a, j) => '<div class="ar-seg"><span>' + hms(a) + ' – ' + hms(bs[j + 1]) + '</span>'
+          + noms.map(nm => '<button type="button" class="chip' + (r.aff[j] === nm ? ' on' : '') + (!r.cuts.length && r.suggestion === nm && r.aff[j] !== nm ? ' sug' : '') + '" data-a="aff" data-r="' + k + '" data-j="' + j + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('')
+          + (nouveau && nouveau.k === k && nouveau.j === j
+            ? '<input type="text" class="ar-new" data-r="' + k + '" data-j="' + j + '" placeholder="' + T('Nom', 'Name') + '" autofocus><button type="button" data-a="ajout" data-r="' + k + '" data-j="' + j + '">OK</button>'
+            : '<button type="button" class="chip plus" data-a="nouv" data-r="' + k + '" data-j="' + j + '">+ ' + T('Autre personne', 'Other person') + '</button>') + '</div>').join('')
+        + '</div>'; }).join('');
+  }
+
+  function vuePrep() {
+    return '<p class="ar-dit">' + T('Préparation : le programme calcule l’empreinte vocale de chaque passage de parole. C’est ce qui lui permettra de choisir des passages à vous montrer. Quelques minutes pour une longue réunion, une seule fois.', 'Preparation: the program computes the voice print of every speech passage. This lets it choose passages to show you. A few minutes for a long meeting, only once.') + '</p>'
+      + '<div class="ar-barre"><i style="width:' + Math.round(prog * 100) + '%"></i></div><p class="ar-dit">' + echap(stage) + ' · ' + Math.round(prog * 100) + ' %</p>';
   }
 
   function peindre() {
     let el = document.getElementById('aide');
     if (!el) { el = document.createElement('section'); el.id = 'aide'; document.body.appendChild(el); }
-    const nb = rows.length;
-    el.innerHTML = '<div class="ar-in"><header><h2>' + vm.lang.t('Raffiner avec votre aide', 'Refine with your help') + '</h2>'
-      + '<button type="button" data-a="fermer">' + vm.lang.t('Fermer', 'Close') + '</button></header>'
-      + '<nav><button type="button" class="' + (onglet === 1 ? 'on' : '') + '" data-a="o1">1 · ' + vm.lang.t('Qui est qui', 'Who is who') + '</button>'
-      + '<button type="button" class="' + (onglet === 2 ? 'on' : '') + '" data-a="o2">2 · ' + vm.lang.t('Passages à vérifier', 'Passages to check') + (nb ? ' (' + nb + ')' : '') + '</button></nav>'
-      + '<div class="ar-corps">' + (onglet === 1 ? vueNoms() : vuePassages()) + '</div>'
-      + '<footer><div class="ar-rep">' + repere() + '</div>'
-      + '<button type="button" class="ar-go" data-a="recalculer">' + vm.lang.t('Appliquer et recalculer', 'Apply and recalculate') + '</button></footer></div>';
+    const enCours = etat === 'prep', noms = personnes();
+    const assigne = rows.some(r => Object.values(r.aff).some(Boolean));
+    el.innerHTML = '<div class="ar-in"><header><h2>' + T('Identifier les voix', 'Identify the voices') + '</h2>'
+      + '<button type="button" data-a="fermer">' + T('Fermer', 'Close') + '</button></header>'
+      + '<div class="ar-corps">' + (enCours ? vuePrep() : vueLot()) + '</div>'
+      + '<footer><div class="ar-rep">' + repere() + '</div><div class="ar-btns">'
+      + '<button type="button" class="ar-go sec" data-a="continuer"' + (enCours || !assigne ? ' disabled' : '') + '>' + T('Valider et continuer', 'Confirm and continue') + '</button>'
+      + '<button type="button" class="ar-go" data-a="terminer"' + (enCours || noms.length < 2 ? ' disabled' : '') + '>' + T('Terminer l’analyse', 'Finish the analysis') + '</button></div></footer></div>';
+    const ni = el.querySelector('input.ar-new'); if (ni) ni.focus();
   }
 
-  function ouvrir() { if (typeof job === 'undefined' || !job || !job.speakers) return; rows = candidats(); page = 0; onglet = 1; peindre(); document.body.classList.add('aide-on'); }
-  const fermer = () => document.body.classList.remove('aide-on');
+  function collecter() {
+    rows.forEach(r => { const bs = bornes(r);
+      for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) {
+        exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] });
+        if (r.suggestion && !r.cuts.length) { verif.sur += 1; if (r.aff[j] === r.suggestion) verif.ok += 1; }
+      } });
+  }
+  async function suite() {
+    try { const r = await post('/api/jobs/' + jobId + '/enrolement/classer', { exemples });
+      rapport = r.rapport; rows = r.propositions.map(p => ({ ...p, cuts: [], aff: {} })); msg = ''; etat = 'lot'; }
+    catch (err) { msg = err.message; etat = 'lot'; rows = []; }
+    peindre();
+  }
+  async function ouvrir() {
+    if (typeof job === 'undefined' || !job || !job.blocks) return;
+    exemples = []; rows = []; rapport = null; extra = []; nouveau = null; msg = ''; prog = 0; stage = ''; verif = { ok: 0, sur: 0 };
+    document.body.classList.add('aide-on'); etat = 'prep'; peindre();
+    if (job.enrolement_pret) return suite();
+    try { await post('/api/jobs/' + jobId + '/enrolement/preparer', {}); } catch (err) { msg = err.message; etat = 'lot'; peindre(); return; }
+    clearInterval(suivi);
+    suivi = setInterval(async () => {
+      let d; try { d = await api('/api/jobs/' + jobId + '?light=1'); } catch (e) { return; }
+      prog = d.progress || 0; stage = d.stage || '';
+      if (d.status === 'done') { clearInterval(suivi); if (d.error) { msg = d.error; etat = 'lot'; peindre(); } else { job.enrolement_pret = true; suite(); } }
+      else peindre();
+    }, 1000);
+  }
+  const fermer = () => { clearInterval(suivi); document.body.classList.remove('aide-on'); };
   const lire = (a, z) => { clearTimeout(timer); player.currentTime = a; player.play().catch(() => {}); timer = setTimeout(() => player.pause(), Math.max(500, (z - a) * 1000 + 250)); };
 
-  async function recalculer() {
-    const exemples = [];
-    rows.forEach(r => { const bs = bornes(r); for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] }); });
+  async function terminer() {
+    collecter();
     fermer(); document.body.classList.remove('back');
     $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
     { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
     $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
-    $('#go').disabled = true; $('#stop').hidden = false; setStage('Raffinage des voix', 0.01);
-    try {
-      await api('/api/jobs/' + jobId + '/raffiner-noms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ noms: names, exemples }) });
-      poll = setInterval(tick, 1000); tick();
-    } catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Attribution des voix', 0.01);
+    try { await post('/api/jobs/' + jobId + '/enrolement/terminer', { exemples }); poll = setInterval(tick, 1000); tick(); }
+    catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
   }
 
   document.addEventListener('click', e => {
     if (e.target.closest('#aidego')) { const w = $('#sepwrap'); if (w) w.classList.remove('open'); ouvrir(); return; }
-    const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r;
+    const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r, j = +b.dataset.j;
     if (a === 'fermer') fermer();
-    else if (a === 'o1' || a === 'o2') { onglet = a === 'o1' ? 1 : 2; peindre(); }
-    else if (a === 'ecouter') { const x = job.speakers.find(v => String(v.index) === b.dataset.i); if (x) { sampler.src = '/api/jobs/' + jobId + '/sample/' + x.index; sampler.play().catch(() => {}); } }
     else if (a === 'lire') lire(rows[k].start, rows[k].end);
-    else if (a === 'couper') { const r = rows[k], t = player.currentTime; if (t > r.start + 0.5 && t < r.end - 0.5) { r.cuts.push(t); r.aff = {}; peindre(); } else toast(vm.lang.t('Lancez « Écouter », puis coupez à l’instant où la voix change.', 'Press “Listen”, then cut at the moment the voice changes.')); }
+    else if (a === 'ecoute-t') lire(+b.dataset.s, +b.dataset.e);
+    else if (a === 'couper') { const r = rows[k], t = player.currentTime; if (t > r.start + 0.5 && t < r.end - 0.5) { r.cuts.push(t); r.aff = {}; peindre(); } else toast(T('Lancez « Écouter », puis coupez à l’instant où la voix change.', 'Press “Listen”, then cut at the moment the voice changes.')); }
     else if (a === 'recoller') { rows[k].cuts = []; rows[k].aff = {}; peindre(); }
-    else if (a === 'aff') { const r = rows[k], j = +b.dataset.j; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; peindre(); }
-    else if (a === 'pp') { page += 1; peindre(); } else if (a === 'pm') { page = Math.max(0, page - 1); peindre(); }
-    else if (a === 'recalculer') recalculer();
+    else if (a === 'aff') { const r = rows[k]; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; peindre(); }
+    else if (a === 'nouv') { nouveau = { k, j }; peindre(); }
+    else if (a === 'ajout') { const inp = document.querySelector('#aide input.ar-new'), nom = inp ? inp.value.trim() : ''; if (nom) { if (!personnes().includes(nom)) extra.push(nom); rows[k].aff[j] = nom; } nouveau = null; peindre(); }
+    else if (a === 'continuer') { collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'terminer') terminer();
   });
-  document.addEventListener('input', e => { const i = e.target.closest('#aide input[data-id]'); if (i) { names[i.dataset.id] = i.value; } });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('aide-on')) fermer(); });
+  document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
+    if (e.key === 'Escape') fermer();
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('ar-new')) { const b = document.querySelector('#aide [data-a="ajout"]'); if (b) b.click(); } });
 }
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous

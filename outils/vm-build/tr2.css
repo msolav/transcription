@@ -700,3 +700,17 @@ body.aide-on #aide { opacity: 1; visibility: visible; translate: 0 0; transition
 /* Le grand pourcentage ne passe jamais à la ligne ; avec « Détails », il se réduit pour tenir dans sa colonne. */
 .pctwrap em { white-space: nowrap; }
 body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
+
+/* identification des voix : préparation, suggestions, saisie d'une nouvelle personne */
+#aide .ar-barre { height: 10px; background: color-mix(in oklab, var(--vm-ink) 15%, transparent); max-width: 60ch; }
+#aide .ar-barre i { display: block; height: 100%; background: var(--vm-accent); transition: width .9s var(--vm-ease); }
+#aide .ar-btns { display: flex; gap: .6rem; flex: none; }
+#aide .ar-go.sec { background: none; color: var(--vm-ink); }
+#aide .ar-go.sec:hover:not(:disabled) { background: var(--vm-ink); color: var(--vm-paper); }
+#aide .ar-go:disabled { opacity: .3; }
+#aide .chip.sug { border-style: dashed; border-color: var(--vm-accent); }
+#aide .chip.plus { opacity: .7; }
+#aide .ar-new { font: 400 .9375rem var(--vm-font-display); border: 0; border-bottom: 1px solid var(--vm-ink); background: none; color: inherit; padding: .35rem .2rem; width: 10rem; }
+#aide .ar-ph em { font: 500 .6875rem var(--vm-font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--vm-accent); }
+#aide .ar-susp { color: var(--vm-accent); }
+#aide .ar-susp button { padding: .25rem .5rem; font-size: .75rem; margin-left: .4rem; }

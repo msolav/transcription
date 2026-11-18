@@ -1555,6 +1555,85 @@ def raffiner_selon_noms(src: Path, work_dir: Path, options: Options, blocs: list
     return Result(duration=duration, blocks=blocks, speakers=profiles), noms_finaux, rapport
 
 
+def _modele_empreintes(options: Options) -> str:
+    embedding = options.embedding
+    if embedding == "auto":
+        embedding = assets.resoudre_pour_langue(options.language)
+    _, emb_model = assets.ensure_models(embedding, note=log)
+    return str(emb_model)
+
+
+def preparer_enrolement(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        duree_attendue: float = 0.0, progress: Progress = _noop,
+                        notify=None, stop=None) -> int:
+    """Première étape de l'identification des voix : l'empreinte de chaque passage de parole.
+
+    Rapide (quelques minutes), contrairement à la séparation complète, et gardée
+    dans la séance : la suite — proposer des passages, classer — prend des secondes.
+    L'audio converti reste dans la séance pour les extraits que la personne coupe."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import enrolement
+
+    mots = mots_des_blocs(blocs)
+    if not mots:
+        raise PipelineError("Ce transcript ne contient pas les horodatages des mots : "
+                            "il faut repartir de l'audio.")
+    progress("Conversion", 0.03)
+    wav = work_dir / "audio16k.wav"
+    to_wav16k(src, wav)
+    duration = wav.stat().st_size / 32000.0
+    repere = duree_attendue or max(m["end"] for m in mots)
+    log(f"durée : {duration / 60:.1f} min")
+    if abs(duration - repere) > TOLERANCE_DUREE:
+        wav.unlink(missing_ok=True)
+        raise PipelineError(f"Cet enregistrement dure {duration / 60:.1f} min, le transcript "
+                            f"en couvre {repere / 60:.1f} : ce n'est pas le même fichier.")
+    checkpoint()
+    modele = _modele_empreintes(options)
+    n = enrolement.preparer(wav, mots, modele, work_dir,
+                            avance=lambda f: progress("Empreintes des voix", 0.05 + 0.93 * f),
+                            dire=log, controle=checkpoint)
+    progress("Terminé", 1.0)
+    return n
+
+
+def terminer_enrolement(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        exemples: list[dict], progress: Progress = _noop,
+                        notify=None, stop=None):
+    """Dernière étape : un nom pour chaque mot, d'après les exemples et les empreintes."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import enrolement
+
+    mots = mots_des_blocs(blocs)
+    wav = work_dir / "audio16k.wav"
+    progress("Attribution", 0.1)
+    tours, confs, personnes = enrolement.etiqueter(work_dir, exemples, mots,
+                                                   wav if wav.exists() else None)
+    # Identifiants au format habituel, du plus au moins bavard.
+    temps: dict = {}
+    for a, b, nom in tours:
+        temps[nom] = temps.get(nom, 0.0) + (b - a)
+    ordre = sorted(temps, key=lambda n: -temps[n])
+    ident = {nom: f"SPEAKER_{i:02d}" for i, nom in enumerate(ordre)}
+    tours = [(a, b, ident[nom]) for a, b, nom in tours]
+    log(f"{len(ordre)} personnes : " + ", ".join(ordre))
+    checkpoint()
+    blocks = build_blocks(mots, tours)
+    attacher_confiance(blocks, tours, confs)
+    log(f"{len(blocks)} passages attribués")
+    progress("Extraits d'écoute", 0.6)
+    profiles = speaker_profiles(tours, blocks, src, work_dir)
+    duration = (wav.stat().st_size / 32000.0) if wav.exists() else max(m["end"] for m in mots)
+    log("terminé")
+    progress("Terminé", 1.0)
+    return (Result(duration=duration, blocks=blocks, speakers=profiles),
+            {ident[nom]: nom for nom in ordre})
+
+
 def process(src: Path, work_dir: Path, options: Options,
             progress: Progress = _noop, notify=None, stop=None) -> Result:
     global _started, _notify, _stop
