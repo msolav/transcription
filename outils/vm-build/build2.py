@@ -17,6 +17,7 @@ rep("$('#fill').style.width = (ratio * 100) + '%';", "busy.set(ratio);")
 rep("$('#status').hidden = false;", "$('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; }")
 rep("function idle(label) {\n  clearInterval(poll);", "function idle(label) {\n  clearInterval(poll);\n  busy.stop();\n  { const wk = $('#working'); if (wk) wk.hidden = true; }")
 rep("idle('Terminé');", "idle('Transcrire à nouveau');")
+rep("`${clock(secs)} écoulées${eta(ratio)}`", "`${clock(secs)} écoulées`")
 rep("  form.append('denoise', $('#clean').value);","  form.append('denoise', $('#clean').value);\n  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');",1)
 rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
     "  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));")
@@ -744,7 +745,18 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   r1.onclick = () => poser(!on); r2.onclick = () => poser(!on); poser(on); }
 /* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
 { const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
-  setInterval(() => { btn.hidden = !(typeof job !== 'undefined' && job && job.blocks && job.speakers && job.speakers.length <= 1 && document.querySelector('#doc')); }, 500);
+  /* Disponible sur tout texte ouvert. Une seule voix : « Séparer les voix ». Plusieurs : « Raffiner les voix », avec le raffinage déjà allumé et le nombre de voix de départ proposé. */
+  let etat = '';
+  setInterval(() => {
+    const ok = typeof job !== 'undefined' && job && job.blocks && job.speakers && document.querySelector('#doc');
+    btn.hidden = !ok; if (!ok) return;
+    const multi = job.speakers.length > 1, cle = multi ? 'raffiner' : 'separer';
+    if (etat === cle) return; etat = cle;
+    const t = multi ? ['Raffiner les voix', 'Refine voices'] : ['Séparer les voix', 'Separate voices'];
+    btn.textContent = vm.lang.t(t[0], t[1]); btn.dataset.en = t[1];
+    const titre = $('#sepbox b'); if (titre) { titre.textContent = vm.lang.t(multi ? 'Raffiner la séparation des voix' : 'Séparer les voix maintenant', multi ? 'Refine the voice separation' : 'Separate the voices now'); titre.dataset.en = multi ? 'Refine the voice separation' : 'Separate the voices now'; }
+    const r2 = $('#refine2'); if (multi && r2.getAttribute('aria-checked') !== 'true') r2.click();
+  }, 500);
   btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
   async function lancer(fichier) {
@@ -775,20 +787,28 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
   new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
   new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });
   let v = false; try { v = localStorage.getItem('tr-verbose') === '1'; } catch (e) {} poser(v); }
-/* Durée restante : moyenne depuis le début, donc stable ; affichée dès 1 %, avec l'heure de fin. */
-{ let t0 = 0, last = 0; const eta = $('#eta'), pct = $('#pct');
+/* Durée restante : un seul calcul, affiché une seule fois (celui de l'ancienne ligne du bas est retiré).
+   Vitesse de la dernière minute quand elle est mesurable — la séparation n'avance pas à vitesse constante —
+   sinon vitesse moyenne ; heure de fin en 24 h. */
+{ let t0 = 0, last = 0, echantillons = []; const eta = $('#eta'), pct = $('#pct');
   const dire = s => { const m = Math.max(1, Math.round(s / 60)); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') : m + ' min'; };
   new MutationObserver(() => { const p = parseInt(pct.textContent, 10) || 0, now = Date.now();
-    if (p < last || !t0 || p === 0) { t0 = now; } last = p;
-    if (p <= 0) { eta.textContent = ''; return; }
-    if (p >= 100) { eta.textContent = ''; return; }
+    if (p < last || !t0 || p === 0) { t0 = now; echantillons = []; } last = p;
+    if (p <= 0 || p >= 100) { eta.textContent = ''; return; }
+    echantillons.push([now, p]); while (echantillons.length > 2 && now - echantillons[0][0] > 90000) echantillons.shift();
     const el = (now - t0) / 1000; if (p < 1 || el < 20) { eta.textContent = vm.lang.t('Calcul de la durée…', 'Working out the time left…'); return; }
-    const left = el * (100 - p) / p, fin = new Date(now + left * 1000);
-    eta.textContent = vm.lang.t('Encore environ ', 'About ') + dire(left) + vm.lang.t(' · fin vers ', ' left · done around ') + fin.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); })
+    const [ta, pa] = echantillons[0], span = (now - ta) / 1000, gain = p - pa;
+    const vitesse = (span >= 20 && gain >= 1) ? gain / span : p / el;      // % par seconde
+    const left = (100 - p) / vitesse, fin = new Date(now + left * 1000);
+    eta.textContent = vm.lang.t('Encore environ ', 'About ') + dire(left) + vm.lang.t(' · fin vers ', ' left · done around ')
+      + fin.toLocaleTimeString(document.documentElement.lang || 'fr', { hour: '2-digit', minute: '2-digit', hour12: false }); })
     .observe(pct, { childList: true, characterData: true, subtree: true }); }
 /* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
 const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
 $('#keysbtn').onclick = ouvrirCles;
+/* La version installée, à côté du titre et dans la bulle « i ». */
+fetch('/api/version').then(r => r.json()).then(v => { if (!v || !v.installee) return;
+  $('#appver').textContent = 'v' + v.installee; $('#tipver').textContent = vm.lang.t('Version ', 'Version ') + v.installee; }).catch(() => {});
 /* Menus de la barre (Mac) et raccourcis : chaque action appelle le bouton qui existe déjà, pour qu'il n'y ait qu'un chemin par action. */
 const toast = m => { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
   t.textContent = m; void t.offsetWidth; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 4200); };

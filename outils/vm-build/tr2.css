@@ -640,3 +640,18 @@ body.sc-all .tr-sc.sc-min .sc-nav { position: absolute; left: var(--pad, 24px); 
 .tr-sc .sc-nav button { padding-left: .35rem; padding-right: .35rem; }
 body.sc-all .tr-sc { z-index: 200; }
 #toast { z-index: 300; }
+
+/* version */
+.appver { font: 500 .6875rem/1 var(--vm-font-mono); letter-spacing: .08em; color: var(--vm-mute); align-self: center; margin-left: -.4rem; }
+.tipver { display: block; font: 500 .75rem/1.2 var(--vm-font-mono); letter-spacing: .06em; opacity: .75; }
+@media (max-width: 1100px) { .appver { display: none; } }
+
+/* l'interrupteur du panneau « Séparer / Raffiner » : papier sur encre, lisible */
+.sepbox .tgl { border-color: var(--vm-paper); transform: none; margin: 0; }
+.sepbox .tgl i { background: var(--vm-paper); }
+.sepbox .tgl.on { background: var(--vm-accent); border-color: var(--vm-accent); }
+.sepbox .tgl.on i { background: var(--tr-on-accent); }
+.refine2 { align-items: flex-start; gap: .8rem; justify-content: flex-start; text-align: left; }
+.refine2 .rtxt { display: flex; flex-direction: column; gap: .3rem; }
+.sepbox .refine2 label { font: 600 .75rem/1.25 var(--vm-font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--vm-paper); cursor: pointer; }
+.sepbox .refine2 small { font: 400 .8125rem/1.4 var(--vm-font-display); color: var(--vm-paper); opacity: .75; }

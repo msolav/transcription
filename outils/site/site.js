@@ -237,8 +237,23 @@
       + '<dt>' + L('Compte', 'Account') + '</dt><dd>'
       + L('Aucun. Une clé d’API Groq, gratuite, est requise.',
           'None. A free Groq API key is required.') + '</dd>'
+      + '<dt>' + L('Version', 'Version') + '</dt><dd id="versionpub">'
+      + (VERSION_PUBLIEE || '…') + '</dd>'
       + '</dl>';
   }
+
+  /* La version publiée, lue sur /version.json (la dernière publication du
+     dépôt) : jamais écrite à la main, donc jamais en retard sur ce qu'on
+     télécharge vraiment. */
+  var VERSION_PUBLIEE = '';
+  try {
+    fetch('/version.json').then(function (r) { return r.json(); }).then(function (v) {
+      if (!v || !v.version) return;
+      VERSION_PUBLIEE = v.version;
+      var el = document.getElementById('versionpub');
+      if (el) el.textContent = v.version;
+    }).catch(function () { /* hors ligne : le « … » reste, sans bruit */ });
+  } catch (e) { /* idem */ }
 
   function vueSysteme() {
     return '<span class="etiq">' + L('Système', 'System') + '</span>'

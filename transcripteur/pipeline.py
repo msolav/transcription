@@ -661,6 +661,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
                     avance(int(faits), int(total))
                 elif ligne.startswith("R "):
                     tours = [tuple(t) for t in json.loads(ligne[2:])]
+                elif ligne.startswith("L "):
+                    log(ligne[2:])
                 elif ligne.startswith("E "):
                     erreur = ligne[2:]
         finally:
@@ -715,8 +717,8 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         )
 
     low, high = span
-    log(f"modèle « {assets.PAR_CLE[assets.resoudre(embedding)].nom} » chargé "
-        f"sur {DIARIZE_THREADS} cœurs, analyse du signal")
+    log(f"modèle chargé sur {DIARIZE_THREADS} cœurs, analyse du signal"
+        + (" — raffinage activé : séparation de base d'abord (80 % de la barre), puis raffinage (20 %)" if raffiner else ""))
 
     def avance(done: int, total: int) -> None:
         progress(f"Séparation des voix {int(100 * done / max(total, 1))} %",
@@ -748,7 +750,7 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
                 sherpa_onnx.SpeakerEmbeddingExtractorConfig(
                     model=str(emb_model), num_threads=DIARIZE_THREADS))
             from . import raffinage
-            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1)
+            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1, None, log)
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
     trouvees = len({t[2] for t in turns})
@@ -1399,16 +1401,16 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
             langue = detect_language(audio, options.api_key)
             log(f"langue détectée : {langue or 'indéterminée'}")
         embedding = assets.resoudre_pour_langue(langue)
-        log(f"modèle choisi : {assets.PAR_CLE[embedding].nom}")
 
     progress("Séparation des voix", voix[0])
     if options.num_speakers:
-        log(f"séparation des voix, {options.num_speakers} demandées "
-            f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
+        log(f"séparation des voix : {options.num_speakers} demandées, modèle "
+            f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
         turns = diarize(audio, options.num_speakers, progress, voix,
                         CLUSTER_THRESHOLD, embedding, options.raffiner)
     else:
-        log("séparation des voix, nombre à déterminer")
+        log("séparation des voix : nombre à déterminer, modèle "
+            f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
         turns = diarize_auto(audio, progress, voix,
                              CLUSTER_THRESHOLD, embedding, options.raffiner)
     del audio
@@ -1492,8 +1494,8 @@ def process(src: Path, work_dir: Path, options: Options,
     if options.diarize:
         progress("Séparation des voix", voix[0])
         if options.num_speakers:
-            log(f"séparation des voix, {options.num_speakers} demandées "
-                f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
+            log(f"séparation des voix : {options.num_speakers} demandées, modèle "
+                f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
             turns = diarize(audio, options.num_speakers, progress, voix,
                             CLUSTER_THRESHOLD, embedding, options.raffiner)
         else:

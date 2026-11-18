@@ -86,6 +86,11 @@ def main(argv: list[str]) -> int:
         res = moteur.process(audio, callback=rappel).sort_by_start_time()
         tours = [[float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}"]
                  for r in res]
+        def dire(message: str) -> None:
+            print("L " + message, flush=True)
+
+        dire(f"séparation de base terminée : {len(tours)} tours, "
+             f"{len({t[2] for t in tours})} voix")
         if raffiner and tours:
             from transcripteur import raffinage
             extracteur = sherpa_onnx.SpeakerEmbeddingExtractor(
@@ -93,7 +98,7 @@ def main(argv: list[str]) -> int:
                     model=emb, num_threads=int(fils)))
             tours = [list(t) for t in raffinage.raffiner(
                 audio, [tuple(t) for t in tours], extracteur, int(nombre),
-                lambda f: emettre(0.8 + 0.2 * f))]
+                lambda f: emettre(0.8 + 0.2 * f), dire)]
         print("R " + json.dumps(tours), flush=True)
         return 0
     except Exception as exc:  # noqa: BLE001

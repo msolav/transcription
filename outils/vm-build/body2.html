@@ -3,11 +3,13 @@
 
 <header class="bar" id="bar">
   <a class="wordmark" href="/"><b>Transcripteur</b></a>
+  <span class="appver" id="appver" data-no-i18n></span>
     <span class="tipwrap">
       <button class="info" type="button" aria-expanded="false" aria-label="Confidentialité" data-en-aria-label="Privacy">i</button>
       <span class="tipbody">
         <b data-en="Privacy">Confidentialité</b>
         <span data-en="Voices are separated here. Only the audio, compressed to mono MP3, goes to Groq for speech recognition. Nothing is kept once the program is closed.">La séparation des voix se fait ici. Seul l'audio, compressé en MP3 mono, part chez Groq pour la reconnaissance de la parole. Rien n'est conservé après la fermeture du programme.</span>
+        <span class="tipver" id="tipver" data-no-i18n></span>
         <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
       </span>
     </span>
@@ -27,7 +29,9 @@
       <span class="sepbox" id="sepbox"><b data-en="Separate the voices now">Séparer les voix maintenant</b>
         <span data-en="No new upload to Groq: only computing time. Say how many people speak if known.">Aucun nouvel envoi à Groq : seulement du temps de calcul. Indiquer le nombre de personnes si connu.</span>
         <span class="numchips" id="afterchips" role="radiogroup"><button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button></span>
-        <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label></span>
+        <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button>
+          <span class="rtxt"><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label>
+          <small data-en="Re-sorts each passage against the clearest samples of every voice. Fewer mix-ups, a little longer.">Reclasse chaque passage d'après les extraits les plus nets de chaque voix. Moins de confusions, un peu plus long.</small></span></span>
         <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>

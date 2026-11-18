@@ -697,6 +697,11 @@ def _run_voix(job_id: str, options: Options, mots: list, duree: float) -> None:
         anciens = job["blocks"]
         _set(job_id, status="running", stage="Séparation des voix",
              progress=0.0, error=None, cancel=False)
+        # Le journal de la transcription n'a rien à faire ici : on repart d'une page blanche.
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"] = []
         try:
             resultat = pipeline.separer_voix(src, work_dir, options, mots,
                                              duree, progress, notify, stop)

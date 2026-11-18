@@ -124,15 +124,25 @@ def _nombre_de_voix(sauts, n):
     return int(min(max(n - (k + 1), 1), VOIX_MAX))
 
 
-def raffiner(audio, tours, extracteur, nombre=-1, avance=None):
+def raffiner(audio, tours, extracteur, nombre=-1, avance=None, dire=None):
     """Raffine des tours (début, fin, étiquette). Rend la même forme."""
     import numpy as np
     if not tours:
         return tours
+    dire = dire or (lambda m: None)
     duree = len(audio) / 16000
     unites = _unites(tours, duree)
-    emp = _empreintes(audio, unites, extracteur,
-                      (lambda r: avance(r * 0.8)) if avance else None)
+    dire(f"raffinage : {len(tours)} tours découpés en {len(unites)} extraits "
+         f"de {FEN:.0f} s au plus ; calcul de l'empreinte vocale de chacun")
+    quart = [0]
+
+    def progres(r):
+        if avance:
+            avance(r * 0.8)
+        if int(r * 4) > quart[0] and r < 1:
+            quart[0] = int(r * 4)
+            dire(f"empreintes : {int(r * len(unites))} / {len(unites)} extraits")
+    emp = _empreintes(audio, unites, extracteur, progres)
     ok = [k for k, e in enumerate(emp) if e is not None]
     if len(ok) < 2:
         return tours
@@ -148,12 +158,16 @@ def raffiner(audio, tours, extracteur, nombre=-1, avance=None):
         pas = len(sur) / 400
         sur = [sur[int(i * pas)] for i in range(400)]
 
+    dire(f"{len(ok)} extraits mesurés ; {len(sur)} extraits longs et sûrs "
+         f"(≥ {MIN_SUR} s) retenus pour fixer les voix")
     E = np.stack([emp[k] for k in sur])
     cible = nombre if nombre and nombre > 0 else None
     etiq, sauts = _agglomerer(E, dur[sur], cible)
     if not cible:
         cible = _nombre_de_voix(sauts, len(sur))
         etiq, _ = _agglomerer(E, dur[sur], cible)
+    dire(f"regroupement des extraits sûrs : {cible} voix "
+         + ("(nombre imposé)" if nombre and nombre > 0 else "(nombre estimé d'après l'écart de ressemblance)"))
     if avance:
         avance(0.85)
 
@@ -191,12 +205,15 @@ def raffiner(audio, tours, extracteur, nombre=-1, avance=None):
         return lab, conf
 
     lab, conf = classer(P)
-    for _ in range(2):                  # raffinage : profils recalculés
+    dire(f"profils de {len(P)} voix construits ; classement des {len(ok)} extraits")
+    for passe in range(2):              # raffinage : profils recalculés
         surs = [k for k in ok if lab[k] >= 0 and (dur[k] >= MIN_SUR or conf[k] >= MARGE)]
         if len(set(lab[k] for k in surs)) < 2 and cible and cible > 1:
             break
         P = profils(surs, [lab[k] for k in surs])
         lab, conf = classer(P)
+        dire(f"reclassement, passe {passe + 1}/2 : {len(set(l for l in lab if l >= 0))} voix, "
+             f"{sum(1 for k in ok if conf[k] < MARGE)} extraits encore incertains")
     if avance:
         avance(0.95)
 
@@ -230,4 +247,6 @@ def raffiner(audio, tours, extracteur, nombre=-1, avance=None):
             sortie.append([a, b, etiquette])
     if avance:
         avance(1.0)
+    dire(f"raffinage terminé : {len(classement)} voix, {len(sortie)} tours "
+         f"(séparation de base : {len({t[2] for t in tours})} voix, {len(tours)} tours)")
     return [tuple(t) for t in sortie]
