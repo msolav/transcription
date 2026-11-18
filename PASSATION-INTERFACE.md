@@ -233,3 +233,10 @@ doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
 - Le champ 02 devient un choix à trois options : **Texte seul** / **Avec mon aide** (défaut, retenu dans `localStorage` `tr-modevoix`) / **Automatique**. Seul « Automatique » ouvre les réglages de l'ancienne séparation (nombre de voix, raffinage). Le vrai interrupteur `#sep` reste dans le DOM (masqué) pour ne pas toucher à la logique d'origine : le sélecteur le pilote.
 - « Avec mon aide » : le traitement part sans séparation, et dès que le texte est prêt (`tick`, branche `done`) l'identification des voix s'ouvre d'elle-même (`window.ouvrirIdentification`). Le choix pris **au lancement** (`window.__identifierApres`) fait foi, pas celui d'après.
 - Les essais Playwright posent `tr-modevoix` via `harness.install(mode=...)` (défaut `aucune`) ; `modecheck.py` couvre les trois modes.
+
+## 13. Identification : ligne du temps et transport (v1.3.7)
+
+- Chaque passage a une **ligne du temps** (tête de lecture, clic pour se placer, morceaux colorés par personne, coupes déplaçables par glissement, double-clic pour en supprimer) et un **transport** : Lecture/Pause, ±0,5 s, ±2 s, Boucle, « Couper à la position », « Écouter ce morceau ». Clavier : Espace, C, ← →.
+- **Piège** : la page d'origine a son propre raccourci Espace (`#deck`) ; deux bascules s'annulaient. Le raccourci de l'écran d'identification est en phase de capture avec `stopImmediatePropagation`.
+- Une première version n'avait que « Écouter » et « Couper ici » sans position visible ni retour arrière : à reprendre comme exemple de ce qu'il ne faut pas livrer pour une tâche de découpe audio.
+- Test : `tlcheck.py` (faux lecteur à horloge simulée ; un vrai lecteur audio n'a pas été essayé).

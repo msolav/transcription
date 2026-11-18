@@ -733,3 +733,23 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
 body.detail-on .capture:has(#status:not([hidden])) .pctwrap { width: calc(50% - 1rem); max-width: none; container-type: inline-size; }
 body.detail-on .capture:has(#status:not([hidden])) .pctwrap em { font-size: min(52cqw, 40svh); }
 body.detail-on .verbose { left: calc(50% + 1rem); right: var(--pad); width: auto; }
+
+/* identification : transport, ligne du temps, morceaux colorés */
+#aide .ar-liste { display: flex; flex-direction: column; gap: .6rem; min-height: 0; overflow: clip; }
+#aide .ar-pass.actif { border-color: var(--vm-ink); }
+#aide .ar-tr { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+#aide .ar-tr button { padding: .45rem .65rem; font-size: .8125rem; }
+#aide .ar-tr .pl { background: var(--vm-ink); color: var(--vm-paper); font-weight: 700; }
+#aide .ar-tr .pl.joue { background: var(--vm-accent); border-color: var(--vm-accent); color: var(--tr-on-accent); }
+#aide .ar-tr button[aria-pressed="true"] { background: var(--vm-ink); color: var(--vm-paper); }
+#aide .ar-tr .cut { margin-left: auto; border-color: var(--vm-accent); color: var(--vm-accent); }
+#aide .ar-tr .cut:hover:not(:disabled) { background: var(--vm-accent); color: var(--tr-on-accent); }
+#aide .ar-tl { position: relative; height: 42px; margin-top: .25rem; background: color-mix(in oklab, var(--vm-ink) 8%, transparent); border: 1px solid color-mix(in oklab, var(--vm-ink) 40%, transparent); cursor: pointer; touch-action: none; }
+#aide .ar-tl .tl-seg { position: absolute; top: 0; bottom: 0; opacity: .5; transition: background-color .5s var(--vm-ease); pointer-events: none; }
+#aide .ar-tl .tl-cut { position: absolute; top: -5px; bottom: -5px; width: 14px; margin-left: -7px; cursor: ew-resize; background: linear-gradient(var(--vm-ink), var(--vm-ink)) center / 2px 100% no-repeat; }
+#aide .ar-tl .tl-cut::after { content: ""; position: absolute; left: 3px; top: 0; width: 8px; height: 8px; background: var(--vm-ink); }
+#aide .ar-tl .tl-head { position: absolute; top: -6px; bottom: -6px; width: 2px; margin-left: -1px; background: var(--vm-accent); pointer-events: none; opacity: 0; transition: opacity .3s var(--vm-ease); }
+#aide .ar-tt { display: flex; justify-content: space-between; font: 500 .72rem var(--vm-font-mono); opacity: .7; margin-top: .15rem; }
+#aide .ar-seg .pt { display: inline-block; width: 10px; height: 10px; margin-right: .45rem; }
+#aide .ar-seg .ec { padding: .35rem .6rem; font-size: .75rem; }
+#aide .ar-clav { display: block; margin-top: .3rem; font: 500 .72rem var(--vm-font-mono); opacity: .65; letter-spacing: .03em; }
