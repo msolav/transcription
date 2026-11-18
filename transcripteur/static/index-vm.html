@@ -1009,6 +1009,38 @@ body.detail-on .etaline { white-space: normal; overflow-wrap: anywhere; }
   .go { min-height: 0; padding-top: 6px; padding-bottom: 6px; font-size: clamp(1.6rem, 4.4vw, 3rem); }
   .settings { row-gap: 4px; }
 }
+
+/* indicateur de mise à jour dans la barre */
+#majbtn { color: var(--vm-accent); opacity: 1; }
+#majbtn::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: .5rem; background: var(--vm-accent); vertical-align: .08em; }
+#majbtn[hidden] { display: none; }
+@media (max-width: 900px) { #majbtn { max-width: 9rem; overflow: hidden; text-overflow: ellipsis; } }
+
+/* notification discrète, visible sur tous les écrans */
+#toast { position: fixed; top: 76px; right: var(--pad, 24px); z-index: 90; max-width: min(420px, 80vw); padding: .8rem 1rem; background: var(--vm-ink); color: var(--vm-paper);
+  font: 500 .8125rem/1.4 var(--vm-font-mono); letter-spacing: .03em; opacity: 0; translate: 0 -6px; pointer-events: none; transition: opacity .7s var(--vm-ease), translate .7s var(--vm-ease); }
+#toast.on { opacity: 1; translate: 0 0; }
+
+/* séances : liste courte, et liste complète pleine fenêtre */
+.tr-sc .sc-nav { display: flex; align-items: center; gap: 1.2rem; margin-top: .6rem; font: 500 .75rem/1 var(--vm-font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.tr-sc .sc-nav button { font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--vm-ink); padding: .5rem 0; background: linear-gradient(currentColor, currentColor) left calc(100% - 2px) / 100% 1px no-repeat; }
+.tr-sc .sc-nav .sc-pg { margin-left: auto; display: inline-flex; align-items: center; gap: .6rem; }
+.tr-sc .sc-nav .sc-pg button { border: 1px solid var(--vm-ink); background: none; min-width: 34px; height: 34px; padding: 0; }
+.tr-sc li[hidden] { display: none; }
+body.sc-all .tr-sc { position: fixed; top: var(--barh, 64px); left: 0; right: 0; bottom: 0; z-index: 55; margin: 0; padding: 1.2rem var(--pad, 24px) 0; background: var(--vm-paper); overflow: clip; }
+body.sc-all .tr-sc .sc-nav { position: absolute; left: var(--pad, 24px); right: var(--pad, 24px); bottom: 18px; margin: 0; }
+
+.tr-sc.sc-min > h3 { display: none; }
+.tr-sc.sc-min { margin-top: .4rem; }
+body.sc-all .tr-sc.sc-min > h3 { display: flex; }
+/* Sans aucune ligne visible, le bouton se pose au bout de la rangée « Choisir un fichier » : il ne prend aucune hauteur. */
+.tr-sc.sc-min { margin: 0; height: 0; }
+.tr-sc.sc-min .sc-nav { position: absolute; right: var(--pad, 24px); bottom: 22px; margin: 0; }
+body.sc-all .tr-sc.sc-min { height: auto; }
+body.sc-all .tr-sc.sc-min .sc-nav { position: absolute; left: var(--pad, 24px); right: var(--pad, 24px); bottom: 18px; }
+.tr-sc .sc-nav button { padding-left: .35rem; padding-right: .35rem; }
+body.sc-all .tr-sc { z-index: 200; }
+#toast { z-index: 300; }
 </style>
 </head>
 <body>
@@ -1048,6 +1080,7 @@ body.detail-on .etaline { white-space: normal; overflow-wrap: anywhere; }
          s'y transcrit. Le même bouton ramène à la liste. --><span class="l3" data-en="All sessions">Toutes les séances</span></button>
   </nav>
   <div class="tools">
+    <button class="linkbtn" id="majbtn" type="button" hidden data-en="Update available">Mise à jour disponible</button>
     <button class="linkbtn" id="keysbtn" type="button" data-en="Keys">Clés</button>
     <div class="vm-lang"></div>
     <button class="vm-theme" type="button" aria-label="Changer de thème" data-en-aria-label="Switch light / dark"></button>
@@ -3529,6 +3562,33 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
 /* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
 const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
 $('#keysbtn').onclick = ouvrirCles;
+/* Menus de la barre (Mac) et raccourcis : chaque action appelle le bouton qui existe déjà, pour qu'il n'y ait qu'un chemin par action. */
+const toast = m => { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = m; void t.offsetWidth; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 4200); };
+window.trMenu = async a => {
+  const clic = s => { const e = document.querySelector(s); if (e && !e.hidden && !e.disabled) { e.click(); return true; } return false; };
+  const accueil = () => { if (document.querySelector('#doc')) clic('#newjob'); };
+  if (a === 'cles') return ouvrirCles();
+  if (a === 'maj') {
+    const v = typeof trVerifierMaj === 'function' ? await trVerifierMaj() : null;
+    toast(!v ? vm.lang.t('Vérification impossible pour le moment.', 'Could not check right now.')
+      : v.retard ? vm.lang.t('Version ' + v.publiee + ' disponible : voir « Mise à jour » dans la barre.', 'Version ' + v.publiee + ' available: see “Update” in the bar.')
+      : vm.lang.t('Vous avez la dernière version.', 'You have the latest version.'));
+    return;
+  }
+  if (a === 'ouvrir') { accueil(); setTimeout(() => clic('#pick'), 900); return; }
+  if (a === 'json') { accueil(); setTimeout(() => clic('#reopen'), 900); return; }
+  const cible = { txt: '[data-x="txt"]', srt: '[data-x="srt"]', copier: '[data-x="copy"]', nouveau: '#newjob', corriger: '#reread', resumer: '#sum', voix: '#sepafter' };
+  const texteOuvert = typeof job !== 'undefined' && job && job.blocks && document.querySelector('#doc');
+  if (cible[a] && a !== 'nouveau' && !texteOuvert || cible[a] && !clic(cible[a])) toast(vm.lang.t('Disponible une fois un texte ouvert.', 'Available once a text is open.'));
+};
+/* Raccourcis clavier : seulement dans la fenêtre de l'application, où le menu n'en porte pas. */
+document.addEventListener('keydown', e => {
+  if (!window.pywebview || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+  if (/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) return;
+  const m = { o: 'ouvrir', s: 'txt', n: 'nouveau', ',': 'cles' }[e.key.toLowerCase()];
+  if (m) { e.preventDefault(); trMenu(m); }
+});
 new MutationObserver(() => { document.querySelectorAll('#alerts .alert').forEach(a => {
   if (!a.querySelector('.alertkey') && /cl[ée]/i.test(a.textContent) && /(refus|aucune|invalide|absente)/i.test(a.textContent)) {
     const k = document.createElement('button'); k.type = 'button'; k.className = 'linkbtn alertkey'; k.textContent = vm.lang.t('Changer la clé', 'Change the key'); k.onclick = ouvrirCles; a.appendChild(k); } }); }).observe($('#alerts'), { childList: true, subtree: true, characterData: true });
@@ -3546,6 +3606,59 @@ document.addEventListener('click', e => {
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
+
+/* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
+   l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,
+   une liste pleine fenêtre, par pages. */
+{ let page = 0, occupe = false;
+  const sc = () => document.querySelector('.tr-sc');
+  function nav(h, texte) {
+    let n = h.querySelector('.sc-nav');
+    if (!n) { n = document.createElement('div'); n.className = 'sc-nav'; h.appendChild(n); }
+    if (n.dataset.t !== texte) { n.dataset.t = texte; n.innerHTML = texte; }
+    return n;
+  }
+  function ajuster() {
+    const h = sc(); if (occupe || !h || h.hidden) return;
+    const lis = [...h.querySelectorAll('ul > li')]; if (!lis.length) return;
+    occupe = true;
+    try {
+      document.documentElement.style.setProperty('--barh', Math.round($('#bar').getBoundingClientRect().bottom) + 'px');
+      lis.forEach(l => { l.hidden = false; });
+      if (document.body.classList.contains('sc-all')) {
+        const ul = h.querySelector('ul'), dispo = innerHeight - ul.getBoundingClientRect().top - 84;
+        const par = Math.max(2, Math.floor(dispo / (lis[0].getBoundingClientRect().height || 72)));
+        const pages = Math.ceil(lis.length / par); page = Math.min(page, pages - 1);
+        lis.forEach((l, i) => { l.hidden = !(i >= page * par && i < (page + 1) * par); });
+        const n = nav(h, '<button type="button" data-sc="retour">' + vm.lang.t('Retour', 'Back') + '</button>'
+          + (pages > 1 ? '<span class="sc-pg"><button type="button" data-sc="moins" aria-label="' + vm.lang.t('Page précédente', 'Previous page') + '">−</button> ' + (page + 1) + ' / ' + pages
+            + ' <button type="button" data-sc="plus" aria-label="' + vm.lang.t('Page suivante', 'Next page') + '">+</button></span>' : ''));
+        n.dataset.mode = 'tout'; n.dataset.pages = pages;
+        return;
+      }
+      const bas = $('#bar').getBoundingClientRect().bottom;
+      const titre = document.querySelector($('#dropzone').classList.contains('filled') ? '.giant.got .a' : '.giant.ask .a');
+      let vis = lis.length;
+      h.classList.remove('sc-min');
+      while (titre && vis > 0 && titre.getBoundingClientRect().top < bas + 10) { lis[--vis].hidden = true; if (vis === 0) h.classList.add('sc-min'); }
+      const reste = lis.length - vis;
+      if (reste > 0) nav(h, '<button type="button" data-sc="tout">' + vm.lang.t('Toutes les séances', 'All sessions') + ' (' + lis.length + ')</button>').dataset.mode = 'court';
+      else { const n = h.querySelector('.sc-nav'); if (n) n.remove(); }
+    } finally { occupe = false; }
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-sc]'); if (!b) return; const a = b.dataset.sc;
+    if (a === 'tout') { page = 0; document.body.classList.add('sc-all'); }
+    else if (a === 'retour') document.body.classList.remove('sc-all');
+    else if (a === 'plus') page += 1; else if (a === 'moins') page = Math.max(0, page - 1);
+    ajuster();
+  });
+  const relancer = () => requestAnimationFrame(ajuster);
+  new MutationObserver(relancer).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(relancer).observe($('#dropzone'), { attributes: true, attributeFilter: ['class'] });
+  addEventListener('resize', relancer);
+  if (document.fonts) document.fonts.ready.then(relancer);
+}
 
 /* ---------- English (interface chrome is translated in the markup via data-en; these are the strings JS and the server create) ---------- */
 vm.lang.add({

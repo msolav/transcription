@@ -789,6 +789,33 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
 /* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
 const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
 $('#keysbtn').onclick = ouvrirCles;
+/* Menus de la barre (Mac) et raccourcis : chaque action appelle le bouton qui existe déjà, pour qu'il n'y ait qu'un chemin par action. */
+const toast = m => { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = m; void t.offsetWidth; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 4200); };
+window.trMenu = async a => {
+  const clic = s => { const e = document.querySelector(s); if (e && !e.hidden && !e.disabled) { e.click(); return true; } return false; };
+  const accueil = () => { if (document.querySelector('#doc')) clic('#newjob'); };
+  if (a === 'cles') return ouvrirCles();
+  if (a === 'maj') {
+    const v = typeof trVerifierMaj === 'function' ? await trVerifierMaj() : null;
+    toast(!v ? vm.lang.t('Vérification impossible pour le moment.', 'Could not check right now.')
+      : v.retard ? vm.lang.t('Version ' + v.publiee + ' disponible : voir « Mise à jour » dans la barre.', 'Version ' + v.publiee + ' available: see “Update” in the bar.')
+      : vm.lang.t('Vous avez la dernière version.', 'You have the latest version.'));
+    return;
+  }
+  if (a === 'ouvrir') { accueil(); setTimeout(() => clic('#pick'), 900); return; }
+  if (a === 'json') { accueil(); setTimeout(() => clic('#reopen'), 900); return; }
+  const cible = { txt: '[data-x="txt"]', srt: '[data-x="srt"]', copier: '[data-x="copy"]', nouveau: '#newjob', corriger: '#reread', resumer: '#sum', voix: '#sepafter' };
+  const texteOuvert = typeof job !== 'undefined' && job && job.blocks && document.querySelector('#doc');
+  if (cible[a] && a !== 'nouveau' && !texteOuvert || cible[a] && !clic(cible[a])) toast(vm.lang.t('Disponible une fois un texte ouvert.', 'Available once a text is open.'));
+};
+/* Raccourcis clavier : seulement dans la fenêtre de l'application, où le menu n'en porte pas. */
+document.addEventListener('keydown', e => {
+  if (!window.pywebview || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+  if (/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) return;
+  const m = { o: 'ouvrir', s: 'txt', n: 'nouveau', ',': 'cles' }[e.key.toLowerCase()];
+  if (m) { e.preventDefault(); trMenu(m); }
+});
 new MutationObserver(() => { document.querySelectorAll('#alerts .alert').forEach(a => {
   if (!a.querySelector('.alertkey') && /cl[ée]/i.test(a.textContent) && /(refus|aucune|invalide|absente)/i.test(a.textContent)) {
     const k = document.createElement('button'); k.type = 'button'; k.className = 'linkbtn alertkey'; k.textContent = vm.lang.t('Changer la clé', 'Change the key'); k.onclick = ouvrirCles; a.appendChild(k); } }); }).observe($('#alerts'), { childList: true, subtree: true, characterData: true });
@@ -806,6 +833,59 @@ document.addEventListener('click', e => {
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
+
+/* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
+   l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,
+   une liste pleine fenêtre, par pages. */
+{ let page = 0, occupe = false;
+  const sc = () => document.querySelector('.tr-sc');
+  function nav(h, texte) {
+    let n = h.querySelector('.sc-nav');
+    if (!n) { n = document.createElement('div'); n.className = 'sc-nav'; h.appendChild(n); }
+    if (n.dataset.t !== texte) { n.dataset.t = texte; n.innerHTML = texte; }
+    return n;
+  }
+  function ajuster() {
+    const h = sc(); if (occupe || !h || h.hidden) return;
+    const lis = [...h.querySelectorAll('ul > li')]; if (!lis.length) return;
+    occupe = true;
+    try {
+      document.documentElement.style.setProperty('--barh', Math.round($('#bar').getBoundingClientRect().bottom) + 'px');
+      lis.forEach(l => { l.hidden = false; });
+      if (document.body.classList.contains('sc-all')) {
+        const ul = h.querySelector('ul'), dispo = innerHeight - ul.getBoundingClientRect().top - 84;
+        const par = Math.max(2, Math.floor(dispo / (lis[0].getBoundingClientRect().height || 72)));
+        const pages = Math.ceil(lis.length / par); page = Math.min(page, pages - 1);
+        lis.forEach((l, i) => { l.hidden = !(i >= page * par && i < (page + 1) * par); });
+        const n = nav(h, '<button type="button" data-sc="retour">' + vm.lang.t('Retour', 'Back') + '</button>'
+          + (pages > 1 ? '<span class="sc-pg"><button type="button" data-sc="moins" aria-label="' + vm.lang.t('Page précédente', 'Previous page') + '">−</button> ' + (page + 1) + ' / ' + pages
+            + ' <button type="button" data-sc="plus" aria-label="' + vm.lang.t('Page suivante', 'Next page') + '">+</button></span>' : ''));
+        n.dataset.mode = 'tout'; n.dataset.pages = pages;
+        return;
+      }
+      const bas = $('#bar').getBoundingClientRect().bottom;
+      const titre = document.querySelector($('#dropzone').classList.contains('filled') ? '.giant.got .a' : '.giant.ask .a');
+      let vis = lis.length;
+      h.classList.remove('sc-min');
+      while (titre && vis > 0 && titre.getBoundingClientRect().top < bas + 10) { lis[--vis].hidden = true; if (vis === 0) h.classList.add('sc-min'); }
+      const reste = lis.length - vis;
+      if (reste > 0) nav(h, '<button type="button" data-sc="tout">' + vm.lang.t('Toutes les séances', 'All sessions') + ' (' + lis.length + ')</button>').dataset.mode = 'court';
+      else { const n = h.querySelector('.sc-nav'); if (n) n.remove(); }
+    } finally { occupe = false; }
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-sc]'); if (!b) return; const a = b.dataset.sc;
+    if (a === 'tout') { page = 0; document.body.classList.add('sc-all'); }
+    else if (a === 'retour') document.body.classList.remove('sc-all');
+    else if (a === 'plus') page += 1; else if (a === 'moins') page = Math.max(0, page - 1);
+    ajuster();
+  });
+  const relancer = () => requestAnimationFrame(ajuster);
+  new MutationObserver(relancer).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(relancer).observe($('#dropzone'), { attributes: true, attributeFilter: ['class'] });
+  addEventListener('resize', relancer);
+  if (document.fonts) document.fonts.ready.then(relancer);
+}
 """
 js = js.rstrip() + "\n" + addon + "\n"
 

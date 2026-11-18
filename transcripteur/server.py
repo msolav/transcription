@@ -23,11 +23,12 @@ import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                Response)
 
-from . import (assets, config, fournisseurs, guide, memoire,
+from . import (assets, config, fournisseurs, guide, journal, memoire,
                routes_relecture,
                pipeline, sous_titres)
 from .pipeline import Cancelled, Options, PipelineError
@@ -36,6 +37,37 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 Go
 
 app = FastAPI(title="Transcripteur", docs_url=None, redoc_url=None)
+
+
+def _espace_libre(dossier: Path) -> int | None:
+    """Octets libres sur le volume qui porte `dossier`, ou None si inconnu."""
+    try:
+        p = dossier
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        return shutil.disk_usage(p).free
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _message_disque(exc: BaseException) -> str:
+    import errno
+    if getattr(exc, "errno", None) == errno.ENOSPC:
+        return ("Le disque est plein. Libérer de la place (par exemple avec "
+                "« Jeter les sons » sur d'anciennes séances), puis réessayer.")
+    return f"Écriture impossible sur le disque : {exc}"
+
+
+@app.exception_handler(Exception)
+async def _erreur_inattendue(request, exc: Exception) -> JSONResponse:
+    """Toute erreur non prévue : écrite dans le journal, dite en clair.
+
+    Sans cela l'interface n'affichait que « Erreur 500 », sans la raison —
+    et sans aucune trace ailleurs, puisque l'application installée n'a
+    pas de terminal."""
+    journal.erreur(f"{request.method} {request.url.path}", exc)
+    message = _message_disque(exc) if isinstance(exc, OSError) else f"Erreur inattendue : {exc}"
+    return JSONResponse({"detail": message}, status_code=500)
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -293,7 +325,7 @@ def _numero(v: str) -> tuple:
 
 
 @app.get("/api/version")
-def version() -> dict:
+def version(force: bool = False) -> dict:
     """La version installée, et celle qui est publiée.
 
     Aucun identifiant n'est envoyé : la requête ne dit rien de plus que
@@ -301,6 +333,8 @@ def version() -> dict:
     site injoignable — on rend simplement « à jour » et l'interface se
     tait, plutôt que d'inquiéter avec une panne qui n'en est pas une."""
     from . import __version__ as installee
+    if force:                   # menu « Rechercher une mise à jour », revérification périodique
+        _VERSION_VUE.clear()
     if "resultat" in _VERSION_VUE:
         return _VERSION_VUE["resultat"]
 
@@ -554,19 +588,37 @@ async def create_job(
     # fichiers s'accumulaient hors de vue. Ici on sait ce qu'ils pèsent
     # et on peut les jeter.
     work_dir = memoire.seances_dir() / job_id
+    # L'espace est vérifié avant d'écrire quoi que ce soit : un disque plein
+    # se manifestait par un envoi qui s'arrête à moitié, puis « Erreur 500 ».
+    # Le besoin est estimé : la copie, l'audio converti (≈ 4 fois le fichier
+    # compressé) et les tranches envoyées à Groq.
+    taille = getattr(file, "size", None)
+    if taille:
+        besoin = int(taille * 6) + 300 * 1024 * 1024
+        libre = _espace_libre(work_dir.parent)
+        if libre is not None and libre < besoin:
+            raise HTTPException(
+                507, f"Espace disque insuffisant : {libre / 1e9:.1f} Go libres, "
+                     f"environ {besoin / 1e9:.1f} Go nécessaires. Libérer de la "
+                     f"place, ou utiliser « Jeter les sons » sur d'anciennes séances.")
     work_dir.mkdir(parents=True, exist_ok=True)
     suffix = Path(file.filename or "audio").suffix or ".bin"
     source = work_dir / f"source{suffix}"
 
     written = 0
-    with open(source, "wb") as out:
-        while chunk := await file.read(1024 * 1024):
-            written += len(chunk)
-            if written > MAX_UPLOAD_BYTES:
-                out.close()
-                shutil.rmtree(work_dir, ignore_errors=True)
-                raise HTTPException(413, "Fichier trop volumineux (limite : 2 Go).")
-            out.write(chunk)
+    try:
+        with open(source, "wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    out.close()
+                    shutil.rmtree(work_dir, ignore_errors=True)
+                    raise HTTPException(413, "Fichier trop volumineux (limite : 2 Go).")
+                out.write(chunk)
+    except OSError as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        journal.erreur("envoi du fichier", exc)
+        raise HTTPException(507, _message_disque(exc)) from exc
 
     if written == 0:
         shutil.rmtree(work_dir, ignore_errors=True)

@@ -95,6 +95,64 @@ def modeles_en_fond() -> None:
     threading.Thread(target=tache, daemon=True).start()
 
 
+def _menus(fenetre, url: str):
+    """Les menus de la barre du haut (macOS seulement).
+
+    Chaque entrée appelle `window.trMenu(action)` dans la page, qui
+    clique le bouton existant : une seule logique par action, pas deux.
+    pywebview ne porte pas de raccourci clavier sur ses entrées ; ⌘O,
+    ⌘S, ⌘N et ⌘, sont donc gérés dans la page. Les menus Édition (copier,
+    coller) et Présentation sont ceux que pywebview ajoute de lui-même.
+
+    Rend None ailleurs que sur Mac, ou si cette version de pywebview n'a
+    pas ces menus : la fenêtre s'ouvre alors sans, comme avant."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        from webview.menu import Menu, MenuAction, MenuSeparator
+    except Exception:  # noqa: BLE001
+        return None
+
+    def page(action: str):
+        def appeler() -> None:
+            try:
+                fenetre.evaluate_js(f"window.trMenu && window.trMenu('{action}')")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Menu « {action} » sans effet : {exc}")
+        appeler.__name__ = f"menu_{action}"
+        return appeler
+
+    def aide() -> None:
+        webbrowser.open(url + "aide")
+
+    return [
+        # Les entrées de ce menu spécial rejoignent le menu « Transcripteur ».
+        Menu("__app__", [
+            MenuAction("Rechercher une mise à jour…", page("maj")),
+            MenuAction("Clés et services…", page("cles")),
+            MenuSeparator(),
+        ]),
+        Menu("Fichier", [
+            MenuAction("Ouvrir un enregistrement…", page("ouvrir")),
+            MenuAction("Rouvrir un .json…", page("json")),
+            MenuSeparator(),
+            MenuAction("Enregistrer le texte", page("txt")),
+            MenuAction("Enregistrer les sous-titres", page("srt")),
+            MenuSeparator(),
+            MenuAction("Nouveau", page("nouveau")),
+        ]),
+        Menu("Actions", [
+            MenuAction("Copier le texte", page("copier")),
+            MenuAction("Corriger", page("corriger")),
+            MenuAction("Résumer", page("resumer")),
+            MenuAction("Séparer les voix…", page("voix")),
+        ]),
+        Menu("Aide", [
+            MenuAction("Marche à suivre", aide),
+        ]),
+    ]
+
+
 def ouvrir(url: str) -> bool:
     """La fenêtre. Faux si le système n'en donne pas."""
     try:
@@ -103,11 +161,19 @@ def ouvrir(url: str) -> bool:
         print(f"Fenêtre indisponible ({exc}), ouverture dans le navigateur.")
         return False
     try:
-        webview.create_window(TITRE, url, width=1280, height=860,
-                              min_size=(900, 600), text_select=True)
+        fenetre = webview.create_window(TITRE, url, width=1280, height=860,
+                                        min_size=(900, 600), text_select=True)
         # Sur macOS, l'interface graphique n'existe que sur le fil
         # principal : c'est pour cela que le serveur est dans l'autre.
-        webview.start()
+        menus = None
+        try:
+            menus = _menus(fenetre, url)
+        except Exception as exc:  # noqa: BLE001
+            print(f"Menus indisponibles ({exc}).")
+        try:
+            webview.start(menu=menus) if menus else webview.start()
+        except TypeError:           # une version sans le paramètre `menu`
+            webview.start()
         return True
     except Exception as exc:  # noqa: BLE001
         print(f"Fenêtre impossible ({exc}), ouverture dans le navigateur.")

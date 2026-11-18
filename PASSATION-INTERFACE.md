@@ -195,3 +195,18 @@ doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
 - **Mesure** (`outils/mesure_raffinage.py`, deux enregistrements à la vérité connue, quatre modèles) : avec le nombre imposé, le raffinage rattrape l'effondrement de « VoxCeleb CAM++ » (1 voix pour 2 ou 3 demandées → 2 et 3) ; en détection libre il égale la base (5 bonnes réponses sur 8, ni mieux ni pire). Justesse tour par tour non mesurée : il manque un enregistrement annoté. À faire avant de le mettre par défaut.
 - Mise à jour assistée : `POST/GET /api/mise-a-jour` télécharge `SITE/telecharger/<plateforme>` dans Téléchargements et le montre ; bouton dans la bannière de `seances.js`. Pas de remplacement automatique (paquets non signés).
 - Les exports (`/api/enregistrer`) s'écrivent depuis le programme : la fenêtre intégrée ignore `download`.
+
+## 8. Menus Mac et mise à jour continue (non livré, après v1.3.1)
+
+- `fenetre.py::_menus` : menus de la barre du haut sous macOS seulement. Entrées « Rechercher une mise à jour… » et « Clés et services… » dans le menu Transcripteur (via `Menu("__app__")`), Fichier, Actions, Aide. Chaque entrée appelle `window.trMenu(action)` (défini dans `build2.py`), qui clique le bouton existant. Sans `menu=` (pywebview ancien, autre système) la fenêtre s'ouvre comme avant.
+- **pywebview 6.2.1 ne porte aucun raccourci clavier sur ses entrées de menu** (la touche est vide) : ⌘O, ⌘S, ⌘N et ⌘, sont gérés dans la page, seulement quand `window.pywebview` existe. Les menus Édition (copier/coller) et Présentation sont ajoutés par pywebview.
+- Non vérifié : l'aspect réel des menus (aucun accès à la barre de menus depuis les tests) et si `#pick.click()` lancé depuis un menu, sans geste de l'utilisateur, ouvre bien le sélecteur de fichier dans WebKit.
+- Mise à jour : indicateur « Mise à jour disponible » dans la barre (`#majbtn`), visible sur tous les écrans ; revérification toutes les 3 h ; `/api/version?force=1` ignore la réponse gardée en mémoire ; notification `#toast` visible partout.
+
+## 9. Après le disque plein du 17 novembre (v1.3.2 en préparation)
+
+- **Cause probable du plantage et de « Erreur 500 »** : disque plein (un envoi arrêté à 13,6 Mo sur 48, « No space left on device »). Le programme ne vérifiait rien et n'écrivait aucun journal.
+- `server.py` : espace libre vérifié avant l'envoi (≈ 6 fois la taille du fichier + 300 Mo, sinon 507 avec le chiffre) ; une écriture qui échoue pour manque de place est dite en clair et nettoie le dossier partiel ; un gestionnaire d'erreurs général remplace « Erreur 500 » par la raison et écrit la trace.
+- `transcripteur/journal.py` : `journal.log` dans le dossier de données (macOS : `~/Library/Application Support/Transcripteur/`), tourne à 2 Mo, jamais bloquant. `pipeline.log` y écrit aussi. **À proposer dans l'interface** : un lien « Ouvrir le journal ».
+- **Bug corrigé** : l'import `run_in_threadpool` manquait depuis la v1.3 ; la vérification de la clé au départ ne s'exécutait donc jamais (erreur avalée par le `try`). Elle fonctionne maintenant, mais elle bloque aussi quand Groq est injoignable : à confirmer que c'est voulu.
+- Séances enregistrées : la liste ne dépasse plus ce qui tient sous le titre ; au-delà, bouton « Toutes les séances (N) » → liste pleine fenêtre paginée (`body.sc-all`). Corrige le titre poussé sous l'en-tête quand la liste avait 2 lignes ou plus.

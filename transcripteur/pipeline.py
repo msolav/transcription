@@ -175,6 +175,8 @@ _stop = None         # interrogé régulièrement pour savoir s'il faut s'arrêt
 def log(message: str) -> None:
     """Trace dans la fenêtre du programme et dans l'interface."""
     print(f"  [{time.time() - _started:6.1f}s] {message}", flush=True)
+    from . import journal
+    journal.ecrire(message)
     if _notify:
         _notify(message)
 

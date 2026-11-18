@@ -357,12 +357,50 @@
      est sortie : il n'y a pas de mise à jour automatique, et rien dans
      l'application ne le dit. En cas d'échec on se tait — une panne de
      réseau n'est pas une nouvelle à annoncer. */
-  async function majDisponible() {
+  /* Télécharge la bonne version (le programme l'écrit dans Téléchargements
+     et la montre) et rend compte de l'avancement à `ecrire`. */
+  async function telechargerMaj(bouton, ecrire) {
+    bouton.disabled = true;
+    try { await api('/api/mise-a-jour', { method: 'POST' }); } catch (e) { bouton.disabled = false; return; }
+    const t = setInterval(async () => {
+      let m; try { m = await api('/api/mise-a-jour'); } catch (e) { return; }
+      if (m.etat === 'cours') {
+        const mo = n => (n / 1048576).toFixed(0);
+        ecrire(m.total ? `${Math.round(100 * m.octets / m.total)} % (${mo(m.octets)}/${mo(m.total)} Mo)` : `${mo(m.octets)} Mo`);
+      } else {
+        clearInterval(t);
+        if (m.etat === 'fini') {
+          bouton.hidden = true;
+          ecrire(L(`${m.nom} est dans Téléchargements. Quitter l'application, puis ouvrir le nouveau fichier.`,
+            `${m.nom} is in Downloads. Quit the app, then open the new file.`));
+        } else {
+          bouton.disabled = false;
+          ecrire(L('Téléchargement impossible. Réessayer plus tard.', 'Download failed. Try again later.'));
+        }
+      }
+    }, 700);
+  }
+
+  /* `force` : ignorer la réponse gardée en mémoire par le serveur (menu
+     « Rechercher une mise à jour », revérification périodique). Rend la
+     réponse, ou null si la vérification a échoué. */
+  async function majDisponible(force) {
     let v = null;
-    try { v = await api('/api/version'); } catch (e) { return; }
-    if (!v || !v.retard || document.getElementById('tr-maj')) return;
+    try { v = await api('/api/version' + (force ? '?force=1' : '')); } catch (e) { return null; }
+    if (!v || !v.retard) return v;
+    window.trVersion = v;
+
+    // L'indicateur de la barre : visible sur tous les écrans.
+    const bm = document.getElementById('majbtn');
+    if (bm && !bm.dataset.lie) {
+      bm.dataset.lie = '1'; bm.hidden = false;
+      bm.title = L(`Version ${v.publiee} disponible`, `Version ${v.publiee} available`);
+      bm.onclick = () => telechargerMaj(bm, t => { bm.textContent = t; bm.hidden = false; });
+    }
+
+    if (document.getElementById('tr-maj')) return v;
     const ancre = $$('.pickrow') || $$('#dropzone');
-    if (!ancre) return;
+    if (!ancre) return v;
     styler();
     const el = document.createElement('p');
     el.id = 'tr-maj';
@@ -378,28 +416,13 @@
        et la montre ; il reste à l'ouvrir (clic droit, Ouvrir, la première
        fois : le paquet n'est pas signé). */
     const go = el.querySelector('#tr-maj-go'), etat = el.querySelector('#tr-maj-etat');
-    go.onclick = async () => {
-      go.disabled = true;
-      try { await api('/api/mise-a-jour', { method: 'POST' }); } catch (e) { go.disabled = false; return; }
-      const t = setInterval(async () => {
-        let m; try { m = await api('/api/mise-a-jour'); } catch (e) { return; }
-        if (m.etat === 'cours') {
-          const mo = n => (n / 1048576).toFixed(0);
-          etat.textContent = m.total ? `${Math.round(100 * m.octets / m.total)} % (${mo(m.octets)}/${mo(m.total)} Mo)` : `${mo(m.octets)} Mo`;
-        } else {
-          clearInterval(t);
-          if (m.etat === 'fini') {
-            go.hidden = true;
-            etat.textContent = L(`${m.nom} est dans Téléchargements. Quitter l'application, puis ouvrir le nouveau fichier.`,
-              `${m.nom} is in Downloads. Quit the app, then open the new file.`);
-          } else {
-            go.disabled = false; etat.textContent = L('Téléchargement impossible. Réessayer plus tard.', 'Download failed. Try again later.');
-          }
-        }
-      }, 700);
-    };
+    go.onclick = () => telechargerMaj(go, t => { etat.textContent = t; });
     ancre.after(el);
+    return v;
   }
+  window.trVerifierMaj = () => majDisponible(true);
+  // Revérifiée de temps en temps : une version peut sortir pendant que l'application reste ouverte.
+  setInterval(() => majDisponible(true), 3 * 3600 * 1000);
 
   /* Exposée pour l'import de la bibliothèque : après un dépôt, la liste
      doit se remettre à jour sans recharger la page. `peindre` est une
@@ -408,7 +431,7 @@
 
   function demarrer() {
     retablir();
-    majDisponible();
+    majDisponible(false);
     peindre();
     retenirLancement();
 
