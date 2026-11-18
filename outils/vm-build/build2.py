@@ -891,7 +891,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
 
   function vueNoms() {
     const total = job.speakers.reduce((a, x) => a + (x.speaking_seconds || 0), 0) || 1;
-    return '<p class="ar-dit">' + vm.lang.t('Écoutez chaque voix et donnez le même nom à celles qui sont la même personne.', 'Listen to each voice and give the same name to the ones that are the same person.') + '</p>'
+    return '<p class="ar-dit">' + vm.lang.t('Écoutez chaque voix et donnez le même nom à celles qui sont la même personne. Les noms ne changent rien tant que vous ne recalculez pas : le recalcul sert à rattacher chaque passage à la bonne personne et à corriger ceux qui étaient mal attribués. Premier calcul : quelques minutes ; ensuite, quelques secondes.', 'Listen to each voice and give the same name to the ones that are the same person. Names change nothing until you recalculate: the recalculation re-attaches each passage to the right person and fixes the misattributed ones. First run: a few minutes; after that, a few seconds.') + '</p>'
       + job.speakers.map(x => '<div class="ar-voix"><i style="background:' + x.color + '"></i>'
         + '<button type="button" data-a="ecouter" data-i="' + x.index + '"' + (x.has_sample ? '' : ' disabled') + '>' + vm.lang.t('Écouter', 'Listen') + '</button>'
         + '<input type="text" data-id="' + echap(x.id) + '" value="' + echap(names[x.id] || '') + '" placeholder="' + vm.lang.t('Voix', 'Voice') + ' ' + (x.index + 1) + '">'
@@ -926,7 +926,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       + '<button type="button" class="' + (onglet === 2 ? 'on' : '') + '" data-a="o2">2 · ' + vm.lang.t('Passages à vérifier', 'Passages to check') + (nb ? ' (' + nb + ')' : '') + '</button></nav>'
       + '<div class="ar-corps">' + (onglet === 1 ? vueNoms() : vuePassages()) + '</div>'
       + '<footer><div class="ar-rep">' + repere() + '</div>'
-      + '<button type="button" class="ar-go" data-a="recalculer">' + vm.lang.t('Recalculer', 'Recalculate') + '</button></footer></div>';
+      + '<button type="button" class="ar-go" data-a="recalculer">' + vm.lang.t('Appliquer et recalculer', 'Apply and recalculate') + '</button></footer></div>';
   }
 
   function ouvrir() { if (typeof job === 'undefined' || !job || !job.speakers) return; rows = candidats(); page = 0; onglet = 1; peindre(); document.body.classList.add('aide-on'); }
