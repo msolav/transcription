@@ -504,6 +504,7 @@ addon = r"""
     const qui = ev.target.closest && ev.target.closest('.turn .who');
     if (!qui) return;
     const tour = qui.closest('.turn');
+    if (typeof window.ouvrirFlot === 'function') { window.ouvrirFlot(tour); return; }
     const bloc = tour && shown[+tour.dataset.i];
     versNoms(bloc && bloc.speaker);
   });
@@ -860,7 +861,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
 /* Identifier les voix avec votre aide, AVANT l'analyse : le programme propose des passages choisis dans
    l'enregistrement, vous dites qui parle (en coupant au besoin), et tout le reste est classé d'après ces échantillons.
    Les empreintes sont calculées une fois (quelques minutes) ; la suite prend des secondes. */
-{ let actif = 0, boucle = false, limite = null, glisse = null, vus = [], cible = null, ouvert = {}; let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
+{ let confirmeSuppr = null, actif = 0, boucle = false, limite = null, glisse = null, vus = [], cible = null, ouvert = {}; let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
   const hms = t => clock(Math.round(t));
   const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const T = (f, e) => vm.lang.t(f, e);
@@ -870,19 +871,18 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
 
   function repere() {
     if (!rapport) return '';
-    const sec = rapport.secondes || {}, noms = personnes(), pi = rapport.part_incertaine, c = rapport.controle;
+    const noms = personnes(), pi = rapport.part_incertaine, c = rapport.controle;
     const lignes = [];
-    if (noms.length) lignes.push('<div class="ar-pers">' + noms.map(n => '<span>' + echap(n) + ' · ' + Math.round(sec[n] || 0) + ' s</span>').join('') + '</div>');
     if (c && c.sur > 0) lignes.push('<div class="ar-part">' + T('Contrôle sur vos exemples : le programme retrouve la bonne personne ' + c.justes + ' fois sur ' + c.sur + '.', 'Check on your examples: the program finds the right person ' + c.justes + ' times out of ' + c.sur + '.') + '</div>');
     if (verif.sur > 0) lignes.push('<div class="ar-part">' + T('Ses suggestions : ' + verif.ok + ' confirmées sur ' + verif.sur + '.', 'Its suggestions: ' + verif.ok + ' confirmed out of ' + verif.sur + '.') + '</div>');
     if (pi != null) lignes.push('<div class="ar-part">' + T('Parole encore incertaine : ' + Math.round(pi * 100) + ' %', 'Speech still uncertain: ' + Math.round(pi * 100) + ' %') + '</div>');
     (rapport.suspects || []).slice(0, 2).forEach(x => lignes.push('<div class="ar-susp">' + T('Un exemple de ' + x.nom + ' ne ressemble pas aux autres : ', 'An example of ' + x.nom + ' does not look like the others: ') + hms(x.start) + ' <button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button></div>'));
-    const faibles = noms.filter(n => (sec[n] || 0) < 20);
+    const faibles = noms.filter(n => secondesDe(n) < 20 || echantillons(n).length < 3);
     let verdict = '';
     if (noms.length >= 2) {
       const bon = !c || c.sur === 0 || c.justes / c.sur >= 0.9;
       verdict = (pi != null && pi < 0.05 && !faibles.length && bon) ? T('Vous pouvez terminer l’analyse.', 'You can finish the analysis.')
-        : faibles.length ? T('Peu d’exemples pour ' + faibles.join(', ') + ' : visez environ 20 s chacun.', 'Few examples for ' + faibles.join(', ') + ': aim for about 20 s each.')
+        : faibles.length ? T('Profils encore incomplets : ' + faibles.join(', ') + ' (moins de 20 s ou de 3 échantillons ; voir la barre de chaque personne).', 'Profiles still incomplete: ' + faibles.join(', ') + ' (under 20 s or 3 samples; see each person’s bar).')
         : !bon ? T('Le contrôle se trompe sur certains de vos exemples : vérifiez-les, ou ajoutez-en.', 'The check gets some of your examples wrong: review them, or add more.')
         : T('Continuez avec quelques passages : si la part incertaine baisse peu, vous pouvez terminer.', 'Continue with a few passages: if the uncertain share drops little, you can finish.');
     }
@@ -899,12 +899,21 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   function ligneTemps(r, k) {
     const bs = bornes(r);
     return '<div class="ar-tl" data-r="' + k + '" tabindex="0" aria-label="' + T('Ligne du temps du passage', 'Passage timeline') + '">'
-      + bs.slice(0, -1).map((a, j) => '<i class="tl-seg" style="left:' + pct(r, a) + '%;width:' + (pct(r, bs[j + 1]) - pct(r, a)).toFixed(2) + '%;background:' + coul(r.aff[j]) + '"></i>').join('')
+      + bs.slice(0, -1).map((a, j) => '<i class="tl-seg' + (r.sel === j ? ' sel' : '') + '" style="left:' + pct(r, a) + '%;width:' + (pct(r, bs[j + 1]) - pct(r, a)).toFixed(2) + '%;background:' + coul(r.aff[j]) + '"></i>').join('')
       + r.cuts.map((c, i) => '<b class="tl-cut" data-r="' + k + '" data-c="' + i + '" style="left:' + pct(r, c) + '%" title="' + T('Glisser pour déplacer · double-clic pour supprimer', 'Drag to move · double-click to delete') + '"></b>').join('')
-      + '<u class="tl-head" style="left:0%"></u></div>'
+      + '<canvas class="tl-wave" data-r="' + k + '"></canvas><u class="tl-head" style="left:0%"></u></div>'
       + '<div class="ar-tt"><span class="tl-t" data-r="' + k + '">' + fine(0) + '</span><span>' + fine(r.end - r.start) + '</span></div>';
   }
 
+  /* Complétude du profil : indicatif. Moins de 20 s ou moins de 3 échantillons, trop peu pour s'y fier ; 40 s et 4 échantillons ou plus, solide. */
+  const secondesDe = n => { const sec = (rapport && rapport.secondes) || {}; return Math.max(echantillons(n).reduce((a, x) => a + (x.end - x.start), 0), sec[n] || 0); };
+  function completude(n, nb, s) {
+    const niveau = s <= 0 ? ['vide', 'Aucun échantillon', 'No sample'] : (s >= 40 && nb >= 4) ? ['solide', 'Solide', 'Solid'] : (s >= 20 && nb >= 3) ? ['correct', 'Suffisant', 'Enough'] : ['faible', 'Insuffisant', 'Too little'];
+    const manque = s >= 40 && nb >= 4 ? '' : T(' · encore ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 4 ? ' et ' + (4 - nb) + ' échantillon(s)' : '') + ' pour solide', ' · ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 4 ? ' and ' + (4 - nb) + ' sample(s)' : '') + ' more for solid');
+    return '<span class="pf-comp ' + niveau[0] + '" title="' + T('Repère indicatif : 20 s et 3 échantillons = suffisant, 40 s et 4 = solide. Des échantillons variés comptent plus qu’un long passage.', 'Indicative guide: 20 s and 3 samples = enough, 40 s and 4 = solid. Varied samples count more than one long passage.') + '">'
+      + '<span class="pf-bar"><i style="width:' + Math.round(Math.min(1, s / 40) * 100) + '%"></i><u></u></span>'
+      + '<span class="pf-lab" title="' + echap(manque.replace(/^ · /, '')) + '"><b>' + T(niveau[1], niveau[2]) + '</b> · ' + Math.round(s) + ' s · ' + nb + ' ' + T('éch.', 'smp.') + '</span></span>';
+  }
   function echantillons(nom) { return exemples.filter(x => x.nom === nom); }
   function profils() {
     const noms = personnes(); if (!noms.length) return '';
@@ -912,9 +921,10 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     return '<div class="ar-profils"><h3>' + T('Profils', 'Profiles') + '</h3>' + noms.map(n => {
       const ech = echantillons(n), tot = ech.reduce((a, x) => a + (x.end - x.start), 0), ouv = !!ouvert[n];
       return '<div class="ar-pf' + (cible === n ? ' cible' : '') + '"><span class="pf-c" style="background:' + coul(n) + '"></span>'
-        + '<b>' + echap(n) + '</b><span class="pf-s">' + ech.length + ' ' + T('échantillon(s)', 'sample(s)') + ' · ' + Math.round(Math.max(tot, sec[n] || 0)) + ' s</span>'
-        + '<button type="button" data-a="plus-de" data-n="' + echap(n) + '">' + T('Trouver plus de passages de ', 'Find more passages of ') + echap(n) + '</button>'
+        + '<b>' + echap(n) + '</b>' + completude(n, ech.length, Math.max(tot, sec[n] || 0))
+        + '<button type="button" data-a="plus-de" data-n="' + echap(n) + '">' + T('Trouver plus de passages', 'Find more passages') + '</button>'
         + '<button type="button" data-a="voir-ech" data-n="' + echap(n) + '" aria-expanded="' + ouv + '">' + T('Échantillons', 'Samples') + '</button>'
+        + '<button type="button" class="pf-del" data-a="suppr-pers" data-n="' + echap(n) + '">' + (confirmeSuppr === n ? T('Confirmer', 'Confirm') : T('Retirer', 'Remove')) + '</button>'
         + (ouv ? '<div class="pf-liste">' + (ech.length ? ech.map((x, i) => '<div class="pf-e"><span>' + hms(x.start) + ' – ' + hms(x.end) + '</span>'
           + '<button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button>'
           + '<button type="button" data-a="retire-ech" data-n="' + echap(n) + '" data-i="' + i + '">' + T('Retirer', 'Remove') + '</button></div>').join('') : '<p class="ar-dit">' + T('Aucun échantillon : cherchez-en avec le bouton ci-dessus.', 'No sample yet: look for some with the button above.') + '</p>') + '</div>' : '')
@@ -929,10 +939,15 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       ? T('Voici des passages pris à des endroits très différents de l’enregistrement. Pour chacun, dites qui parle : choisissez un nom, ou ajoutez une nouvelle personne. Si plusieurs personnes parlent dans un passage, écoutez-le et coupez à l’instant du changement.', 'Here are passages taken from very different places in the recording. For each one, say who speaks: pick a name, or add a new person. If several people speak in a passage, listen and cut at the moment the voice changes.')
       : T('Voici les passages dont le programme est le moins sûr. Il propose un nom : confirmez-le ou corrigez-le.', 'Here are the passages the program is least sure about. It suggests a name: confirm or correct it.');
     const lotVide = !rows.length;
-    return profils() + (lotVide ? '<p class="ar-dit">' + (cible ? T('Plus aucun passage à proposer pour ' + cible + '.', 'No more passages to suggest for ' + cible + '.') : T('Plus aucun passage à vous montrer. Vous pouvez terminer l’analyse.', 'No passage left to show. You can finish the analysis.')) + '</p>' : '<p class="ar-dit">' + (cible ? T('Passages qui ressemblent le plus à ' + cible + ' : confirmez ceux qui sont bien lui/elle, sinon corrigez.', 'Passages that look most like ' + cible + ': confirm the ones that really are, otherwise correct.') : intro) + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>')
-      + '<div class="ar-liste">' + rows.map((r, k) => { const bs = bornes(r);
-      return '<div class="ar-pass' + (actif === k ? ' actif' : '') + '" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
-        + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '') + '</div>'
+    return '<div class="ar-duo"><div class="ar-colp">' + profils() + '</div><div class="ar-colr">' + (lotVide ? '<p class="ar-dit">' + (cible ? T('Plus aucun passage à proposer pour ' + cible + '.', 'No more passages to suggest for ' + cible + '.') : T('Plus aucun passage à vous montrer. Vous pouvez terminer l’analyse.', 'No passage left to show. You can finish the analysis.')) + '</p>' : '<p class="ar-dit">' + (cible ? T('Passages qui ressemblent le plus à ' + cible + ' : confirmez ceux qui sont bien lui/elle, sinon corrigez.', 'Passages that look most like ' + cible + ': confirm the ones that really are, otherwise correct.') : intro) + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>')
+      + (rows.length ? '<div class="ar-liste">' + [rows[actif]].map(r => { const k = actif, bs = bornes(r), nb = bs.length - 1;
+      r.sel = Math.min(r.sel == null ? 0 : r.sel, nb - 1);
+      const a = bs[r.sel], z = bs[r.sel + 1], fait = Object.values(r.aff).filter(Boolean).length;
+      return '<div class="ar-pass actif" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
+        + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '')
+        + '<span class="ar-pgp">' + T('Passage ', 'Passage ') + (k + 1) + ' / ' + rows.length
+        + ' <button type="button" data-a="pass-p"' + (k === 0 ? ' disabled' : '') + '>' + T('Précédent', 'Previous') + '</button>'
+        + '<button type="button" data-a="pass-s"' + (k === rows.length - 1 ? ' disabled' : '') + '>' + T('Suivant', 'Next') + '</button></span></div>'
         + '<div class="ar-tr">'
         + '<button type="button" class="pl" data-a="basc" data-r="' + k + '">' + T('Lecture / Pause', 'Play / Pause') + '</button>'
         + '<button type="button" data-a="nudge" data-d="-2" data-r="' + k + '">−2 s</button><button type="button" data-a="nudge" data-d="-0.5" data-r="' + k + '">−0,5</button>'
@@ -941,14 +956,16 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
         + '<button type="button" class="cut" data-a="couper" data-r="' + k + '">' + T('Couper à la position', 'Cut at position') + '</button>'
         + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + T('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
         + ligneTemps(r, k)
-        + '<p>' + echap(r.text.slice(0, 200)) + (r.text.length > 200 ? '…' : '') + '</p>'
-        + bs.slice(0, -1).map((a, j) => '<div class="ar-seg"><span><i class="pt" style="background:' + coul(r.aff[j]) + '"></i>' + hms(a) + ' – ' + hms(bs[j + 1]) + '</span>'
-          + '<button type="button" class="ec" data-a="seg" data-r="' + k + '" data-j="' + j + '">' + T('Écouter ce morceau', 'Play this part') + '</button>'
-          + noms.map(nm => '<button type="button" class="chip' + (r.aff[j] === nm ? ' on' : '') + (!r.cuts.length && r.suggestion === nm && r.aff[j] !== nm ? ' sug' : '') + '" data-a="aff" data-r="' + k + '" data-j="' + j + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('')
-          + (nouveau && nouveau.k === k && nouveau.j === j
-            ? '<input type="text" class="ar-new" data-r="' + k + '" data-j="' + j + '" placeholder="' + T('Nom', 'Name') + '" autofocus><button type="button" data-a="ajout" data-r="' + k + '" data-j="' + j + '">OK</button>'
-            : '<button type="button" class="chip plus" data-a="nouv" data-r="' + k + '" data-j="' + j + '">+ ' + T('Autre personne', 'Other person') + '</button>') + '</div>').join('')
-        + '</div>'; }).join('') + '</div>';
+        + '<p>' + echap(r.text.slice(0, 160)) + (r.text.length > 160 ? '…' : '') + '</p>'
+        + '<div class="ar-sel"><div class="ar-selh"><span><i class="pt" style="background:' + coul(r.aff[r.sel]) + '"></i>' + T('Morceau ', 'Part ') + (r.sel + 1) + ' / ' + nb + ' · ' + hms(a) + ' – ' + hms(z) + ' · ' + fait + '/' + nb + ' ' + T('nommés', 'named') + '</span>'
+        + '<button type="button" data-a="seg" data-r="' + k + '" data-j="' + r.sel + '">' + T('Écouter ce morceau', 'Play this part') + '</button>'
+        + '<button type="button" data-a="sel-p" data-r="' + k + '"' + (r.sel === 0 ? ' disabled' : '') + '>' + T('Morceau précédent', 'Previous part') + '</button>'
+        + '<button type="button" data-a="sel-s" data-r="' + k + '"' + (r.sel >= nb - 1 ? ' disabled' : '') + '>' + T('Morceau suivant', 'Next part') + '</button></div>'
+        + '<div class="ar-seg">' + noms.map(nm => '<button type="button" class="chip' + (r.aff[r.sel] === nm ? ' on' : '') + (!r.cuts.length && r.suggestion === nm && r.aff[r.sel] !== nm ? ' sug' : '') + '" style="--pc:' + coul(nm) + '" data-a="aff" data-r="' + k + '" data-j="' + r.sel + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('')
+        + (nouveau && nouveau.k === k && nouveau.j === r.sel
+          ? '<input type="text" class="ar-new" data-r="' + k + '" data-j="' + r.sel + '" placeholder="' + T('Nom', 'Name') + '" autofocus><button type="button" data-a="ajout" data-r="' + k + '" data-j="' + r.sel + '">OK</button>'
+          : '<button type="button" class="chip plus" data-a="nouv" data-r="' + k + '" data-j="' + r.sel + '">+ ' + T('Autre personne', 'Other person') + '</button>') + '</div></div>'
+        + '</div>'; }).join('') + '</div>' : '') + '</div></div>';
   }
 
   function vuePrep() {
@@ -956,6 +973,21 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       + '<div class="ar-barre"><i style="width:' + Math.round(prog * 100) + '%"></i></div><p class="ar-dit">' + echap(stage) + ' · ' + Math.round(prog * 100) + ' %</p>';
   }
 
+  const formes = {};
+  function dessiner() {
+    document.querySelectorAll('#aide canvas.tl-wave').forEach(cv => { const r = rows[+cv.dataset.r]; if (!r) return;
+      const cle = r.start + '-' + r.end, p = formes[cle];
+      if (p === undefined) { formes[cle] = null; api('/api/jobs/' + jobId + '/forme?start=' + r.start + '&end=' + r.end + '&n=700').then(d => { formes[cle] = d.pics; dessiner(); }).catch(() => { formes[cle] = []; }); return; }
+      if (!p || !p.length) return;
+      const w = cv.clientWidth, h = cv.clientHeight, d = devicePixelRatio || 1; cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+      const g = cv.getContext('2d'); g.scale(d, d); g.clearRect(0, 0, w, h);
+      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--vm-ink').trim() || '#111'; g.globalAlpha = .75;
+      const m = h / 2, bw = w / p.length;
+      p.forEach((v, i) => { const y = Math.max(1, v * (h - 4) / 2); g.fillRect(i * bw, m - y, Math.max(1, bw - .4), y * 2); });
+      // repères de seconde : petites graduations sous la forme d'onde
+      g.globalAlpha = .5; const dur = r.end - r.start, pas = dur > 120 ? 30 : dur > 40 ? 10 : dur > 15 ? 5 : 1;
+      for (let t = Math.ceil(r.start / pas) * pas; t < r.end; t += pas) { const x = (t - r.start) / dur * w; g.fillRect(x, h - 5, 1, 5); }
+    }); }
   function peindre() {
     let el = document.getElementById('aide');
     if (!el) { el = document.createElement('section'); el.id = 'aide'; document.body.appendChild(el); }
@@ -968,6 +1000,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       + '<button type="button" class="ar-go sec" data-a="continuer"' + (enCours || !assigne ? ' disabled' : '') + '>' + T('Valider et continuer', 'Confirm and continue') + '</button>'
       + '<button type="button" class="ar-go" data-a="terminer"' + (enCours || noms.length < 2 ? ' disabled' : '') + '>' + T('Terminer l’analyse', 'Finish the analysis') + '</button></div></footer></div>';
     const ni = el.querySelector('input.ar-new'); if (ni) ni.focus();
+    requestAnimationFrame(dessiner);
   }
 
   function collecter() {
@@ -1024,22 +1057,30 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
     $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
     $('#go').disabled = true; $('#stop').hidden = false; setStage('Attribution des voix', 0.01);
+    window.__exemplesVoix = exemples.slice();
     try { await post('/api/jobs/' + jobId + '/enrolement/terminer', { exemples }); poll = setInterval(tick, 1000); tick(); }
     catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
   }
 
+  /* Les noms sont rangés par numéro de morceau : quand une coupe apparaît ou disparaît, les numéros se décalent.
+     Un morceau coupé en deux garde son nom des deux côtés ; deux morceaux réunis gardent le nom du premier qui en a un. */
+  function insererCoupe(r, t) { const bs = bornes(r); let j = 0; for (let i = 0; i < bs.length - 1; i++) if (t >= bs[i] && t < bs[i + 1]) j = i;
+    const n = {}; for (let i = 0; i < bs.length - 1; i++) { if (i < j) n[i] = r.aff[i]; else if (i === j) { n[j] = r.aff[j]; n[j + 1] = r.aff[j]; } else n[i + 1] = r.aff[i]; }
+    r.cuts.push(t); r.cuts.sort((x, z) => x - z); r.aff = n; r.sel = j + 1; }
+  function retirerCoupe(r, c) { const bs = bornes(r), n = {}; for (let i = 0; i < bs.length - 1; i++) { if (i <= c) n[i] = r.aff[i] || (i === c ? r.aff[i + 1] : undefined); else if (i > c + 1) n[i - 1] = r.aff[i]; }
+    r.cuts.splice(c, 1); r.aff = n; r.sel = Math.min(r.sel || 0, r.cuts.length); }
   function couper(k) { const r = rows[k]; if (!r) return; const t = player.currentTime;
-    if (t > r.start + 0.3 && t < r.end - 0.3) { r.cuts.push(t); r.cuts.sort((x, z) => x - z); r.aff = {}; actif = k; peindre(); }
+    if (t > r.start + 0.3 && t < r.end - 0.3) { insererCoupe(r, t); actif = k; peindre(); }
     else toast(T('Placez d’abord la tête de lecture dans le passage (cliquez sur la ligne du temps), puis coupez.', 'First place the playhead inside the passage (click the timeline), then cut.')); }
   document.addEventListener('pointerdown', e => { const el = e.target.closest('#aide .ar-tl'); if (!el) return; const k = +el.dataset.r, r = rows[k]; if (!r) return;
     const m = e.target.closest('.tl-cut'); actif = k;
     if (m) { glisse = { k, i: +m.dataset.c, el }; e.preventDefault(); return; }
-    aller(k, heureDe(e, el, r)); });
+    const th = heureDe(e, el, r); aller(k, th); const bs = bornes(r); for (let i = 0; i < bs.length - 1; i++) if (th >= bs[i] && th < bs[i + 1]) r.sel = i; peindre(); });
   document.addEventListener('pointermove', e => { if (!glisse) return; const r = rows[glisse.k], el = glisse.el;
-    const t = Math.max(r.start + 0.3, Math.min(r.end - 0.3, heureDe(e, el, r))); r.cuts[glisse.i] = t;
+    const bs = bornes(r), lo = bs[glisse.i] + 0.3, hi = bs[glisse.i + 2] - 0.3, t = Math.max(lo, Math.min(hi, heureDe(e, el, r))); r.cuts[glisse.i] = t;
     const mk = el.querySelectorAll('.tl-cut')[glisse.i]; if (mk) mk.style.left = pct(r, t) + '%'; });
   document.addEventListener('pointerup', () => { if (!glisse) return; const r = rows[glisse.k]; glisse = null; r.cuts.sort((x, z) => x - z); peindre(); });
-  document.addEventListener('dblclick', e => { const m = e.target.closest('#aide .tl-cut'); if (!m) return; const r = rows[+m.dataset.r]; r.cuts.splice(+m.dataset.c, 1); r.aff = {}; peindre(); });
+  document.addEventListener('dblclick', e => { const m = e.target.closest('#aide .tl-cut'); if (!m) return; const r = rows[+m.dataset.r]; retirerCoupe(r, +m.dataset.c); peindre(); });
   /* Espace sur un bouton qui a le focus déclenche aussi son clic au relâchement : on l'annule, sinon la bascule se fait deux fois. */
   document.addEventListener('keyup', e => { if (document.body.classList.contains('aide-on') && e.code === 'Space' && !/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) e.preventDefault(); });
   document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
@@ -1055,16 +1096,27 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     if (a === 'fermer') fermer();
     else if (a === 'plus-de') { collecter(); cible = b.dataset.n; etat = 'prep'; prog = 1; stage = T('Recherche', 'Searching'); peindre(); suite(); }
     else if (a === 'retour-lot') { collecter(); cible = null; etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'suppr-pers') { const n = b.dataset.n;
+      if (confirmeSuppr !== n) { confirmeSuppr = n; peindre(); setTimeout(() => { if (confirmeSuppr === n) { confirmeSuppr = null; if (document.body.classList.contains('aide-on')) peindre(); } }, 4000); return; }
+      confirmeSuppr = null; collecter();
+      for (let i = exemples.length - 1; i >= 0; i--) if (exemples[i].nom === n) exemples.splice(i, 1);
+      extra = extra.filter(x => x !== n); rows.forEach(r => { Object.keys(r.aff).forEach(j => { if (r.aff[j] === n) r.aff[j] = undefined; }); });
+      if (cible === n) cible = null;
+      if (rapport) rapport.personnes = rapport.personnes.filter(x => x !== n);
+      if (exemples.length) { etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); } else { rapport = rapport ? { ...rapport, personnes: [], secondes: {} } : rapport; peindre(); } }
     else if (a === 'voir-ech') { ouvert[b.dataset.n] = !ouvert[b.dataset.n]; peindre(); }
     else if (a === 'retire-ech') { const l = echantillons(b.dataset.n), x = l[+b.dataset.i]; exemples.splice(exemples.indexOf(x), 1); collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'pass-p') { actif = Math.max(0, actif - 1); peindre(); }
+    else if (a === 'pass-s') { actif = Math.min(rows.length - 1, actif + 1); peindre(); }
+    else if (a === 'sel-p' || a === 'sel-s') { const r = rows[k], bs = bornes(r); r.sel = Math.max(0, Math.min(bs.length - 2, (r.sel || 0) + (a === 'sel-s' ? 1 : -1))); player.currentTime = bs[r.sel]; peindre(); }
     else if (a === 'basc') basculer(k);
     else if (a === 'nudge') aller(k, player.currentTime + parseFloat(b.dataset.d));
     else if (a === 'boucle') { boucle = !boucle; peindre(); }
     else if (a === 'seg') { const bs = bornes(rows[k]); actif = k; lire(bs[j], bs[j + 1], k); }
     else if (a === 'ecoute-t') lire(+b.dataset.s, +b.dataset.e);
     else if (a === 'couper') couper(k);
-    else if (a === 'recoller') { rows[k].cuts = []; rows[k].aff = {}; peindre(); }
-    else if (a === 'aff') { const r = rows[k]; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; peindre(); }
+    else if (a === 'recoller') { const r = rows[k], nom = Object.values(r.aff).find(Boolean); r.cuts = []; r.aff = nom ? { 0: nom } : {}; r.sel = 0; peindre(); }
+    else if (a === 'aff') { const r = rows[k]; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; if (r.aff[j]) { const bs = bornes(r); if (j < bs.length - 2) { r.sel = j + 1; player.currentTime = bs[j + 1]; } } peindre(); }
     else if (a === 'nouv') { nouveau = { k, j }; peindre(); }
     else if (a === 'ajout') { const inp = document.querySelector('#aide input.ar-new'), nom = inp ? inp.value.trim() : ''; if (nom) { if (!personnes().includes(nom)) extra.push(nom); rows[k].aff[j] = nom; } nouveau = null; peindre(); }
     else if (a === 'continuer') { collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
@@ -1097,6 +1149,57 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   $('#go').addEventListener('click', () => { window.__identifierApres = (mode === 'aide'); }, true);
   appliquer(mode);
 }
+
+/* Panneau flottant : cliquer sur un nom ne ramène plus en haut. Il reste affiché pendant qu'on lit et qu'on tourne les pages ;
+   on y renomme la voix, ou on dit à qui appartient CETTE réplique (correction), puis on peut raffiner d'après ses corrections. */
+{ let cur = null; const corr = window.__corrections = window.__corrections || [];
+  const T = (f, e) => vm.lang.t(f, e);
+  const ech = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const nomsPresents = () => [...new Set(job.speakers.map(x => (names[x.id] || '').trim()).filter(Boolean))];
+  function el() { let p = document.getElementById('flotnom'); if (!p) { p = document.createElement('aside'); p.id = 'flotnom'; document.body.appendChild(p); } return p; }
+  function fermerFlot() { document.body.classList.remove('flot-on'); cur = null; }
+  function peindreFlot() {
+    if (!cur) return; const b = shown[cur.i]; if (!b) return; const p = el(); const sid = b.speaker;
+    const nbCorr = corr.length, avecNom = new Set([...corr.map(c => c.nom), ...(window.__exemplesVoix || []).map(c => c.nom)]).size;
+    p.innerHTML = '<header><b>' + T('Cette réplique', 'This reply') + '</b><button type="button" data-f="x" aria-label="' + T('Fermer', 'Close') + '">×</button></header>'
+      + '<div class="fl-t"><button type="button" data-f="ecouter">' + T('Écouter', 'Listen') + '</button><span>' + clock(b.start) + ' – ' + clock(b.end) + '</span></div>'
+      + '<p class="fl-p">' + ech(b.text.slice(0, 140)) + (b.text.length > 140 ? '…' : '') + '</p>'
+      + (b.conf != null && b.conf < 0.3 ? '<p class="fl-inc">' + T('Attribution incertaine.', 'Uncertain attribution.') + '</p>' : '')
+      + '<h4>' + T('À qui est cette réplique ?', 'Who says this?') + '</h4><div class="fl-ch">'
+      + job.speakers.map(x => { const n = labelOf(x.id); return '<button type="button" class="chip' + (x.id === sid ? ' on' : '') + '" style="--pc:' + x.color + '" data-f="qui" data-id="' + ech(x.id) + '">' + ech(n) + '</button>'; }).join('') + '</div>'
+      + '<h4>' + T('Renommer cette voix', 'Rename this voice') + '</h4><input type="text" class="fl-nom" data-id="' + ech(sid) + '" value="' + ech(names[sid] || '') + '" placeholder="' + T('Voix', 'Voice') + ' ' + ((job.speakers.find(x => x.id === sid) || { index: 0 }).index + 1) + '">'
+      + '<footer><span>' + nbCorr + ' ' + T('correction(s)', 'correction(s)') + '</span>'
+      + '<button type="button" data-f="raff"' + (nbCorr && avecNom >= 2 && job.enrolement_pret ? '' : ' disabled') + ' title="' + T('Recalcule tout le texte d’après vos exemples et vos corrections.', 'Recomputes the whole text from your examples and corrections.') + '">' + T('Raffiner d’après mes corrections', 'Refine from my corrections') + '</button></footer>';
+  }
+  window.ouvrirFlot = tour => { if (!tour || typeof job === 'undefined' || !job) return; const i = +(tour.dataset.i ?? tour.dataset.c); cur = { i }; peindreFlot(); document.body.classList.add('flot-on'); };
+  document.addEventListener('click', e => { const bt = e.target.closest('#flotnom [data-f]'); if (!bt || !cur) return; const f = bt.dataset.f, b = shown[cur.i];
+    if (f === 'x') return fermerFlot();
+    if (f === 'ecouter') { seek(b.start); if (player.paused) play(); return; }
+    if (f === 'qui') { const sid = bt.dataset.id; if (sid === b.speaker) return;
+      job.blocks.forEach(x => { if (x.start >= b.start - .01 && x.end <= b.end + .01) { x.speaker = sid; x.conf = 1; } });
+      const nom = labelOf(sid); corr.push({ start: b.start, end: b.end, nom });
+      paintDoc(); queueSave(); const nb = shown.findIndex(x => x.start <= b.start + .01 && x.end >= b.start); cur = { i: nb < 0 ? cur.i : nb }; peindreFlot(); return; }
+    if (f === 'raff') { const exemples = [...(window.__exemplesVoix || []), ...corr].map(x => ({ start: x.start, end: x.end, nom: x.nom }));
+      fermerFlot(); document.body.classList.remove('back'); $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
+      $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false; $('#go').disabled = true; $('#stop').hidden = false; setStage('Attribution des voix', 0.01);
+      window.__exemplesVoix = exemples; corr.length = 0;
+      api('/api/jobs/' + jobId + '/enrolement/terminer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exemples }) })
+        .then(() => { poll = setInterval(tick, 1000); tick(); }).catch(err => { idle('Transcrire'); busy.stop(); $('#status').hidden = true; fail(err.message); }); } });
+  document.addEventListener('input', e => { const i = e.target.closest('#flotnom .fl-nom'); if (!i) return; names[i.dataset.id] = i.value; paintDoc(); queueSave(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('flot-on') && !document.body.classList.contains('aide-on')) fermerFlot(); });
+}
+
+/* Lecteur : « Suivant » et « Précédent » vont à la réplique AFFICHÉE (les longs passages sont découpés en répliques de quelques phrases),
+   « Début » et « Fin » recalent la page et le suivi. */
+jumpReply = function (direction) {
+  const tours = [...document.querySelectorAll('.turn')].map(t => ({ el: t, t: parseFloat(t.dataset.ts) })).filter(x => isFinite(x.t));
+  if (!tours.length) return; const now = player.currentTime; let cible = null;
+  if (direction > 0) cible = tours.find(x => x.t > now + 0.15);
+  else { let k = -1; tours.forEach((x, i) => { if (x.t <= now + 0.05) k = i; }); cible = k >= 0 && now - tours[k].t > 1.5 ? tours[k] : tours[Math.max(0, k - 1)]; }
+  if (!cible) return;
+  const joue = !player.paused; seek(cible.t); setFollow(true); pageToEl(cible.el); if (joue) play();
+};
+$('#first').addEventListener('click', () => { seek(0); setFollow(true); setPage(0); }, true);
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
    l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,

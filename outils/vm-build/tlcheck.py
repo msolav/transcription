@@ -26,12 +26,12 @@ with sync_playwright() as p:
     pg.keyboard.press('ArrowLeft'); pg.wait_for_timeout(200); print('← recule d\'1 s -> ', round(pg.evaluate("document.querySelector('#player').currentTime"),1))
     pg.click('[data-a="nudge"][data-d="-2"]'); pg.wait_for_timeout(200); print('−2 s ->', round(pg.evaluate("document.querySelector('#player').currentTime"),1))
     pg.evaluate("document.querySelector('#player').currentTime=108"); pg.wait_for_timeout(300); pg.keyboard.press('c'); pg.wait_for_timeout(400)
-    print('coupe par la touche C ->', pg.evaluate("document.querySelectorAll('#aide .tl-cut').length"),'coupe(s),', pg.evaluate("document.querySelectorAll('#aide .ar-seg').length"),'morceaux')
+    print('coupe par la touche C ->', pg.evaluate("document.querySelectorAll('#aide .tl-cut').length"),'coupe(s),', pg.evaluate("document.querySelectorAll('#aide .ar-tl .tl-seg').length"),'morceaux')
     cut=pg.query_selector('#aide .tl-cut').bounding_box(); box=pg.query_selector('#aide .ar-tl').bounding_box()
     pg.mouse.move(cut['x']+7,cut['y']+10); pg.mouse.down(); pg.mouse.move(box['x']+box['width']*0.7,cut['y']+10,steps=5); pg.mouse.up(); pg.wait_for_timeout(400)
     print('coupe déplacée à ≈', round(100+20*(pg.query_selector('#aide .tl-cut').bounding_box()['x']+7-box['x'])/box['width'],1),'s (attendu ≈114)')
-    for j,nom in [(0,'Alice'),(1,'Bob')]:
-        pg.click(f'[data-a="nouv"][data-j="{j}"]'); pg.fill('#aide input.ar-new',nom); pg.press('#aide input.ar-new','Enter'); pg.wait_for_timeout(250)
+    for nom in ['Alice','Bob']:
+        pg.click('[data-a="nouv"]'); pg.fill('#aide input.ar-new',nom); pg.press('#aide input.ar-new','Enter'); pg.wait_for_timeout(250)
     pg.screenshot(path='/tmp/tr/tl.png')
     pg.click('[data-a="terminer"]'); pg.wait_for_timeout(1000)
     print('envoyé:', [(round(e['start'],1),round(e['end'],1),e['nom']) for e in posted[0]['exemples']]); print('erreurs:',errs,'| débordement',pg.evaluate("document.documentElement.scrollHeight-innerHeight"))

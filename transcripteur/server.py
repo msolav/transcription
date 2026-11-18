@@ -1071,6 +1071,38 @@ async def enrolement_terminer(job_id: str, payload: dict) -> JSONResponse:
     return JSONResponse({"id": job_id}, status_code=202)
 
 
+@app.get("/api/jobs/{job_id}/forme")
+def forme_d_onde(job_id: str, start: float = 0.0, end: float = 0.0, n: int = 600) -> dict:
+    """L'enveloppe du son sur [start, end] : `n` valeurs entre 0 et 1.
+
+    Lue dans l'audio converti de la séance (celui qu'écrit la préparation de
+    l'identification des voix), sans rien recalculer ailleurs. Sert à dessiner
+    la forme d'onde, qui donne des repères pour couper."""
+    import wave
+    import numpy as np
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    wav = Path(job["work_dir"]) / "audio16k.wav"
+    if not wav.exists():
+        raise HTTPException(404, "L'audio converti n'est pas disponible.")
+    n = max(50, min(int(n), 3000))
+    with wave.open(str(wav), "rb") as w:
+        sr = w.getframerate()
+        total = w.getnframes()
+        a = max(0, int(start * sr))
+        b = min(total, int((end if end > start else total / sr) * sr))
+        if b - a < n:
+            return {"pics": [0.0] * n}
+        w.setpos(a)
+        brut = w.readframes(b - a)
+    x = np.abs(np.frombuffer(brut, dtype=np.int16).astype(np.float32)) / 32768.0
+    pas = len(x) // n
+    pics = x[: pas * n].reshape(n, pas).max(axis=1)
+    m = float(pics.max()) or 1.0
+    return {"pics": [round(float(v) / m, 3) for v in pics]}
+
+
 @app.post("/api/jobs/import")
 async def import_job(file: UploadFile = File(...)) -> dict:
     """Rouvre un transcript déjà produit, exporté en .json.

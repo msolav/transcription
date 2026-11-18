@@ -24,11 +24,11 @@ with sync_playwright() as p:
     pg.screenshot(path='/tmp/tr/enrol1.png')
     # nouvelle personne « Alice » sur le 1er, puis « Bob » sur le 2e
     for k,nom in [(0,'Alice'),(1,'Bob')]:
-        pg.click(f'[data-a="nouv"][data-r="{k}"]'); pg.fill('#aide input.ar-new',nom); pg.press('#aide input.ar-new','Enter'); pg.wait_for_timeout(250)
-    print('chips après ajout:', pg.evaluate("[...document.querySelectorAll('#aide .ar-pass:nth-of-type(1) .chip')].map(c=>c.textContent)"))
+        if k==1: pg.click('[data-a="pass-s"]'); pg.wait_for_timeout(200)
+        pg.click('[data-a="nouv"]'); pg.fill('#aide input.ar-new',nom); pg.press('#aide input.ar-new','Enter'); pg.wait_for_timeout(250)
     pg.click('[data-a="continuer"]'); pg.wait_for_timeout(1500)
     print('2e lot:', pg.evaluate("document.querySelectorAll('#aide .ar-pass').length"), '| suggestions en pointillés:', pg.evaluate("document.querySelectorAll('#aide .chip.sug').length"), '| Terminer activé:', pg.is_enabled('[data-a="terminer"]'))
-    pg.click('#aide .ar-pass >> nth=0 >> .chip >> nth=0'); pg.wait_for_timeout(200); pg.screenshot(path='/tmp/tr/enrol2.png')
+    pg.click('#aide .ar-pass >> .chip >> nth=0'); pg.wait_for_timeout(200); pg.screenshot(path='/tmp/tr/enrol2.png')
     pg.click('[data-a="terminer"]'); pg.wait_for_timeout(1200)
     print('envoyé à « terminer »:', json.dumps(posted['terminer'][0],ensure_ascii=False)); print('erreurs:',errs,'| débordement',pg.evaluate("document.documentElement.scrollHeight-innerHeight"))
     b.close()
