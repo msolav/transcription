@@ -118,10 +118,15 @@
       </select>
     </div>
     <div class="field voices">
-      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Separate voices">Séparer les voix</label>
+      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Voices">Voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="counthint"></span><span data-en="If you know how many people speak, say so: the separation is much more reliable.">Si le nombre de personnes est connu, l'indiquer : la séparation est bien plus fiable.</span></span></span>
         <span class="cout" id="coutvoix" data-no-i18n></span>
       </div>
+      <div class="vmode" id="vmode" role="radiogroup" aria-labelledby="seplab">
+        <button type="button" role="radio" data-m="aucune" data-en="Text only">Texte seul</button><button type="button" role="radio" data-m="aide" data-en="With my help">Avec mon aide</button><button type="button" role="radio" data-m="auto" data-en="Automatic">Automatique</button>
+      </div>
+      <p class="vmode-dit" id="vmodedit"></p>
+      <div class="vauto" id="vauto"><div class="vin">
       <div class="sepline">
         <button type="button" class="tgl" id="sep" role="switch" aria-checked="false" aria-labelledby="seplab"><i></i></button>
         <div class="numchips" id="numchips" role="radiogroup" aria-label="Nombre de voix" data-en-aria-label="Number of voices">
@@ -131,6 +136,7 @@
       <div class="refine"><button type="button" class="tgl" id="refine" role="switch" aria-checked="false" aria-labelledby="refinelab"><i></i></button>
         <label id="refinelab" data-en="Refine voice separation">Raffiner la séparation des voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><b data-en="Refine voice separation">Raffiner la séparation des voix</b><span data-en="First groups the long, reliable passages of each person, builds a profile of each voice, then sorts the short ones against those profiles. More reliable, especially for short interjections, and a little longer.">Regroupe d'abord les passages longs et sûrs de chaque personne, fait un profil de chaque voix, puis classe les passages courts sur ces profils. Plus fiable, surtout pour les interjections, et un peu plus long.</span></span></span></div>
+      </div></div>
       <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
     </div>
     <details class="vm-acc more">

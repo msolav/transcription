@@ -714,3 +714,16 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
 #aide .ar-ph em { font: 500 .6875rem var(--vm-font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--vm-accent); }
 #aide .ar-susp { color: var(--vm-accent); }
 #aide .ar-susp button { padding: .25rem .5rem; font-size: .75rem; margin-left: .4rem; }
+
+/* Voix : un choix à trois options ; les réglages de la séparation automatique ne s'ouvrent que pour « Automatique » */
+.vmode { display: flex; gap: 0; max-width: 520px; }
+.vmode button { flex: 1 1 0; padding: .75rem .6rem; border: 1px solid var(--vm-ink); margin-left: -1px; font: 600 .9375rem/1 var(--vm-font-display); color: var(--vm-ink); background: none; transition: background-color .5s var(--vm-ease), color .5s var(--vm-ease); }
+.vmode button:first-child { margin-left: 0; }
+.vmode button:hover:not(.on) { background: color-mix(in oklab, var(--vm-ink) 10%, transparent); }
+.vmode button.on { background: var(--vm-ink); color: var(--vm-paper); }
+.vmode-dit { margin: .55rem 0 0; font: 400 .8125rem/1.4 var(--vm-font-mono); letter-spacing: .02em; opacity: .75; max-width: 60ch; min-height: 2.8em; }
+.vauto { display: grid; grid-template-rows: 0fr; opacity: 0; pointer-events: none; transition: grid-template-rows .7s var(--vm-ease), opacity .6s var(--vm-ease); }
+.vauto.open { grid-template-rows: 1fr; opacity: 1; pointer-events: auto; }
+.vauto > .vin { min-height: 0; overflow: hidden; transition: overflow 0s .7s allow-discrete; }
+.vauto.open > .vin { overflow: visible; }
+.vauto #sep { display: none; }

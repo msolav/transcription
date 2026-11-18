@@ -227,3 +227,9 @@ doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
 - **Confiance, corrigée** : l'ancienne (écart entre les deux meilleures voix) restait élevée même pour un passage qui ne ressemble à personne. Elle est remplacée par : ressemblance absolue à la voix retenue comparée à celle des exemples de cette personne (10e centile) ; **contrôle sur les exemples** (chacun retiré, profils refaits, la bonne personne ressort-elle ? « 17 fois sur 20 ») ; exemples suspects signalés ; taux de suggestions confirmées. Reste une mesure relative aux exemples donnés : exemples faux ou mélangés, confiance trompeuse.
 - Ancien chemin `raffiner-noms` / `raffiner_guide` conservé côté serveur, plus appelé par l'interface.
 - **Pas testé sur une vraie réunion** (enregistrements de test de quelques secondes).
+
+## 12. Accueil : un seul choix « Voix » (v1.3.5 en préparation)
+
+- Le champ 02 devient un choix à trois options : **Texte seul** / **Avec mon aide** (défaut, retenu dans `localStorage` `tr-modevoix`) / **Automatique**. Seul « Automatique » ouvre les réglages de l'ancienne séparation (nombre de voix, raffinage). Le vrai interrupteur `#sep` reste dans le DOM (masqué) pour ne pas toucher à la logique d'origine : le sélecteur le pilote.
+- « Avec mon aide » : le traitement part sans séparation, et dès que le texte est prêt (`tick`, branche `done`) l'identification des voix s'ouvre d'elle-même (`window.ouvrirIdentification`). Le choix pris **au lancement** (`window.__identifierApres`) fait foi, pas celui d'après.
+- Les essais Playwright posent `tr-modevoix` via `harness.install(mode=...)` (défaut `aucune`) ; `modecheck.py` couvre les trois modes.

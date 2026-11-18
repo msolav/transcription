@@ -17,6 +17,7 @@ rep("$('#fill').style.width = (ratio * 100) + '%';", "busy.set(ratio);")
 rep("$('#status').hidden = false;", "$('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; }")
 rep("function idle(label) {\n  clearInterval(poll);", "function idle(label) {\n  clearInterval(poll);\n  busy.stop();\n  { const wk = $('#working'); if (wk) wk.hidden = true; }")
 rep("idle('Terminé');", "idle('Transcrire à nouveau');")
+rep("      idle('Transcrire à nouveau');\n      render();", "      idle('Transcrire à nouveau');\n      render();\n      if (window.__identifierApres) { window.__identifierApres = false; setTimeout(() => window.ouvrirIdentification && window.ouvrirIdentification(), 700); }")
 rep("`${clock(secs)} écoulées${eta(ratio)}`", "`${clock(secs)} écoulées`")
 rep("  form.append('denoise', $('#clean').value);","  form.append('denoise', $('#clean').value);\n  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');",1)
 rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
@@ -958,6 +959,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       else peindre();
     }, 1000);
   }
+  window.ouvrirIdentification = ouvrir;
   const fermer = () => { clearInterval(suivi); document.body.classList.remove('aide-on'); };
   const lire = (a, z) => { clearTimeout(timer); player.currentTime = a; player.play().catch(() => {}); timer = setTimeout(() => player.pause(), Math.max(500, (z - a) * 1000 + 250)); };
 
@@ -989,6 +991,29 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
     if (e.key === 'Escape') fermer();
     if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('ar-new')) { const b = document.querySelector('#aide [data-a="ajout"]'); if (b) b.click(); } });
+}
+
+/* Voix : un seul choix, trois façons. « Avec mon aide » : on transcrit sans séparer, puis l'identification s'ouvre
+   toute seule dès que le texte est prêt. « Automatique » : l'ancienne séparation, longue. */
+{ const boutons = [...document.querySelectorAll('#vmode button')], dit = $('#vmodedit'), sep = $('#sep');
+  const texte = { aucune: ['Pas de séparation des voix : le texte seul, le plus rapide.', 'No voice separation: text only, the fastest.'],
+    aide: ['Après la transcription, vous identifiez les personnes sur quelques extraits. Recommandé : c’est plus fiable que l’automatique.', 'After transcription, you identify the people on a few samples. Recommended: more reliable than automatic.'],
+    auto: ['Le programme sépare seul. Long, et il peut mélanger les voix.', 'The program separates on its own. Slow, and it may mix voices up.'] };
+  let mode = 'aide'; try { mode = localStorage.getItem('tr-modevoix') || 'aide'; } catch (e) {}
+  function appliquer(m) {
+    mode = m; window.__modeVoix = m;
+    boutons.forEach(x => { const on = x.dataset.m === m; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
+    dit.textContent = vm.lang.t(texte[m][0], texte[m][1]);
+    if ((m === 'auto') !== sep.classList.contains('on')) sep.click();
+    $('#vauto').classList.toggle('open', m === 'auto');
+    try { localStorage.setItem('tr-modevoix', m); } catch (e) {}
+    if (typeof majEstim === 'function') majEstim();
+  }
+  boutons.forEach(x => x.addEventListener('click', () => appliquer(x.dataset.m)));
+  if (window.vm && vm.lang && vm.lang.onChange) vm.lang.onChange(() => { dit.textContent = vm.lang.t(texte[mode][0], texte[mode][1]); });
+  /* ce qui compte est le choix fait AU LANCEMENT, pas celui d'après */
+  $('#go').addEventListener('click', () => { window.__identifierApres = (mode === 'aide'); }, true);
+  appliquer(mode);
 }
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous

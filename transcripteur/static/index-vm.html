@@ -1115,6 +1115,19 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
 #aide .ar-ph em { font: 500 .6875rem var(--vm-font-mono); letter-spacing: .06em; text-transform: uppercase; color: var(--vm-accent); }
 #aide .ar-susp { color: var(--vm-accent); }
 #aide .ar-susp button { padding: .25rem .5rem; font-size: .75rem; margin-left: .4rem; }
+
+/* Voix : un choix à trois options ; les réglages de la séparation automatique ne s'ouvrent que pour « Automatique » */
+.vmode { display: flex; gap: 0; max-width: 520px; }
+.vmode button { flex: 1 1 0; padding: .75rem .6rem; border: 1px solid var(--vm-ink); margin-left: -1px; font: 600 .9375rem/1 var(--vm-font-display); color: var(--vm-ink); background: none; transition: background-color .5s var(--vm-ease), color .5s var(--vm-ease); }
+.vmode button:first-child { margin-left: 0; }
+.vmode button:hover:not(.on) { background: color-mix(in oklab, var(--vm-ink) 10%, transparent); }
+.vmode button.on { background: var(--vm-ink); color: var(--vm-paper); }
+.vmode-dit { margin: .55rem 0 0; font: 400 .8125rem/1.4 var(--vm-font-mono); letter-spacing: .02em; opacity: .75; max-width: 60ch; min-height: 2.8em; }
+.vauto { display: grid; grid-template-rows: 0fr; opacity: 0; pointer-events: none; transition: grid-template-rows .7s var(--vm-ease), opacity .6s var(--vm-ease); }
+.vauto.open { grid-template-rows: 1fr; opacity: 1; pointer-events: auto; }
+.vauto > .vin { min-height: 0; overflow: hidden; transition: overflow 0s .7s allow-discrete; }
+.vauto.open > .vin { overflow: visible; }
+.vauto #sep { display: none; }
 </style>
 </head>
 <body>
@@ -1237,10 +1250,15 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
       </select>
     </div>
     <div class="field voices">
-      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Separate voices">Séparer les voix</label>
+      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Voices">Voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="counthint"></span><span data-en="If you know how many people speak, say so: the separation is much more reliable.">Si le nombre de personnes est connu, l'indiquer : la séparation est bien plus fiable.</span></span></span>
         <span class="cout" id="coutvoix" data-no-i18n></span>
       </div>
+      <div class="vmode" id="vmode" role="radiogroup" aria-labelledby="seplab">
+        <button type="button" role="radio" data-m="aucune" data-en="Text only">Texte seul</button><button type="button" role="radio" data-m="aide" data-en="With my help">Avec mon aide</button><button type="button" role="radio" data-m="auto" data-en="Automatic">Automatique</button>
+      </div>
+      <p class="vmode-dit" id="vmodedit"></p>
+      <div class="vauto" id="vauto"><div class="vin">
       <div class="sepline">
         <button type="button" class="tgl" id="sep" role="switch" aria-checked="false" aria-labelledby="seplab"><i></i></button>
         <div class="numchips" id="numchips" role="radiogroup" aria-label="Nombre de voix" data-en-aria-label="Number of voices">
@@ -1250,6 +1268,7 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
       <div class="refine"><button type="button" class="tgl" id="refine" role="switch" aria-checked="false" aria-labelledby="refinelab"><i></i></button>
         <label id="refinelab" data-en="Refine voice separation">Raffiner la séparation des voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><b data-en="Refine voice separation">Raffiner la séparation des voix</b><span data-en="First groups the long, reliable passages of each person, builds a profile of each voice, then sorts the short ones against those profiles. More reliable, especially for short interjections, and a little longer.">Regroupe d'abord les passages longs et sûrs de chaque personne, fait un profil de chaque voix, puis classe les passages courts sur ces profils. Plus fiable, surtout pour les interjections, et un peu plus long.</span></span></span></div>
+      </div></div>
       <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
     </div>
     <details class="vm-acc more">
@@ -2545,6 +2564,7 @@ async function tick() {
       if (job.error) $('#alerts').innerHTML = `<div class="alert">${escapeHtml(job.error)}</div>`;
       idle('Transcrire à nouveau');
       render();
+      if (window.__identifierApres) { window.__identifierApres = false; setTimeout(() => window.ouvrirIdentification && window.ouvrirIdentification(), 700); }
     }
   } catch (err) {
     fail(err.message);
@@ -3809,6 +3829,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       else peindre();
     }, 1000);
   }
+  window.ouvrirIdentification = ouvrir;
   const fermer = () => { clearInterval(suivi); document.body.classList.remove('aide-on'); };
   const lire = (a, z) => { clearTimeout(timer); player.currentTime = a; player.play().catch(() => {}); timer = setTimeout(() => player.pause(), Math.max(500, (z - a) * 1000 + 250)); };
 
@@ -3840,6 +3861,29 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
     if (e.key === 'Escape') fermer();
     if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('ar-new')) { const b = document.querySelector('#aide [data-a="ajout"]'); if (b) b.click(); } });
+}
+
+/* Voix : un seul choix, trois façons. « Avec mon aide » : on transcrit sans séparer, puis l'identification s'ouvre
+   toute seule dès que le texte est prêt. « Automatique » : l'ancienne séparation, longue. */
+{ const boutons = [...document.querySelectorAll('#vmode button')], dit = $('#vmodedit'), sep = $('#sep');
+  const texte = { aucune: ['Pas de séparation des voix : le texte seul, le plus rapide.', 'No voice separation: text only, the fastest.'],
+    aide: ['Après la transcription, vous identifiez les personnes sur quelques extraits. Recommandé : c’est plus fiable que l’automatique.', 'After transcription, you identify the people on a few samples. Recommended: more reliable than automatic.'],
+    auto: ['Le programme sépare seul. Long, et il peut mélanger les voix.', 'The program separates on its own. Slow, and it may mix voices up.'] };
+  let mode = 'aide'; try { mode = localStorage.getItem('tr-modevoix') || 'aide'; } catch (e) {}
+  function appliquer(m) {
+    mode = m; window.__modeVoix = m;
+    boutons.forEach(x => { const on = x.dataset.m === m; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
+    dit.textContent = vm.lang.t(texte[m][0], texte[m][1]);
+    if ((m === 'auto') !== sep.classList.contains('on')) sep.click();
+    $('#vauto').classList.toggle('open', m === 'auto');
+    try { localStorage.setItem('tr-modevoix', m); } catch (e) {}
+    if (typeof majEstim === 'function') majEstim();
+  }
+  boutons.forEach(x => x.addEventListener('click', () => appliquer(x.dataset.m)));
+  if (window.vm && vm.lang && vm.lang.onChange) vm.lang.onChange(() => { dit.textContent = vm.lang.t(texte[mode][0], texte[mode][1]); });
+  /* ce qui compte est le choix fait AU LANCEMENT, pas celui d'après */
+  $('#go').addEventListener('click', () => { window.__identifierApres = (mode === 'aide'); }, true);
+  appliquer(mode);
 }
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
