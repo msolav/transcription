@@ -1128,6 +1128,12 @@ body.detail-on .pctwrap em { font-size: clamp(4rem, min(13vw, 36svh), 14rem); }
 .vauto > .vin { min-height: 0; overflow: hidden; transition: overflow 0s .7s allow-discrete; }
 .vauto.open > .vin { overflow: visible; }
 .vauto #sep { display: none; }
+
+/* « Détails » : l'espace est coupé en deux moitiés égales. Le pourcentage prend la sienne en entier et s'y ajuste
+   (taille proportionnelle à la largeur de sa moitié, cinq caractères au plus : « 100 % »), sans jamais déborder. */
+body.detail-on .capture:has(#status:not([hidden])) .pctwrap { width: calc(50% - 1rem); max-width: none; container-type: inline-size; }
+body.detail-on .capture:has(#status:not([hidden])) .pctwrap em { font-size: min(52cqw, 40svh); }
+body.detail-on .verbose { left: calc(50% + 1rem); right: var(--pad); width: auto; }
 </style>
 </head>
 <body>
