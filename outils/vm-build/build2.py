@@ -135,9 +135,10 @@ cut("  $('#stage-area').innerHTML = `\n    ${multi ?", "  document.querySelector
 cut("    return `<div class=\"turn ${same", "  }).join('');", r"""    const parts = []; { const sn = b.text.match(/[^.!?…]+[.!?…]*\s*/g) || [b.text]; let cur = ''; for (const x of sn) { if (cur && (cur + x).length > 420) { parts.push(cur); cur = ''; } cur += x; } if (cur) parts.push(cur); }
     let acc = 0; const tot = b.text.length || 1;
     return parts.map((tx, k) => { const ts = b.start + (b.end - b.start) * acc / tot; acc += tx.length;
-      return `<div class="turn ${same || k ? 'same' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
+      const incertain = b.conf != null && b.conf < 0.3;
+      return `<div class="turn ${same || k ? 'same' : ''}${incertain ? ' inc' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
         <button class="tc" data-t="${ts}">${clock(ts)}</button>
-        <div class="who">${escapeHtml(labelOf(b.speaker))}</div>
+        <div class="who">${escapeHtml(labelOf(b.speaker))}${incertain && !k ? `<span class="incm" title="${vm.lang.t('Attribution incertaine : ce passage hésite entre plusieurs voix.', 'Uncertain attribution: this passage is torn between several voices.')}">?</span>` : ''}</div>
         <p>${escapeHtml(tx.trim())}</p>
       </div>`; }).join('');
 """)
@@ -756,6 +757,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
     btn.textContent = vm.lang.t(t[0], t[1]); btn.dataset.en = t[1];
     const titre = $('#sepbox b'); if (titre) { titre.textContent = vm.lang.t(multi ? 'Raffiner la séparation des voix' : 'Séparer les voix maintenant', multi ? 'Refine the voice separation' : 'Separate the voices now'); titre.dataset.en = multi ? 'Refine the voice separation' : 'Separate the voices now'; }
     const r2 = $('#refine2'); if (multi && r2.getAttribute('aria-checked') !== 'true') r2.click();
+    { const ag = $('#aidego'); if (ag) ag.hidden = !multi; }
   }, 500);
   btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
@@ -853,6 +855,114 @@ document.addEventListener('click', e => {
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
+
+/* Raffiner avec votre aide : les noms, les passages à vérifier (qu'on peut couper pour dire qui parle quand),
+   et des repères pour savoir quand s'arrêter. Les calculs lourds sont gardés : recalculer prend quelques secondes. */
+{ let rows = [], page = 0, onglet = 1, timer = 0;
+  const hms = t => clock(Math.round(t));
+  const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const personnes = () => [...new Set(Object.values(names || {}).map(x => (x || '').trim()).filter(Boolean))];
+  const partInc = () => {
+    if (job.raffinage && job.raffinage.part_incertaine != null) return job.raffinage.part_incertaine;
+    const bl = job.blocks.filter(x => x.conf != null); if (!bl.length) return null;
+    const tot = bl.reduce((a, x) => a + (x.end - x.start), 0) || 1;
+    return bl.filter(x => x.conf < 0.3).reduce((a, x) => a + (x.end - x.start), 0) / tot;
+  };
+  const candidats = () => job.blocks.filter(x => x.conf != null && x.conf < 0.3 && (x.end - x.start) >= 1.5)
+    .sort((a, x) => a.conf - x.conf || (x.end - x.start) - (a.end - a.start)).slice(0, 60)
+    .map(x => ({ start: x.start, end: x.end, text: x.text, cuts: [], aff: {} }));
+  const bornes = r => [r.start, ...r.cuts.slice().sort((a, z) => a - z), r.end];
+
+  function repere() {
+    const rf = job.raffinage || {}, mesure = !!rf.secondes_exemples, sec = rf.secondes_exemples || {}, pi = partInc(), noms = personnes();
+    const part = pi == null ? vm.lang.t("Pas encore de mesure de confiance : recalculez d'après vos noms, ou lancez « Raffiner les voix ».", "No confidence measure yet: recalculate from your names, or run “Refine voices”.")
+      : vm.lang.t('Part de parole incertaine : ', 'Uncertain speech: ') + Math.round(pi * 100) + ' %'
+        + (rf.part_avant != null ? vm.lang.t(' (avant : ', ' (before: ') + Math.round(rf.part_avant * 100) + ' %)' : '');
+    const faibles = mesure ? noms.filter(n => (sec[n] || 0) < 20) : [];
+    const verdict = pi == null ? ''
+      : (pi < 0.05 && !faibles.length) ? vm.lang.t('Vous pouvez vous arrêter ici.', 'You can stop here.')
+      : faibles.length ? vm.lang.t('Peu d’exemples pour ' + faibles.join(', ') + ' : visez environ 20 s chacun (3 à 5 passages nets).', 'Few examples for ' + faibles.join(', ') + ': aim for about 20 s each (3 to 5 clear passages).')
+      : vm.lang.t('Vérifiez quelques passages puis recalculez : si la part incertaine baisse peu, vous pouvez vous arrêter.', 'Check a few passages then recalculate: if the uncertain share drops little, you can stop.');
+    return '<div class="ar-part">' + echap(part) + '</div>'
+      + (noms.length ? '<div class="ar-pers">' + noms.map(n => '<span>' + echap(n) + (mesure ? ' · ' + Math.round(sec[n] || 0) + ' s' : '') + '</span>').join('') + '</div>' : '')
+      + (verdict ? '<div class="ar-verdict">' + echap(verdict) + '</div>' : '')
+      + '<div class="ar-note">' + vm.lang.t('Repères indicatifs, non calibrés : la confiance mesure l’hésitation entre voix, pas une probabilité d’exactitude.', 'Indicative guides, not calibrated: confidence measures hesitation between voices, not a probability of being right.') + '</div>';
+  }
+
+  function vueNoms() {
+    const total = job.speakers.reduce((a, x) => a + (x.speaking_seconds || 0), 0) || 1;
+    return '<p class="ar-dit">' + vm.lang.t('Écoutez chaque voix et donnez le même nom à celles qui sont la même personne.', 'Listen to each voice and give the same name to the ones that are the same person.') + '</p>'
+      + job.speakers.map(x => '<div class="ar-voix"><i style="background:' + x.color + '"></i>'
+        + '<button type="button" data-a="ecouter" data-i="' + x.index + '"' + (x.has_sample ? '' : ' disabled') + '>' + vm.lang.t('Écouter', 'Listen') + '</button>'
+        + '<input type="text" data-id="' + echap(x.id) + '" value="' + echap(names[x.id] || '') + '" placeholder="' + vm.lang.t('Voix', 'Voice') + ' ' + (x.index + 1) + '">'
+        + '<span>' + Math.round(100 * (x.speaking_seconds || 0) / total) + ' %</span></div>').join('');
+  }
+
+  function vuePassages() {
+    const noms = personnes();
+    if (noms.length < 2) return '<p class="ar-dit">' + vm.lang.t('Nommez d’abord au moins deux personnes (onglet « Qui est qui »).', 'First name at least two people (“Who is who” tab).') + '</p>';
+    if (!rows.length) return '<p class="ar-dit">' + vm.lang.t('Aucun passage incertain à vérifier. Recalculez d’après vos noms pour mesurer la confiance.', 'No uncertain passage to check. Recalculate from your names to measure confidence.') + '</p>';
+    const par = 3, pages = Math.ceil(rows.length / par); page = Math.min(page, pages - 1);
+    return '<p class="ar-dit">' + vm.lang.t('Écoutez, puis dites qui parle. Si plusieurs personnes parlent dans le passage, coupez à l’instant du changement avec « Couper ici » pendant la lecture.', 'Listen, then say who speaks. If several people speak in the passage, cut at the change with “Cut here” while playing.') + '</p>'
+      + rows.slice(page * par, page * par + par).map((r, n) => { const k = page * par + n, bs = bornes(r);
+        return '<div class="ar-pass"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
+          + '<button type="button" data-a="lire" data-r="' + k + '">' + vm.lang.t('Écouter', 'Listen') + '</button>'
+          + '<button type="button" data-a="couper" data-r="' + k + '">' + vm.lang.t('Couper ici', 'Cut here') + '</button>'
+          + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + vm.lang.t('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
+          + '<p>' + echap(r.text.slice(0, 220)) + (r.text.length > 220 ? '…' : '') + '</p>'
+          + bs.slice(0, -1).map((a, j) => '<div class="ar-seg"><span>' + hms(a) + ' – ' + hms(bs[j + 1]) + '</span>'
+            + noms.map(nm => '<button type="button" class="chip' + (r.aff[j] === nm ? ' on' : '') + '" data-a="aff" data-r="' + k + '" data-j="' + j + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('') + '</div>').join('')
+          + '</div>'; }).join('')
+      + (pages > 1 ? '<div class="ar-pg"><button type="button" data-a="pm">−</button><span>' + (page + 1) + ' / ' + pages + '</span><button type="button" data-a="pp">+</button></div>' : '');
+  }
+
+  function peindre() {
+    let el = document.getElementById('aide');
+    if (!el) { el = document.createElement('section'); el.id = 'aide'; document.body.appendChild(el); }
+    const nb = rows.length;
+    el.innerHTML = '<div class="ar-in"><header><h2>' + vm.lang.t('Raffiner avec votre aide', 'Refine with your help') + '</h2>'
+      + '<button type="button" data-a="fermer">' + vm.lang.t('Fermer', 'Close') + '</button></header>'
+      + '<nav><button type="button" class="' + (onglet === 1 ? 'on' : '') + '" data-a="o1">1 · ' + vm.lang.t('Qui est qui', 'Who is who') + '</button>'
+      + '<button type="button" class="' + (onglet === 2 ? 'on' : '') + '" data-a="o2">2 · ' + vm.lang.t('Passages à vérifier', 'Passages to check') + (nb ? ' (' + nb + ')' : '') + '</button></nav>'
+      + '<div class="ar-corps">' + (onglet === 1 ? vueNoms() : vuePassages()) + '</div>'
+      + '<footer><div class="ar-rep">' + repere() + '</div>'
+      + '<button type="button" class="ar-go" data-a="recalculer">' + vm.lang.t('Recalculer', 'Recalculate') + '</button></footer></div>';
+  }
+
+  function ouvrir() { if (typeof job === 'undefined' || !job || !job.speakers) return; rows = candidats(); page = 0; onglet = 1; peindre(); document.body.classList.add('aide-on'); }
+  const fermer = () => document.body.classList.remove('aide-on');
+  const lire = (a, z) => { clearTimeout(timer); player.currentTime = a; player.play().catch(() => {}); timer = setTimeout(() => player.pause(), Math.max(500, (z - a) * 1000 + 250)); };
+
+  async function recalculer() {
+    const exemples = [];
+    rows.forEach(r => { const bs = bornes(r); for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] }); });
+    fermer(); document.body.classList.remove('back');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Raffinage des voix', 0.01);
+    try {
+      await api('/api/jobs/' + jobId + '/raffiner-noms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ noms: names, exemples }) });
+      poll = setInterval(tick, 1000); tick();
+    } catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
+  }
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('#aidego')) { const w = $('#sepwrap'); if (w) w.classList.remove('open'); ouvrir(); return; }
+    const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r;
+    if (a === 'fermer') fermer();
+    else if (a === 'o1' || a === 'o2') { onglet = a === 'o1' ? 1 : 2; peindre(); }
+    else if (a === 'ecouter') { const x = job.speakers.find(v => String(v.index) === b.dataset.i); if (x) { sampler.src = '/api/jobs/' + jobId + '/sample/' + x.index; sampler.play().catch(() => {}); } }
+    else if (a === 'lire') lire(rows[k].start, rows[k].end);
+    else if (a === 'couper') { const r = rows[k], t = player.currentTime; if (t > r.start + 0.5 && t < r.end - 0.5) { r.cuts.push(t); r.aff = {}; peindre(); } else toast(vm.lang.t('Lancez « Écouter », puis coupez à l’instant où la voix change.', 'Press “Listen”, then cut at the moment the voice changes.')); }
+    else if (a === 'recoller') { rows[k].cuts = []; rows[k].aff = {}; peindre(); }
+    else if (a === 'aff') { const r = rows[k], j = +b.dataset.j; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; peindre(); }
+    else if (a === 'pp') { page += 1; peindre(); } else if (a === 'pm') { page = Math.max(0, page - 1); peindre(); }
+    else if (a === 'recalculer') recalculer();
+  });
+  document.addEventListener('input', e => { const i = e.target.closest('#aide input[data-id]'); if (i) { names[i.dataset.id] = i.value; } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('aide-on')) fermer(); });
+}
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
    l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,

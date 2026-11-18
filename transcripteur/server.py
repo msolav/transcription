@@ -121,6 +121,7 @@ def _public(job: dict) -> dict:
         "names": job["names"],
         "notes": job["notes"][-12:],
         "relecture": job.get("relecture"),
+        "raffinage": job.get("raffinage"),
         "created_at": job["created_at"],
         # De quoi décider s'il y a lieu de proposer la séparation des
         # voix après coup, et s'il faudra redemander l'enregistrement.
@@ -810,6 +811,108 @@ async def separer_voix(
     _set(job_id, source=str(source), video=pipeline.est_video(source))
     threading.Thread(target=_run_voix,
                      args=(job_id, options, mots, float(job["duration"] or 0.0)),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+def _run_guide(job_id: str, options: Options, noms: dict, exemples: list,
+               duree: float) -> None:
+    """Raffine d'après les noms et les exemples, dans un fil à part.
+
+    Même principe que `_run_voix` : le travail se fait sur la tâche elle-même,
+    les blocs d'origine servent de filet, et rien n'est écrit tant que le
+    calcul n'a pas abouti. Les empreintes sont gardées dans la séance :
+    relancer après avoir ajouté un exemple prend quelques secondes."""
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None or job["status"] == "cancelled":
+            return
+        src = Path(job["source"])
+        work_dir = Path(job["work_dir"])
+
+        def progress(stage: str, ratio: float) -> None:
+            _set(job_id, stage=stage, progress=ratio)
+
+        def notify(message: str) -> None:
+            with _lock:
+                current = _jobs.get(job_id)
+                if current is not None:
+                    current["notes"].append(message)
+                    del current["notes"][:-60]
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+
+        anciens = job["blocks"]
+        avant = (job.get("raffinage") or {}).get("part_incertaine")
+        _set(job_id, status="running", stage="Raffinage des voix",
+             progress=0.0, error=None, cancel=False)
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"] = []
+        try:
+            resultat, noms_finaux, rapport = pipeline.raffiner_selon_noms(
+                src, work_dir, options, anciens, noms, exemples, duree,
+                progress, notify, stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Raffinage annulé",
+                 progress=1.0, blocks=anciens)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Raffinage abandonné",
+                 progress=1.0, blocks=anciens, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("raffinage guidé", exc)
+            _set(job_id, status="done", stage="Raffinage abandonné",
+                 progress=1.0, blocks=anciens,
+                 error=f"Erreur inattendue : {exc}")
+            return
+
+        rapport["part_avant"] = avant
+        _set(job_id, status="done", stage="Terminé", progress=1.0,
+             duration=resultat.duration, speakers=resultat.speakers,
+             blocks=resultat.blocks, names=noms_finaux, raffinage=rapport,
+             sans_audio=False, relecture=None)
+        _retenir(job_id)
+
+
+@app.post("/api/jobs/{job_id}/raffiner-noms")
+async def raffiner_noms(job_id: str, payload: dict) -> JSONResponse:
+    """Raffine la séparation des voix d'après les noms et des exemples désignés.
+
+    `payload` : {"noms": {id_de_voix: nom}, "exemples": [{"start", "end",
+    "nom"}], "langue": ""}. Rien n'est renvoyé à Groq : seul le son est lu."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    if job["status"] not in ("done", "error"):
+        raise HTTPException(400, "Un traitement est déjà en cours.")
+    ancien = Path(job["source"]) if job.get("source") else None
+    if not (ancien and ancien.exists()):
+        raise HTTPException(
+            400, "L'enregistrement n'est plus sur cette machine. Il faut le "
+                 "fournir de nouveau (« Raffiner les voix », puis choisir le fichier).")
+    if not pipeline.mots_des_blocs(job["blocks"]):
+        raise HTTPException(400, "Ce transcript ne porte pas les horodatages des mots.")
+    noms = {str(k): str(v) for k, v in (payload.get("noms") or {}).items()}
+    exemples = []
+    for e in payload.get("exemples") or []:
+        try:
+            exemples.append({"start": float(e["start"]), "end": float(e["end"]),
+                             "nom": str(e.get("nom") or "")})
+        except (KeyError, TypeError, ValueError):
+            continue
+    if len({n.strip() for n in noms.values() if n.strip()}
+           | {e["nom"].strip() for e in exemples if e["nom"].strip()}) < 2:
+        raise HTTPException(400, "Il faut nommer au moins deux personnes pour raffiner.")
+    options = Options(language=(payload.get("langue") or "").strip() or None,
+                      diarize=True, embedding="auto", denoise="",
+                      api_key=config.get_key("groq"), raffiner=True)
+    threading.Thread(target=_run_guide,
+                     args=(job_id, options, noms, exemples, float(job["duration"] or 0.0)),
                      daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
 

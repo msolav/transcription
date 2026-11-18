@@ -663,6 +663,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
                     tours = [tuple(t) for t in json.loads(ligne[2:])]
                 elif ligne.startswith("L "):
                     log(ligne[2:])
+                elif ligne.startswith("C "):
+                    _CONF["v"] = json.loads(ligne[2:])
                 elif ligne.startswith("E "):
                     erreur = ligne[2:]
         finally:
@@ -730,6 +732,7 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     # exception levée depuis ce rappel est avalée par la couche C++. Sur
     # une réunion de deux heures, « Arrêter » ne pouvait donc rien
     # pendant les trois quarts d'heure que dure cette étape.
+    _CONF["v"] = None
     turns = _diariser_dehors(audio, seg_model, emb_model, num_speakers or -1,
                              threshold, avance, raffiner)
     if turns is None:
@@ -750,7 +753,9 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
                 sherpa_onnx.SpeakerEmbeddingExtractorConfig(
                     model=str(emb_model), num_threads=DIARIZE_THREADS))
             from . import raffinage
-            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1, None, log)
+            confs: list = []
+            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1, None, log, confs)
+            _CONF["v"] = confs
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
     trouvees = len({t[2] for t in turns})
@@ -790,8 +795,10 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         if len({t[2] for t in repris}) > 1:
             log(f"{len({t[2] for t in repris})} voix en détection libre, "
                 f"{len(repris)} tours")
+            _CONF["v"] = None
             return repris
         log("la détection libre ne trouve pas mieux : une seule voix")
+        _CONF["v"] = None
 
     return turns
 
@@ -1171,6 +1178,34 @@ def assign_speakers(words: list[dict], turns) -> list[str]:
     return snap_boundaries(labels, words)
 
 
+# Niveau de confiance par tour du dernier raffinage, dans l'ordre des tours :
+# la séparation tourne dans un processus à part qui le renvoie sur une ligne.
+_CONF: dict = {"v": None}
+
+
+def attacher_confiance(blocks: list[dict], turns, confs) -> None:
+    """Pose sur chaque passage la confiance moyenne des tours qui le recouvrent.
+
+    0 = le passage hésite entre plusieurs voix, 1 = il ressemble nettement à
+    une seule. C'est une mesure d'ambiguïté, pas une probabilité."""
+    if not confs or len(confs) != len(turns):
+        return
+    import bisect
+    ordre = sorted(range(len(turns)), key=lambda i: turns[i][0])
+    debuts = [turns[i][0] for i in ordre]
+    for b in blocks:
+        total = poids = 0.0
+        i = max(0, bisect.bisect_right(debuts, b["start"]) - 3)
+        while i < len(ordre) and debuts[i] < b["end"]:
+            a, e, _ = turns[ordre[i]]
+            ov = min(b["end"], e) - max(b["start"], a)
+            if ov > 0:
+                total += ov * confs[ordre[i]]
+                poids += ov
+            i += 1
+        b["conf"] = round(float(total / poids), 2) if poids else None
+
+
 def build_blocks(words: list[dict], turns) -> list[dict]:
     labels = assign_speakers(words, turns)
 
@@ -1424,6 +1459,7 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
 
     progress("Assemblage", part["assemblage"][0])
     blocks = build_blocks(mots, turns)
+    attacher_confiance(blocks, turns, _CONF["v"] if options.raffiner else None)
     log(f"{len(blocks)} passages attribués")
     progress("Extraits d'écoute", sum(part["assemblage"]) / 2)
     profiles = speaker_profiles(turns, blocks, src, work_dir)
@@ -1432,6 +1468,91 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
     log("terminé")
     progress("Terminé", 1.0)
     return Result(duration=duration, blocks=blocks, speakers=profiles)
+
+
+def raffiner_selon_noms(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        noms: dict, exemples: list[dict], duree_attendue: float = 0.0,
+                        progress: Progress = _noop, notify=None, stop=None):
+    """Raffine d'après ce que la personne sait : les noms donnés aux voix et
+    des passages dont elle a dit qui parle (éventuellement coupés à l'intérieur
+    d'un passage).
+
+    Les voix qui portent le même nom sont une seule personne. Une voix sans nom
+    reste une voix à part : elle n'est jamais absorbée en silence. Les passages
+    désignés à la main font foi sur le reste."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import raffinage
+
+    mots = mots_des_blocs(blocs)
+    if not mots:
+        raise PipelineError("Ce transcript ne contient pas les horodatages des mots : "
+                            "il faut repartir de l'audio.")
+    progress("Conversion", 0.02)
+    wav = work_dir / "audio16k.wav"
+    to_wav16k(src, wav)
+    audio = read_wav16k(wav)
+    duration = len(audio) / 16000.0
+    log(f"durée : {duration / 60:.1f} min")
+    repere = duree_attendue or max(m["end"] for m in mots)
+    if abs(duration - repere) > TOLERANCE_DUREE:
+        wav.unlink(missing_ok=True)
+        raise PipelineError(f"Cet enregistrement dure {duration / 60:.1f} min, le transcript "
+                            f"en couvre {repere / 60:.1f} : ce n'est pas le même fichier.")
+    checkpoint()
+
+    embedding = options.embedding
+    if embedding == "auto":
+        embedding = assets.resoudre_pour_langue(options.language)
+    _, emb_model = assets.ensure_models(embedding, note=log)
+    try:
+        import sherpa_onnx
+    except ImportError as exc:
+        raise PipelineError("sherpa-onnx n'est pas installé.") from exc
+    extracteur = sherpa_onnx.SpeakerEmbeddingExtractor(
+        sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=str(emb_model), num_threads=DIARIZE_THREADS))
+
+    tours = sorted(((b["start"], b["end"], b["speaker"]) for b in blocs), key=lambda t: t[0])
+    graines: dict = {}
+    forts: dict = {}
+    for b in blocs:
+        nom = (noms.get(b["speaker"]) or "").strip()
+        graines.setdefault(nom or "#" + b["speaker"], []).append((b["start"], b["end"]))
+    for e in exemples:
+        nom = (e.get("nom") or "").strip()
+        if not nom:
+            continue
+        a, z = float(e["start"]), float(e["end"])
+        # Ce que la personne a désigné l'emporte sur le reste : on retire des
+        # autres voix les passages qu'il recouvre.
+        for autre in list(graines):
+            if autre != nom:
+                graines[autre] = [(x, y) for x, y in graines[autre] if min(y, z) - max(x, a) <= 0]
+        graines.setdefault(nom, []).append((a, z))
+        forts.setdefault(nom, []).append((a, z))
+    graines = {k: v for k, v in graines.items() if v}
+    log(f"{len(noms and [n for n in noms.values() if n])} voix nommées, {len(exemples)} exemples désignés")
+
+    turns, confs, etiquettes, rapport = raffinage.raffiner_guide(
+        audio, tours, extracteur, graines,
+        avance=lambda f: progress("Raffinage des voix", 0.05 + 0.9 * f),
+        dire=log, controle=checkpoint, forts=forts,
+        cache=work_dir / "empreintes.npz")
+    del audio
+    wav.unlink(missing_ok=True)
+    checkpoint()
+
+    blocks = build_blocks(mots, turns)
+    attacher_confiance(blocks, turns, confs)
+    log(f"{len(blocks)} passages attribués")
+    progress("Extraits d'écoute", 0.97)
+    profiles = speaker_profiles(turns, blocks, src, work_dir)
+    noms_finaux = {sid: (n if not n.startswith("#") else "") for sid, n in etiquettes.items()}
+    log("terminé")
+    progress("Terminé", 1.0)
+    return Result(duration=duration, blocks=blocks, speakers=profiles), noms_finaux, rapport
 
 
 def process(src: Path, work_dir: Path, options: Options,
@@ -1529,6 +1650,7 @@ def process(src: Path, work_dir: Path, options: Options,
                      "has_sample": False}]
     else:
         blocks = build_blocks(words, turns)
+        attacher_confiance(blocks, turns, _CONF["v"] if options.raffiner else None)
         log(f"{len(blocks)} passages attribués")
         progress("Extraits d'écoute",
                  sum(part["assemblage"]) / 2)   # à mi-chemin de l'assemblage

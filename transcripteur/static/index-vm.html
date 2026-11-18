@@ -1056,6 +1056,47 @@ body.sc-all .tr-sc { z-index: 200; }
 .refine2 .rtxt { display: flex; flex-direction: column; gap: .3rem; }
 .sepbox .refine2 label { font: 600 .75rem/1.25 var(--vm-font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--vm-paper); cursor: pointer; }
 .sepbox .refine2 small { font: 400 .8125rem/1.4 var(--vm-font-display); color: var(--vm-paper); opacity: .75; }
+
+/* passages d'attribution incertaine */
+.turn .incm { display: inline-block; margin-left: .5rem; padding: 0 .35em; border: 1px dashed currentColor; font: 600 .7rem/1.4 var(--vm-font-mono); letter-spacing: 0; }
+.turn.inc p { background-image: repeating-linear-gradient(180deg, var(--c) 0 6px, transparent 6px 12px); background-size: 6px 100%; background-repeat: no-repeat; box-shadow: none; }
+
+/* Raffiner avec votre aide */
+#aide { position: fixed; top: var(--barh, 64px); left: 0; right: 0; bottom: 0; z-index: 210; background: var(--vm-paper); color: var(--vm-ink); overflow: clip;
+  opacity: 0; visibility: hidden; translate: 0 10px; transition: opacity .7s var(--vm-ease), translate .7s var(--vm-ease), visibility 0s .7s; }
+body.aide-on #aide { opacity: 1; visibility: visible; translate: 0 0; transition: opacity .7s var(--vm-ease), translate .7s var(--vm-ease), visibility 0s; }
+#aide .ar-in { height: 100%; display: grid; grid-template-rows: auto auto 1fr auto; padding: 1rem var(--pad, 24px) 1rem; gap: .8rem; min-height: 0; }
+#aide header { display: flex; align-items: center; justify-content: space-between; }
+#aide h2 { margin: 0; font: 800 clamp(1.6rem, 3.4vw, 2.6rem)/1 var(--vm-font-display); font-stretch: 62%; text-transform: uppercase; letter-spacing: -.01em; }
+#aide button { font: 600 .875rem/1 var(--vm-font-display); color: inherit; padding: .6rem .9rem; border: 1px solid currentColor; background: none; transition: background-color .5s var(--vm-ease), color .5s var(--vm-ease); }
+#aide button:hover:not(:disabled) { background: var(--vm-ink); color: var(--vm-paper); }
+#aide button:disabled { opacity: .3; }
+#aide nav { display: flex; gap: .4rem; border-bottom: 1px solid var(--vm-ink); }
+#aide nav button { border: 0; border-bottom: 3px solid transparent; padding: .6rem .2rem; margin-right: 1.4rem; font: 600 .8125rem/1 var(--vm-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+#aide nav button.on { border-bottom-color: var(--vm-accent); }
+#aide nav button:hover { background: none; color: var(--vm-accent); }
+#aide .ar-corps { min-height: 0; overflow: clip; display: flex; flex-direction: column; gap: .6rem; }
+#aide .ar-dit { margin: 0 0 .3rem; font: 400 1rem/1.4 var(--vm-font-display); max-width: 60ch; opacity: .85; }
+#aide .ar-voix { display: grid; grid-template-columns: 14px auto 1fr 56px; align-items: center; gap: .9rem; padding: .35rem 0; border-bottom: 1px solid color-mix(in oklab, var(--vm-ink) 18%, transparent); }
+#aide .ar-voix i { height: 34px; }
+#aide .ar-voix input { font: 400 clamp(1.2rem, 2.4vw, 1.8rem)/1.1 var(--vm-font-display); font-stretch: 75%; border: 0; border-bottom: 1px solid var(--vm-ink); background: none; color: inherit; padding: .3rem 0; min-width: 0; }
+#aide .ar-voix span { font: 500 .8125rem var(--vm-font-mono); text-align: right; }
+#aide .ar-pass { border: 1px solid color-mix(in oklab, var(--vm-ink) 35%, transparent); padding: .7rem .9rem; display: flex; flex-direction: column; gap: .45rem; }
+#aide .ar-ph { display: flex; align-items: center; gap: .6rem; }
+#aide .ar-ph b { font: 600 .8125rem var(--vm-font-mono); letter-spacing: .06em; margin-right: auto; }
+#aide .ar-pass p { margin: 0; font: 400 .95rem/1.4 var(--vm-font-serif, Georgia, serif); opacity: .85; }
+#aide .ar-seg { display: flex; align-items: center; flex-wrap: wrap; gap: .4rem; }
+#aide .ar-seg span { font: 500 .75rem var(--vm-font-mono); min-width: 7.5rem; opacity: .7; }
+#aide .chip { padding: .4rem .7rem; font-weight: 500; }
+#aide .chip.on { background: var(--vm-accent); border-color: var(--vm-accent); color: var(--tr-on-accent); }
+#aide .ar-pg { display: flex; align-items: center; gap: .8rem; font: 500 .8125rem var(--vm-font-mono); }
+#aide footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 1.5rem; border-top: 1px solid var(--vm-ink); padding-top: .8rem; }
+#aide .ar-rep { display: flex; flex-direction: column; gap: .3rem; min-width: 0; font: 500 .8125rem/1.4 var(--vm-font-mono); }
+#aide .ar-pers { display: flex; flex-wrap: wrap; gap: .3rem 1rem; opacity: .8; }
+#aide .ar-verdict { font-weight: 700; color: var(--vm-accent); }
+#aide .ar-note { opacity: .55; font-size: .72rem; max-width: 70ch; }
+#aide .ar-go { background: var(--vm-ink); color: var(--vm-paper); padding: 1rem 1.6rem; font-size: 1rem; flex: none; }
+#aide .ar-go:hover:not(:disabled) { background: var(--vm-accent); color: var(--tr-on-accent); }
 </style>
 </head>
 <body>
@@ -1092,7 +1133,8 @@ body.sc-all .tr-sc { z-index: 200; }
         <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button>
           <span class="rtxt"><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label>
           <small data-en="Re-sorts each passage against the clearest samples of every voice. Fewer mix-ups, a little longer.">Reclasse chaque passage d'après les extraits les plus nets de chaque voix. Moins de confusions, un peu plus long.</small></span></span>
-        <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button></span></span>
+        <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button>
+        <button type="button" id="aidego" class="linkbtn" hidden data-en="With my help…">Avec mon aide…</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
     <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to the open project">Retour au projet ouvert</span><!-- Dans la bibliothèque, « Nouveau » ne mène nulle part : rien ne
@@ -2618,9 +2660,10 @@ function paintDoc() {
     const parts = []; { const sn = b.text.match(/[^.!?…]+[.!?…]*\s*/g) || [b.text]; let cur = ''; for (const x of sn) { if (cur && (cur + x).length > 420) { parts.push(cur); cur = ''; } cur += x; } if (cur) parts.push(cur); }
     let acc = 0; const tot = b.text.length || 1;
     return parts.map((tx, k) => { const ts = b.start + (b.end - b.start) * acc / tot; acc += tx.length;
-      return `<div class="turn ${same || k ? 'same' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
+      const incertain = b.conf != null && b.conf < 0.3;
+      return `<div class="turn ${same || k ? 'same' : ''}${incertain ? ' inc' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
         <button class="tc" data-t="${ts}">${clock(ts)}</button>
-        <div class="who">${escapeHtml(labelOf(b.speaker))}</div>
+        <div class="who">${escapeHtml(labelOf(b.speaker))}${incertain && !k ? `<span class="incm" title="${vm.lang.t('Attribution incertaine : ce passage hésite entre plusieurs voix.', 'Uncertain attribution: this passage is torn between several voices.')}">?</span>` : ''}</div>
         <p>${escapeHtml(tx.trim())}</p>
       </div>`; }).join('');
   }).join('');
@@ -3547,6 +3590,7 @@ $('#newjob').onclick = () => document.body.classList.toggle('back');
     btn.textContent = vm.lang.t(t[0], t[1]); btn.dataset.en = t[1];
     const titre = $('#sepbox b'); if (titre) { titre.textContent = vm.lang.t(multi ? 'Raffiner la séparation des voix' : 'Séparer les voix maintenant', multi ? 'Refine the voice separation' : 'Separate the voices now'); titre.dataset.en = multi ? 'Refine the voice separation' : 'Separate the voices now'; }
     const r2 = $('#refine2'); if (multi && r2.getAttribute('aria-checked') !== 'true') r2.click();
+    { const ag = $('#aidego'); if (ag) ag.hidden = !multi; }
   }, 500);
   btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
   $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
@@ -3644,6 +3688,114 @@ document.addEventListener('click', e => {
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
+
+/* Raffiner avec votre aide : les noms, les passages à vérifier (qu'on peut couper pour dire qui parle quand),
+   et des repères pour savoir quand s'arrêter. Les calculs lourds sont gardés : recalculer prend quelques secondes. */
+{ let rows = [], page = 0, onglet = 1, timer = 0;
+  const hms = t => clock(Math.round(t));
+  const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const personnes = () => [...new Set(Object.values(names || {}).map(x => (x || '').trim()).filter(Boolean))];
+  const partInc = () => {
+    if (job.raffinage && job.raffinage.part_incertaine != null) return job.raffinage.part_incertaine;
+    const bl = job.blocks.filter(x => x.conf != null); if (!bl.length) return null;
+    const tot = bl.reduce((a, x) => a + (x.end - x.start), 0) || 1;
+    return bl.filter(x => x.conf < 0.3).reduce((a, x) => a + (x.end - x.start), 0) / tot;
+  };
+  const candidats = () => job.blocks.filter(x => x.conf != null && x.conf < 0.3 && (x.end - x.start) >= 1.5)
+    .sort((a, x) => a.conf - x.conf || (x.end - x.start) - (a.end - a.start)).slice(0, 60)
+    .map(x => ({ start: x.start, end: x.end, text: x.text, cuts: [], aff: {} }));
+  const bornes = r => [r.start, ...r.cuts.slice().sort((a, z) => a - z), r.end];
+
+  function repere() {
+    const rf = job.raffinage || {}, mesure = !!rf.secondes_exemples, sec = rf.secondes_exemples || {}, pi = partInc(), noms = personnes();
+    const part = pi == null ? vm.lang.t("Pas encore de mesure de confiance : recalculez d'après vos noms, ou lancez « Raffiner les voix ».", "No confidence measure yet: recalculate from your names, or run “Refine voices”.")
+      : vm.lang.t('Part de parole incertaine : ', 'Uncertain speech: ') + Math.round(pi * 100) + ' %'
+        + (rf.part_avant != null ? vm.lang.t(' (avant : ', ' (before: ') + Math.round(rf.part_avant * 100) + ' %)' : '');
+    const faibles = mesure ? noms.filter(n => (sec[n] || 0) < 20) : [];
+    const verdict = pi == null ? ''
+      : (pi < 0.05 && !faibles.length) ? vm.lang.t('Vous pouvez vous arrêter ici.', 'You can stop here.')
+      : faibles.length ? vm.lang.t('Peu d’exemples pour ' + faibles.join(', ') + ' : visez environ 20 s chacun (3 à 5 passages nets).', 'Few examples for ' + faibles.join(', ') + ': aim for about 20 s each (3 to 5 clear passages).')
+      : vm.lang.t('Vérifiez quelques passages puis recalculez : si la part incertaine baisse peu, vous pouvez vous arrêter.', 'Check a few passages then recalculate: if the uncertain share drops little, you can stop.');
+    return '<div class="ar-part">' + echap(part) + '</div>'
+      + (noms.length ? '<div class="ar-pers">' + noms.map(n => '<span>' + echap(n) + (mesure ? ' · ' + Math.round(sec[n] || 0) + ' s' : '') + '</span>').join('') + '</div>' : '')
+      + (verdict ? '<div class="ar-verdict">' + echap(verdict) + '</div>' : '')
+      + '<div class="ar-note">' + vm.lang.t('Repères indicatifs, non calibrés : la confiance mesure l’hésitation entre voix, pas une probabilité d’exactitude.', 'Indicative guides, not calibrated: confidence measures hesitation between voices, not a probability of being right.') + '</div>';
+  }
+
+  function vueNoms() {
+    const total = job.speakers.reduce((a, x) => a + (x.speaking_seconds || 0), 0) || 1;
+    return '<p class="ar-dit">' + vm.lang.t('Écoutez chaque voix et donnez le même nom à celles qui sont la même personne.', 'Listen to each voice and give the same name to the ones that are the same person.') + '</p>'
+      + job.speakers.map(x => '<div class="ar-voix"><i style="background:' + x.color + '"></i>'
+        + '<button type="button" data-a="ecouter" data-i="' + x.index + '"' + (x.has_sample ? '' : ' disabled') + '>' + vm.lang.t('Écouter', 'Listen') + '</button>'
+        + '<input type="text" data-id="' + echap(x.id) + '" value="' + echap(names[x.id] || '') + '" placeholder="' + vm.lang.t('Voix', 'Voice') + ' ' + (x.index + 1) + '">'
+        + '<span>' + Math.round(100 * (x.speaking_seconds || 0) / total) + ' %</span></div>').join('');
+  }
+
+  function vuePassages() {
+    const noms = personnes();
+    if (noms.length < 2) return '<p class="ar-dit">' + vm.lang.t('Nommez d’abord au moins deux personnes (onglet « Qui est qui »).', 'First name at least two people (“Who is who” tab).') + '</p>';
+    if (!rows.length) return '<p class="ar-dit">' + vm.lang.t('Aucun passage incertain à vérifier. Recalculez d’après vos noms pour mesurer la confiance.', 'No uncertain passage to check. Recalculate from your names to measure confidence.') + '</p>';
+    const par = 3, pages = Math.ceil(rows.length / par); page = Math.min(page, pages - 1);
+    return '<p class="ar-dit">' + vm.lang.t('Écoutez, puis dites qui parle. Si plusieurs personnes parlent dans le passage, coupez à l’instant du changement avec « Couper ici » pendant la lecture.', 'Listen, then say who speaks. If several people speak in the passage, cut at the change with “Cut here” while playing.') + '</p>'
+      + rows.slice(page * par, page * par + par).map((r, n) => { const k = page * par + n, bs = bornes(r);
+        return '<div class="ar-pass"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
+          + '<button type="button" data-a="lire" data-r="' + k + '">' + vm.lang.t('Écouter', 'Listen') + '</button>'
+          + '<button type="button" data-a="couper" data-r="' + k + '">' + vm.lang.t('Couper ici', 'Cut here') + '</button>'
+          + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + vm.lang.t('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
+          + '<p>' + echap(r.text.slice(0, 220)) + (r.text.length > 220 ? '…' : '') + '</p>'
+          + bs.slice(0, -1).map((a, j) => '<div class="ar-seg"><span>' + hms(a) + ' – ' + hms(bs[j + 1]) + '</span>'
+            + noms.map(nm => '<button type="button" class="chip' + (r.aff[j] === nm ? ' on' : '') + '" data-a="aff" data-r="' + k + '" data-j="' + j + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('') + '</div>').join('')
+          + '</div>'; }).join('')
+      + (pages > 1 ? '<div class="ar-pg"><button type="button" data-a="pm">−</button><span>' + (page + 1) + ' / ' + pages + '</span><button type="button" data-a="pp">+</button></div>' : '');
+  }
+
+  function peindre() {
+    let el = document.getElementById('aide');
+    if (!el) { el = document.createElement('section'); el.id = 'aide'; document.body.appendChild(el); }
+    const nb = rows.length;
+    el.innerHTML = '<div class="ar-in"><header><h2>' + vm.lang.t('Raffiner avec votre aide', 'Refine with your help') + '</h2>'
+      + '<button type="button" data-a="fermer">' + vm.lang.t('Fermer', 'Close') + '</button></header>'
+      + '<nav><button type="button" class="' + (onglet === 1 ? 'on' : '') + '" data-a="o1">1 · ' + vm.lang.t('Qui est qui', 'Who is who') + '</button>'
+      + '<button type="button" class="' + (onglet === 2 ? 'on' : '') + '" data-a="o2">2 · ' + vm.lang.t('Passages à vérifier', 'Passages to check') + (nb ? ' (' + nb + ')' : '') + '</button></nav>'
+      + '<div class="ar-corps">' + (onglet === 1 ? vueNoms() : vuePassages()) + '</div>'
+      + '<footer><div class="ar-rep">' + repere() + '</div>'
+      + '<button type="button" class="ar-go" data-a="recalculer">' + vm.lang.t('Recalculer', 'Recalculate') + '</button></footer></div>';
+  }
+
+  function ouvrir() { if (typeof job === 'undefined' || !job || !job.speakers) return; rows = candidats(); page = 0; onglet = 1; peindre(); document.body.classList.add('aide-on'); }
+  const fermer = () => document.body.classList.remove('aide-on');
+  const lire = (a, z) => { clearTimeout(timer); player.currentTime = a; player.play().catch(() => {}); timer = setTimeout(() => player.pause(), Math.max(500, (z - a) * 1000 + 250)); };
+
+  async function recalculer() {
+    const exemples = [];
+    rows.forEach(r => { const bs = bornes(r); for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] }); });
+    fermer(); document.body.classList.remove('back');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Raffinage des voix', 0.01);
+    try {
+      await api('/api/jobs/' + jobId + '/raffiner-noms', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ noms: names, exemples }) });
+      poll = setInterval(tick, 1000); tick();
+    } catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
+  }
+
+  document.addEventListener('click', e => {
+    if (e.target.closest('#aidego')) { const w = $('#sepwrap'); if (w) w.classList.remove('open'); ouvrir(); return; }
+    const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r;
+    if (a === 'fermer') fermer();
+    else if (a === 'o1' || a === 'o2') { onglet = a === 'o1' ? 1 : 2; peindre(); }
+    else if (a === 'ecouter') { const x = job.speakers.find(v => String(v.index) === b.dataset.i); if (x) { sampler.src = '/api/jobs/' + jobId + '/sample/' + x.index; sampler.play().catch(() => {}); } }
+    else if (a === 'lire') lire(rows[k].start, rows[k].end);
+    else if (a === 'couper') { const r = rows[k], t = player.currentTime; if (t > r.start + 0.5 && t < r.end - 0.5) { r.cuts.push(t); r.aff = {}; peindre(); } else toast(vm.lang.t('Lancez « Écouter », puis coupez à l’instant où la voix change.', 'Press “Listen”, then cut at the moment the voice changes.')); }
+    else if (a === 'recoller') { rows[k].cuts = []; rows[k].aff = {}; peindre(); }
+    else if (a === 'aff') { const r = rows[k], j = +b.dataset.j; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; peindre(); }
+    else if (a === 'pp') { page += 1; peindre(); } else if (a === 'pm') { page = Math.max(0, page - 1); peindre(); }
+    else if (a === 'recalculer') recalculer();
+  });
+  document.addEventListener('input', e => { const i = e.target.closest('#aide input[data-id]'); if (i) { names[i.dataset.id] = i.value; } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('aide-on')) fermer(); });
+}
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
    l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,

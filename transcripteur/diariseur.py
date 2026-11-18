@@ -96,9 +96,11 @@ def main(argv: list[str]) -> int:
             extracteur = sherpa_onnx.SpeakerEmbeddingExtractor(
                 sherpa_onnx.SpeakerEmbeddingExtractorConfig(
                     model=emb, num_threads=int(fils)))
+            confs: list = []
             tours = [list(t) for t in raffinage.raffiner(
                 audio, [tuple(t) for t in tours], extracteur, int(nombre),
-                lambda f: emettre(0.8 + 0.2 * f), dire)]
+                lambda f: emettre(0.8 + 0.2 * f), dire, confs)]
+            print("C " + json.dumps([round(c, 3) for c in confs]), flush=True)
         print("R " + json.dumps(tours), flush=True)
         return 0
     except Exception as exc:  # noqa: BLE001
