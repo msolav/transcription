@@ -1053,7 +1053,8 @@ async def enrolement_classer(job_id: str, payload: dict) -> dict:
     wav = work_dir / "audio16k.wav"
     try:
         return await run_in_threadpool(enrolement.classer, work_dir, _exemples(payload),
-                                       wav if wav.exists() else None)
+                                       wav if wav.exists() else None,
+                                       payload.get("vus") or [], payload.get("cible") or None)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 

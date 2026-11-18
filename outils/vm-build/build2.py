@@ -860,7 +860,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
 /* Identifier les voix avec votre aide, AVANT l'analyse : le programme propose des passages choisis dans
    l'enregistrement, vous dites qui parle (en coupant au besoin), et tout le reste est classé d'après ces échantillons.
    Les empreintes sont calculées une fois (quelques minutes) ; la suite prend des secondes. */
-{ let actif = 0, boucle = false, limite = null, glisse = null; let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
+{ let actif = 0, boucle = false, limite = null, glisse = null, vus = [], cible = null, ouvert = {}; let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
   const hms = t => clock(Math.round(t));
   const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const T = (f, e) => vm.lang.t(f, e);
@@ -905,14 +905,31 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       + '<div class="ar-tt"><span class="tl-t" data-r="' + k + '">' + fine(0) + '</span><span>' + fine(r.end - r.start) + '</span></div>';
   }
 
+  function echantillons(nom) { return exemples.filter(x => x.nom === nom); }
+  function profils() {
+    const noms = personnes(); if (!noms.length) return '';
+    const sec = (rapport && rapport.secondes) || {};
+    return '<div class="ar-profils"><h3>' + T('Profils', 'Profiles') + '</h3>' + noms.map(n => {
+      const ech = echantillons(n), tot = ech.reduce((a, x) => a + (x.end - x.start), 0), ouv = !!ouvert[n];
+      return '<div class="ar-pf' + (cible === n ? ' cible' : '') + '"><span class="pf-c" style="background:' + coul(n) + '"></span>'
+        + '<b>' + echap(n) + '</b><span class="pf-s">' + ech.length + ' ' + T('échantillon(s)', 'sample(s)') + ' · ' + Math.round(Math.max(tot, sec[n] || 0)) + ' s</span>'
+        + '<button type="button" data-a="plus-de" data-n="' + echap(n) + '">' + T('Trouver plus de passages de ', 'Find more passages of ') + echap(n) + '</button>'
+        + '<button type="button" data-a="voir-ech" data-n="' + echap(n) + '" aria-expanded="' + ouv + '">' + T('Échantillons', 'Samples') + '</button>'
+        + (ouv ? '<div class="pf-liste">' + (ech.length ? ech.map((x, i) => '<div class="pf-e"><span>' + hms(x.start) + ' – ' + hms(x.end) + '</span>'
+          + '<button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button>'
+          + '<button type="button" data-a="retire-ech" data-n="' + echap(n) + '" data-i="' + i + '">' + T('Retirer', 'Remove') + '</button></div>').join('') : '<p class="ar-dit">' + T('Aucun échantillon : cherchez-en avec le bouton ci-dessus.', 'No sample yet: look for some with the button above.') + '</p>') + '</div>' : '')
+        + '</div>'; }).join('')
+      + (cible ? '<button type="button" class="pf-retour" data-a="retour-lot">' + T('Revenir aux passages incertains', 'Back to uncertain passages') + '</button>' : '') + '</div>';
+  }
+
   function vueLot() {
     if (msg) return '<p class="ar-dit">' + echap(msg) + '</p>';
     const noms = personnes();
     const intro = !noms.length || noms.length < 2
       ? T('Voici des passages pris à des endroits très différents de l’enregistrement. Pour chacun, dites qui parle : choisissez un nom, ou ajoutez une nouvelle personne. Si plusieurs personnes parlent dans un passage, écoutez-le et coupez à l’instant du changement.', 'Here are passages taken from very different places in the recording. For each one, say who speaks: pick a name, or add a new person. If several people speak in a passage, listen and cut at the moment the voice changes.')
       : T('Voici les passages dont le programme est le moins sûr. Il propose un nom : confirmez-le ou corrigez-le.', 'Here are the passages the program is least sure about. It suggests a name: confirm or correct it.');
-    if (!rows.length) return '<p class="ar-dit">' + T('Plus aucun passage douteux à vous montrer. Vous pouvez terminer l’analyse.', 'No doubtful passage left to show. You can finish the analysis.') + '</p>';
-    return '<p class="ar-dit">' + intro + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>'
+    const lotVide = !rows.length;
+    return profils() + (lotVide ? '<p class="ar-dit">' + (cible ? T('Plus aucun passage à proposer pour ' + cible + '.', 'No more passages to suggest for ' + cible + '.') : T('Plus aucun passage à vous montrer. Vous pouvez terminer l’analyse.', 'No passage left to show. You can finish the analysis.')) + '</p>' : '<p class="ar-dit">' + (cible ? T('Passages qui ressemblent le plus à ' + cible + ' : confirmez ceux qui sont bien lui/elle, sinon corrigez.', 'Passages that look most like ' + cible + ': confirm the ones that really are, otherwise correct.') : intro) + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>')
       + '<div class="ar-liste">' + rows.map((r, k) => { const bs = bornes(r);
       return '<div class="ar-pass' + (actif === k ? ' actif' : '') + '" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
         + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '') + '</div>'
@@ -954,6 +971,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   }
 
   function collecter() {
+    rows.forEach(r => { if (r.index != null && !vus.includes(r.index)) vus.push(r.index); });
     rows.forEach(r => { const bs = bornes(r);
       for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) {
         exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] });
@@ -961,14 +979,14 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
       } });
   }
   async function suite() {
-    try { const r = await post('/api/jobs/' + jobId + '/enrolement/classer', { exemples });
-      rapport = r.rapport; rows = r.propositions.map(p => ({ ...p, cuts: [], aff: {} })); msg = ''; etat = 'lot'; }
+    try { const r = await post('/api/jobs/' + jobId + '/enrolement/classer', { exemples, vus, cible });
+      rapport = r.rapport; rows = r.propositions.map(p => ({ ...p, cuts: [], aff: {} })); msg = ''; etat = 'lot'; actif = 0; }
     catch (err) { msg = err.message; etat = 'lot'; rows = []; }
     peindre();
   }
   async function ouvrir() {
     if (typeof job === 'undefined' || !job || !job.blocks) return;
-    exemples = []; rows = []; rapport = null; extra = []; nouveau = null; msg = ''; prog = 0; stage = ''; verif = { ok: 0, sur: 0 };
+    exemples = []; rows = []; rapport = null; extra = []; nouveau = null; msg = ''; prog = 0; stage = ''; verif = { ok: 0, sur: 0 }; vus = []; cible = null; ouvert = {};
     document.body.classList.add('aide-on'); etat = 'prep'; peindre();
     if (job.enrolement_pret) return suite();
     try { await post('/api/jobs/' + jobId + '/enrolement/preparer', {}); } catch (err) { msg = err.message; etat = 'lot'; peindre(); return; }
@@ -1035,6 +1053,10 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     if (e.target.closest('#aidego')) { const w = $('#sepwrap'); if (w) w.classList.remove('open'); ouvrir(); return; }
     const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r, j = +b.dataset.j;
     if (a === 'fermer') fermer();
+    else if (a === 'plus-de') { collecter(); cible = b.dataset.n; etat = 'prep'; prog = 1; stage = T('Recherche', 'Searching'); peindre(); suite(); }
+    else if (a === 'retour-lot') { collecter(); cible = null; etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'voir-ech') { ouvert[b.dataset.n] = !ouvert[b.dataset.n]; peindre(); }
+    else if (a === 'retire-ech') { const l = echantillons(b.dataset.n), x = l[+b.dataset.i]; exemples.splice(exemples.indexOf(x), 1); collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
     else if (a === 'basc') basculer(k);
     else if (a === 'nudge') aller(k, player.currentTime + parseFloat(b.dataset.d));
     else if (a === 'boucle') { boucle = !boucle; peindre(); }

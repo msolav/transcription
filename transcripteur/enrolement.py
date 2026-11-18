@@ -208,8 +208,13 @@ def _mesures(personnes, amorces):
     return {"justes": justes, "sur": comptes}, seuils, suspects
 
 
-def classer(dossier: Path, exemples: list[dict], wav: Path | None = None) -> dict:
-    """Où en est-on, et quels passages montrer ensuite ?"""
+def classer(dossier: Path, exemples: list[dict], wav: Path | None = None,
+            vus: list | None = None, cible: str | None = None) -> dict:
+    """Où en est-on, et quels passages montrer ensuite ?
+
+    `vus` : indices de passages déjà montrés (nommés, coupés ou laissés de côté) —
+    jamais proposés deux fois. `cible` : le nom d'une personne dont on veut trouver
+    d'autres passages, pour étoffer son profil."""
     import numpy as np
     E = charger(dossier)
     n = len(E["a"])
@@ -225,7 +230,24 @@ def classer(dossier: Path, exemples: list[dict], wav: Path | None = None) -> dic
     rapport = {"personnes": personnes, "passages": n, "total_exemples": sum(len(v) for v in amorces.values()),
                "secondes": {p: round(float(sum(dur[k] for k, nom in etiquette.items() if nom == p)), 1)
                             for p in personnes}}
-    pris = set(etiquette)
+    pris = set(etiquette) | {int(i) for i in (vus or [])}
+
+    if cible and cible in personnes:
+        c = personnes.index(cible)
+        cand = [k for k in valides if k not in pris and dur[k] >= 1.5]
+        cand.sort(key=lambda k: -float(sims[k][c]))
+        choisis = []
+        for k in cand:
+            if all(abs(E["a"][k] - E["a"][j]) > 8 for j in choisis):
+                choisis.append(k)
+            if len(choisis) >= LOT * 2:
+                break
+        rapport["part_incertaine"] = None
+        rapport["etat"] = "profil"
+        rapport["cible"] = cible
+        return {"propositions": [passage(k, suggestion=cible, motif="profil",
+                                         conf=round(max(0.0, min(1.0, float(sims[k][c]))), 2))
+                                 for k in choisis], "rapport": rapport}
 
     if len(personnes) < 2:
         # Pas encore deux personnes : des passages aussi différents que possible,

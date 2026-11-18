@@ -240,3 +240,9 @@ doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
 - **Piège** : la page d'origine a son propre raccourci Espace (`#deck`) ; deux bascules s'annulaient. Le raccourci de l'écran d'identification est en phase de capture avec `stopImmediatePropagation`.
 - Une première version n'avait que « Écouter » et « Couper ici » sans position visible ni retour arrière : à reprendre comme exemple de ce qu'il ne faut pas livrer pour une tâche de découpe audio.
 - Test : `tlcheck.py` (faux lecteur à horloge simulée ; un vrai lecteur audio n'a pas été essayé).
+
+## 14. Profils par personne, fin des répétitions (v1.3.8)
+
+- **Cause des répétitions** : `classer` n'excluait que les passages entièrement nommés (≥ 85 % couverts). Un passage coupé ou laissé de côté revenait. Le client envoie maintenant `vus` (tous les passages montrés) et le serveur ne les repropose jamais.
+- `classer(..., vus, cible)` : avec `cible`, propose les passages les plus ressemblants au profil d'une personne (≥ 8 s d'écart entre eux) pour l'étoffer ; l'écran liste par personne ses échantillons (écouter, retirer) avec « Trouver plus de passages de X ».
+- **Limite de fond, non résolue** : les passages sont découpés sur les pauses, pas sur les changements de voix ; un passage peut mêler deux personnes et contaminer un profil. Retours réels : contrôle 46/66 sur 6 personnes avec 7 à 31 s d'exemples. Pistes : fenêtres plus courtes (1,5–3 s) avec vote, ou modèle d'empreintes plus discriminant, à mesurer sur un enregistrement annoté.
