@@ -23,11 +23,13 @@ import webbrowser
 from datetime import datetime, timezone
 from pathlib import Path
 
+from starlette.concurrency import run_in_threadpool
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
                                Response)
 
-from . import (assets, config, fournisseurs, guide, memoire, relecture,
+from . import (assets, config, fournisseurs, guide, journal, memoire,
+               routes_relecture,
                pipeline, sous_titres)
 from .pipeline import Cancelled, Options, PipelineError
 
@@ -35,6 +37,37 @@ STATIC_DIR = Path(__file__).parent / "static"
 MAX_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024  # 2 Go
 
 app = FastAPI(title="Transcripteur", docs_url=None, redoc_url=None)
+
+
+def _espace_libre(dossier: Path) -> int | None:
+    """Octets libres sur le volume qui porte `dossier`, ou None si inconnu."""
+    try:
+        p = dossier
+        while not p.exists() and p != p.parent:
+            p = p.parent
+        return shutil.disk_usage(p).free
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _message_disque(exc: BaseException) -> str:
+    import errno
+    if getattr(exc, "errno", None) == errno.ENOSPC:
+        return ("Le disque est plein. Libérer de la place (par exemple avec "
+                "« Jeter les sons » sur d'anciennes séances), puis réessayer.")
+    return f"Écriture impossible sur le disque : {exc}"
+
+
+@app.exception_handler(Exception)
+async def _erreur_inattendue(request, exc: Exception) -> JSONResponse:
+    """Toute erreur non prévue : écrite dans le journal, dite en clair.
+
+    Sans cela l'interface n'affichait que « Erreur 500 », sans la raison —
+    et sans aucune trace ailleurs, puisque l'application installée n'a
+    pas de terminal."""
+    journal.erreur(f"{request.method} {request.url.path}", exc)
+    message = _message_disque(exc) if isinstance(exc, OSError) else f"Erreur inattendue : {exc}"
+    return JSONResponse({"detail": message}, status_code=500)
 
 _jobs: dict[str, dict] = {}
 _lock = threading.Lock()
@@ -88,6 +121,8 @@ def _public(job: dict) -> dict:
         "names": job["names"],
         "notes": job["notes"][-12:],
         "relecture": job.get("relecture"),
+        "raffinage": job.get("raffinage"),
+        "enrolement_pret": bool(job.get("work_dir") and (Path(job["work_dir"]) / "enrolement.npz").exists()),
         "created_at": job["created_at"],
         # De quoi décider s'il y a lieu de proposer la séparation des
         # voix après coup, et s'il faudra redemander l'enregistrement.
@@ -228,31 +263,6 @@ def index_classique() -> HTMLResponse:
     return _page("index.html")
 
 
-def _expliquer_cle(exc: Exception, fournisseur: str) -> str:
-    """Rend un refus de clé lisible, en nommant d'où venait la clé.
-
-    Une variable d'environnement l'emporte sur le trousseau : une clé
-    révoquée oubliée dans un shell est envoyée à la place de la bonne, et
-    le message du fournisseur ne dit jamais laquelle il a reçue."""
-    message = str(exc)
-    if not message.startswith("CLE_REFUSEE::"):
-        return message
-    fiche = config.FOURNISSEURS.get(fournisseur, {})
-    source = config.source_cle(fournisseur)
-    ou = {"environnement": f"de la variable {fiche.get('env', '')}",
-          "trousseau": "du trousseau du système",
-          "simulation": "de la simulation de premier démarrage",
-          "fichier": "de l'ancien fichier de configuration"}.get(source, "de nulle part")
-    suite = ""
-    if source == "environnement":
-        suite = (f" Elle vient {ou}, qui l'emporte sur le trousseau : si une"
-                 f" clé valide y est enregistrée, relancer le programme après"
-                 f" « unset {fiche.get('env', '')} ».")
-    elif source:
-        suite = f" Elle vient {ou}."
-    return (f"Clé {fiche.get('nom', fournisseur)} refusée." + suite)
-
-
 def _empreinte_code() -> float:
     """Date du fichier source le plus récent de l'application.
 
@@ -317,7 +327,7 @@ def _numero(v: str) -> tuple:
 
 
 @app.get("/api/version")
-def version() -> dict:
+def version(force: bool = False) -> dict:
     """La version installée, et celle qui est publiée.
 
     Aucun identifiant n'est envoyé : la requête ne dit rien de plus que
@@ -325,6 +335,8 @@ def version() -> dict:
     site injoignable — on rend simplement « à jour » et l'interface se
     tait, plutôt que d'inquiéter avec une panne qui n'en est pas une."""
     from . import __version__ as installee
+    if force:                   # menu « Rechercher une mise à jour », revérification périodique
+        _VERSION_VUE.clear()
     if "resultat" in _VERSION_VUE:
         return _VERSION_VUE["resultat"]
 
@@ -350,6 +362,120 @@ def version() -> dict:
         "retard": retard, "url": SITE,
     }
     return _VERSION_VUE["resultat"]
+
+
+# ------------------------------------------------ mise à jour assistée
+#
+# Pas de remplacement automatique : les paquets ne sont pas signés, et un
+# programme qui s'écrase lui-même déclencherait les alertes du système.
+# On télécharge la bonne version, on la range dans Téléchargements, on la
+# montre : il reste à l'ouvrir.
+
+_MAJ: dict = {"etat": "repos", "octets": 0, "total": 0, "nom": "", "erreur": ""}
+
+
+def _plateforme() -> str:
+    import platform
+    import sys
+    if sys.platform == "darwin":
+        return "mac-silicon" if platform.machine() == "arm64" else "mac-intel"
+    if sys.platform.startswith("win"):
+        return "windows"
+    return "linux"
+
+
+def _telecharger_maj() -> None:
+    import urllib.request
+    try:
+        url = f"{SITE}/telecharger/{_plateforme()}"
+        requete = urllib.request.Request(
+            url, headers={"User-Agent": "Transcripteur"})
+        with urllib.request.urlopen(requete, timeout=30) as r:
+            nom = Path(url).name
+            cd = r.headers.get("content-disposition", "")
+            m = re.search(r'filename="?([^";]+)"?', cd)
+            if m:
+                nom = Path(m.group(1)).name
+            _MAJ.update(total=int(r.headers.get("content-length") or 0), nom=nom)
+            dossier = Path.home() / "Downloads"
+            if not dossier.is_dir():
+                dossier = Path.home()
+            cible = dossier / nom
+            n = 1
+            while cible.exists():
+                cible = dossier / f"{Path(nom).stem} ({n}){''.join(Path(nom).suffixes)}"
+                n += 1
+            partiel = cible.with_name(cible.name + ".part")
+            with open(partiel, "wb") as out:
+                while True:
+                    bloc = r.read(1024 * 256)
+                    if not bloc:
+                        break
+                    out.write(bloc)
+                    _MAJ["octets"] += len(bloc)
+            partiel.rename(cible)
+        _MAJ.update(etat="fini", nom=cible.name)
+        try:
+            import subprocess
+            import sys
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", "-R", str(cible)])
+            elif sys.platform.startswith("win"):
+                subprocess.Popen(["explorer", "/select,", str(cible)])
+            else:
+                subprocess.Popen(["xdg-open", str(dossier)])
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as exc:  # noqa: BLE001
+        _MAJ.update(etat="erreur", erreur=str(exc))
+
+
+@app.post("/api/mise-a-jour")
+def lancer_maj() -> dict:
+    if _MAJ["etat"] != "cours":
+        _MAJ.update(etat="cours", octets=0, total=0, nom="", erreur="")
+        threading.Thread(target=_telecharger_maj, daemon=True).start()
+    return dict(_MAJ)
+
+
+@app.get("/api/mise-a-jour")
+def etat_maj() -> dict:
+    return dict(_MAJ)
+
+
+@app.post("/api/enregistrer")
+def enregistrer_fichier(payload: dict) -> dict:
+    """Écrit un export dans le dossier Téléchargements, puis le montre.
+
+    La fenêtre de l'application (WebKit intégré) ignore l'attribut
+    `download` d'un lien interne : au lieu d'enregistrer, elle navigue
+    vers le texte et remplace toute l'interface. Le programme écrit donc
+    le fichier lui-même, sans passer par la fenêtre."""
+    nom = Path(str(payload.get("nom") or "transcription.txt")).name
+    nom = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "_", nom).strip(". ") or "transcription.txt"
+    texte = payload.get("texte")
+    if not isinstance(texte, str):
+        raise HTTPException(400, "Rien à enregistrer.")
+    dossier = Path.home() / "Downloads"
+    if not dossier.is_dir():
+        dossier = Path.home()
+    cible = dossier / nom
+    n = 1
+    while cible.exists():
+        cible = dossier / f"{Path(nom).stem} ({n}){Path(nom).suffix}"
+        n += 1
+    cible.write_text(texte, encoding="utf-8")
+    try:
+        import subprocess, sys
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(cible)])
+        elif sys.platform.startswith("win"):
+            subprocess.Popen(["explorer", "/select,", str(cible)])
+        else:
+            subprocess.Popen(["xdg-open", str(dossier)])
+    except Exception:  # noqa: BLE001
+        pass
+    return {"nom": cible.name, "dossier": dossier.name}
 
 
 @app.post("/api/ouvrir")
@@ -394,64 +520,93 @@ def aide(langue: str = "fr") -> HTMLResponse:
     return HTMLResponse(guide.page_html(langue))
 
 
-@app.post("/api/key")
-def save_key(payload: dict) -> dict:
-    """Enregistre une clé. `fournisseur` vaut groq par défaut."""
-    key = str(payload.get("key", ""))
-    f = str(payload.get("fournisseur") or "groq")
-    langue = "en" if str(payload.get("langue") or "fr") == "en" else "fr"
-    if f not in config.FOURNISSEURS:
-        raise HTTPException(400, "Fournisseur inconnu.")
-    problem = config.check_key(key, f, langue)
-    if problem:
-        raise HTTPException(400, problem)
-    config.set_key(key, f)
-    return {"cles": config.cles_presentes()}
+# ---------------------------------------- corriger et résumer
+
+class _DepotServeur:
+    """Ce que les routes partagées ont besoin de savoir d'ici.
+
+    Elles vivent dans routes_relecture parce que la bibliothèque les
+    sert aussi : on corrige et on résume aussi bien juste après une
+    transcription que des mois plus tard en rouvrant une séance. Deux
+    copies auraient fini par ne plus se ressembler."""
+
+    verrou = _lock
+
+    def lire(self, job_id: str):
+        return _jobs.get(job_id)
+
+    def retenir(self, job_id: str) -> None:
+        _retenir(job_id)
 
 
-@app.delete("/api/key")
-def forget_key(fournisseur: str = "groq") -> dict:
-    config.clear_key(fournisseur)
-    return {"cles": config.cles_presentes()}
-
-
-@app.get("/api/relecture/modeles")
-def modeles_relecture() -> dict:
-    """Les modèles de relecture, avec ce qu'ils exigent et ce qu'ils coûtent."""
-    cles = config.cles_presentes()
-    liste = []
-    for cle, m in fournisseurs.MODELES.items():
-        liste.append({
-            "cle": cle, "nom": m["nom"], "note": m["note"],
-            "fournisseur": m["fournisseur"],
-            "gratuit": not fournisseurs.payant(cle),
-            "dispo": bool(cles.get(m["fournisseur"])),
-            "un_appel": m["contexte"] > 100_000,
-        })
-    # Les utilisables d'abord, puis les gratuits.
-    liste.sort(key=lambda x: (not x["dispo"], not x["gratuit"]))
-    # La fiche de chaque fournisseur, augmentée de ce que l'écran de
-    # saisie doit dire : une clé Anthropic n'est pas gratuite, et
-    # l'annoncer comme telle serait un mensonge que la facture dément.
-    fiches = {}
-    for nom, f in config.FOURNISSEURS.items():
-        fiches[nom] = dict(f, gratuit=bool(
-            fournisseurs.CLES.get(nom, {}).get("gratuit")))
-    return {"modeles": liste, "defaut": fournisseurs.modele_par_defaut(cles),
-            "fournisseurs": fiches}
+routes_relecture.brancher(app, _DepotServeur())
 
 
 @app.get("/api/models")
 def list_models(langue: str = "") -> dict:
     """Le catalogue des modèles de voix, le plus adapté à la langue en tête.
 
-    L'ordre suit la langue d'entraînement de chaque modèle. Ce n'est pas un
-    classement de précision : départager deux modèles d'une même famille
-    demanderait un enregistrement annoté que nous n'avons pas."""
+    L'ordre suit d'abord la langue d'entraînement, puis la justesse
+    mesurée — c'est un classement de précision depuis qu'il en existe
+    une mesure, et le coût de calcul ne sert plus qu'à départager.
+    Voir outils/mesure_attribution.py."""
     return {"modeles": assets.inventaire(langue or None),
             "defaut": assets.DEFAULT_EMBEDDING,
             "nettoyeurs": assets.inventaire_debruiteurs(),
             "nettoyeur_defaut": assets.DEBRUITEUR_DEFAUT}
+
+
+_telechargements: dict[str, dict] = {}
+
+
+@app.post("/api/models/{cle}/telecharger")
+def telecharger_modele(cle: str) -> dict:
+    """Télécharge un modèle de voix, seul, depuis l'application installée."""
+    if cle not in assets.PAR_CLE:
+        raise HTTPException(404, "Modèle inconnu.")
+    if assets.est_telecharge(cle):
+        return {"etat": "pret"}
+    emp = assets.PAR_CLE[cle]
+    libre = _espace_libre(assets.MODELS_DIR)
+    if libre is not None and libre < emp.mo * 1048576 * 2:
+        raise HTTPException(507, f"Espace disque insuffisant : {libre / 1e9:.1f} Go libres, "
+                                 f"{emp.mo * 2 / 1000:.1f} Go nécessaires.")
+    with _lock:
+        etat = _telechargements.get(cle)
+        if etat and etat["en_cours"]:
+            return {"etat": "en_cours", "recu": etat["recu"], "total": etat["total"]}
+        etat = _telechargements[cle] = {"en_cours": True, "recu": 0, "total": int(emp.mo * 1048576), "erreur": None}
+
+    def progression(recu: int, total: int) -> None:
+        etat["recu"], etat["total"] = recu, total
+
+    def travail() -> None:
+        try:
+            assets.telecharger_modele(cle, progression)
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur(f"téléchargement du modèle {cle}", exc)
+            etat["erreur"] = (_message_disque(exc) if isinstance(exc, OSError)
+                              else f"Le téléchargement a échoué : {exc}")
+        finally:
+            etat["en_cours"] = False
+
+    threading.Thread(target=travail, daemon=True).start()
+    return {"etat": "en_cours", "recu": 0, "total": etat["total"]}
+
+
+@app.get("/api/models/{cle}/etat")
+def etat_modele(cle: str) -> dict:
+    if cle not in assets.PAR_CLE:
+        raise HTTPException(404, "Modèle inconnu.")
+    if assets.est_telecharge(cle):
+        return {"etat": "pret"}
+    etat = _telechargements.get(cle)
+    if not etat:
+        return {"etat": "absent"}
+    if etat["erreur"]:
+        return {"etat": "erreur", "erreur": etat["erreur"]}
+    return {"etat": "en_cours" if etat["en_cours"] else "absent",
+            "recu": etat["recu"], "total": etat["total"]}
 
 
 @app.post("/api/jobs")
@@ -462,6 +617,9 @@ async def create_job(
     diarize: str = Form("true"),
     embedding: str = Form(""),
     denoise: str = Form(""),
+    raffiner: str = Form(""),
+    stt: str = Form(""),
+    vocabulaire: str = Form(""),
 ) -> JSONResponse:
     def as_int(value: str) -> int | None:
         value = (value or "").strip()
@@ -469,6 +627,15 @@ async def create_job(
 
     if not config.get_key("groq"):
         raise HTTPException(400, "Aucune clé Groq enregistrée.")
+    # La clé est éprouvée avant tout travail : sinon un refus de Groq ne se
+    # découvre qu'à l'étape de transcription, après des heures de calcul.
+    try:
+        _verdict = await run_in_threadpool(
+            config.check_key, config.get_key("groq"), "groq")
+    except Exception:  # noqa: BLE001
+        _verdict = None
+    if _verdict:
+        raise HTTPException(400, _verdict if isinstance(_verdict, str) else str(_verdict))
 
     job_id = uuid.uuid4().hex[:12]
     # Dans le dossier de données et non dans un dossier temporaire. Le
@@ -478,19 +645,37 @@ async def create_job(
     # fichiers s'accumulaient hors de vue. Ici on sait ce qu'ils pèsent
     # et on peut les jeter.
     work_dir = memoire.seances_dir() / job_id
+    # L'espace est vérifié avant d'écrire quoi que ce soit : un disque plein
+    # se manifestait par un envoi qui s'arrête à moitié, puis « Erreur 500 ».
+    # Le besoin est estimé : la copie, l'audio converti (≈ 4 fois le fichier
+    # compressé) et les tranches envoyées à Groq.
+    taille = getattr(file, "size", None)
+    if taille:
+        besoin = int(taille * 6) + 300 * 1024 * 1024
+        libre = _espace_libre(work_dir.parent)
+        if libre is not None and libre < besoin:
+            raise HTTPException(
+                507, f"Espace disque insuffisant : {libre / 1e9:.1f} Go libres, "
+                     f"environ {besoin / 1e9:.1f} Go nécessaires. Libérer de la "
+                     f"place, ou utiliser « Jeter les sons » sur d'anciennes séances.")
     work_dir.mkdir(parents=True, exist_ok=True)
     suffix = Path(file.filename or "audio").suffix or ".bin"
     source = work_dir / f"source{suffix}"
 
     written = 0
-    with open(source, "wb") as out:
-        while chunk := await file.read(1024 * 1024):
-            written += len(chunk)
-            if written > MAX_UPLOAD_BYTES:
-                out.close()
-                shutil.rmtree(work_dir, ignore_errors=True)
-                raise HTTPException(413, "Fichier trop volumineux (limite : 2 Go).")
-            out.write(chunk)
+    try:
+        with open(source, "wb") as out:
+            while chunk := await file.read(1024 * 1024):
+                written += len(chunk)
+                if written > MAX_UPLOAD_BYTES:
+                    out.close()
+                    shutil.rmtree(work_dir, ignore_errors=True)
+                    raise HTTPException(413, "Fichier trop volumineux (limite : 2 Go).")
+                out.write(chunk)
+    except OSError as exc:
+        shutil.rmtree(work_dir, ignore_errors=True)
+        journal.erreur("envoi du fichier", exc)
+        raise HTTPException(507, _message_disque(exc)) from exc
 
     if written == 0:
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -524,7 +709,10 @@ async def create_job(
         diarize=diarize.lower() != "false",
         embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
+        raffiner=raffiner == "1",
         api_key=config.get_key("groq"),
+        stt=stt if stt in ("precis", "rapide") else "",
+        vocabulaire=vocabulaire.strip()[:2000],
     )
 
     # Les réglages sont retenus par l'interface, qui les lit sur les
@@ -532,159 +720,6 @@ async def create_job(
     # serveur se contente de les ranger et de les rendre.
     threading.Thread(target=_run_job, args=(job_id, options), daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
-
-
-def _run_relecture(job_id: str, attribution: bool, texte: bool, modele: str,
-                   contexte: str = "") -> None:
-    """Relit un transcript déjà produit, dans un fil à part.
-
-    Rien n'est appliqué ici : on range des propositions que l'interface
-    affiche côte à côte avec l'original. C'est l'utilisateur qui tranche."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        return
-
-    def note(message: str, remplacer: bool = False) -> None:
-        """Ajoute une ligne au journal, ou récrit la dernière.
-
-        Le décompte d'une attente de quota s'écrit une fois par seconde :
-        empilé, il chasserait tout le reste du journal en une minute.
-        Remplacé, il tient sur sa ligne et le contexte reste lisible."""
-        with _lock:
-            lignes = list(job["relecture"]["notes"])
-            if remplacer and lignes:
-                lignes[-1] = message
-            else:
-                lignes.append(message)
-            job["relecture"]["notes"] = lignes[-12:]
-
-    def stop() -> bool:
-        with _lock:
-            r = job.get("relecture") or {}
-        return bool(r.get("cancel"))
-
-    try:
-        blocs, noms = job["blocks"], job["names"]
-        corrections = []
-        if attribution:
-            corrections += relecture.corriger_attribution(
-                blocs, noms, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte, stop=stop)
-        if texte:
-            corrections += relecture.corriger_texte(
-                blocs, config.get_key(fournisseurs.fournisseur_de(modele)),
-                modele, note=note, contexte=contexte, stop=stop)
-        apercu = relecture.appliquer(blocs, corrections, noms) if corrections else blocs
-        with _lock:
-            job["relecture"].update(status="done", corrections=corrections, blocks=apercu)
-    except relecture.Annulee:
-        # Les corrections déjà trouvées sont conservées : une passe
-        # d'attribution terminée vaut quelque chose même si l'on arrête
-        # avant celle du texte, et l'interface peut les proposer.
-        apercu = (relecture.appliquer(blocs, corrections, noms)
-                  if corrections else blocs)
-        with _lock:
-            job["relecture"].update(status="cancelled", corrections=corrections,
-                                    blocks=apercu, cancel=False)
-    except Exception as exc:  # noqa: BLE001
-        with _lock:
-            job["relecture"].update(status="error", error=str(exc))
-
-
-@app.get("/api/relecture")
-def relecture_options() -> dict:
-    cles = config.cles_presentes()
-    return {
-        "modeles": [{"cle": k, "nom": v["nom"], "note": v["note"],
-                     "dispo": bool(cles.get(v["fournisseur"]))}
-                    for k, v in fournisseurs.MODELES.items()],
-        "defaut": fournisseurs.modele_par_defaut(cles),
-        "resumes": [{"cle": k, "nom": v["nom"], "apercu": v["apercu"]}
-                    for k, v in relecture.RESUMES.items()],
-        "resume_defaut": relecture.RESUME_DEFAUT,
-    }
-
-
-@app.get("/api/jobs/{job_id}/cout")
-def cout_relecture(job_id: str, attribution: int = 1, texte: int = 1) -> dict:
-    """Estimation avant de lancer, pour ne pas épuiser un quota sans le voir."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Tâche inconnue.")
-    return {"jetons": relecture.estimer_jetons(
-        job["blocks"], bool(attribution), bool(texte)),
-        "blocs": len(job["blocks"])}
-
-
-@app.post("/api/jobs/{job_id}/relire")
-def relire(job_id: str, payload: dict) -> dict:
-    with _lock:
-        job = _jobs.get(job_id)
-        if not job:
-            raise HTTPException(404, "Tâche inconnue.")
-        if job["status"] != "done":
-            raise HTTPException(400, "La transcription n'est pas terminée.")
-        if job.get("relecture", {}) and job["relecture"].get("status") == "running":
-            raise HTTPException(409, "Une relecture est déjà en cours.")
-        job["relecture"] = {"status": "running", "notes": [], "corrections": [],
-                            "blocks": [], "error": None}
-    threading.Thread(
-        target=_run_relecture,
-        args=(job_id, bool(payload.get("attribution", True)),
-              bool(payload.get("texte", True)),
-              str(payload.get("modele") or fournisseurs.modele_par_defaut(config.cles_presentes())),
-              str(payload.get("contexte") or "")),
-        daemon=True).start()
-    return {"ok": True}
-
-
-@app.post("/api/jobs/{job_id}/resume")
-def resume(job_id: str, payload: dict) -> dict:
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job:
-        raise HTTPException(404, "Tâche inconnue.")
-    if job["status"] != "done":
-        raise HTTPException(400, "La transcription n'est pas terminée.")
-    blocs = job["relecture"]["blocks"] if (job.get("relecture") or {}).get("blocks") \
-        else job["blocks"]
-    modele = str(payload.get("modele")
-                 or fournisseurs.modele_par_defaut(config.cles_presentes()))
-    try:
-        texte = relecture.resumer(blocs, job["names"],
-                                  config.get_key(fournisseurs.fournisseur_de(modele)),
-                                  str(payload.get("forme") or relecture.RESUME_DEFAUT),
-                                  modele,
-                                  str(payload.get("contexte") or ""))
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(
-            502, "Résumé impossible : "
-            + _expliquer_cle(exc, fournisseurs.fournisseur_de(modele))) from exc
-    return {"texte": texte}
-
-
-@app.post("/api/jobs/{job_id}/appliquer")
-def appliquer(job_id: str, payload: dict) -> dict:
-    """Ré-applique un sous-ensemble de corrections.
-
-    L'utilisateur décoche ce qu'il refuse ; on recalcule à partir de
-    l'original, jamais à partir de la version déjà corrigée, sinon les
-    refus successifs s'empileraient sur un texte déjà modifié."""
-    with _lock:
-        job = _jobs.get(job_id)
-    if not job or not job.get("relecture"):
-        raise HTTPException(404, "Aucune relecture pour cette tâche.")
-    gardees = payload.get("corrections") or []
-    try:
-        apercu = relecture.appliquer(job["blocks"], gardees, job["names"])
-    except Exception as exc:  # noqa: BLE001
-        raise HTTPException(400, f"Corrections inapplicables : {exc}") from exc
-    with _lock:
-        job["relecture"]["blocks"] = apercu
-    _retenir(job_id)
-    return {"blocks": apercu}
 
 
 def _run_voix(job_id: str, options: Options, mots: list, duree: float) -> None:
@@ -721,6 +756,11 @@ def _run_voix(job_id: str, options: Options, mots: list, duree: float) -> None:
         anciens = job["blocks"]
         _set(job_id, status="running", stage="Séparation des voix",
              progress=0.0, error=None, cancel=False)
+        # Le journal de la transcription n'a rien à faire ici : on repart d'une page blanche.
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"] = []
         try:
             resultat = pipeline.separer_voix(src, work_dir, options, mots,
                                              duree, progress, notify, stop)
@@ -758,6 +798,7 @@ async def separer_voix(
     speakers: str = Form(""),
     embedding: str = Form(""),
     denoise: str = Form(""),
+    raffiner: str = Form(""),
     language: str = Form(""),
 ) -> JSONResponse:
     """Sépare les voix d'un transcript existant, à partir de son audio.
@@ -817,6 +858,7 @@ async def separer_voix(
         diarize=True,
         embedding="auto" if embedding == "auto" else assets.resoudre(embedding),
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
+        raffiner=raffiner == "1",
         # Facultative : elle ne sert qu'à reconnaître la langue quand le
         # modèle de voix est laissé en automatique.
         api_key=config.get_key("groq"),
@@ -829,6 +871,293 @@ async def separer_voix(
                      args=(job_id, options, mots, float(job["duration"] or 0.0)),
                      daemon=True).start()
     return JSONResponse({"id": job_id}, status_code=202)
+
+
+def _run_guide(job_id: str, options: Options, noms: dict, exemples: list,
+               duree: float) -> None:
+    """Raffine d'après les noms et les exemples, dans un fil à part.
+
+    Même principe que `_run_voix` : le travail se fait sur la tâche elle-même,
+    les blocs d'origine servent de filet, et rien n'est écrit tant que le
+    calcul n'a pas abouti. Les empreintes sont gardées dans la séance :
+    relancer après avoir ajouté un exemple prend quelques secondes."""
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None or job["status"] == "cancelled":
+            return
+        src = Path(job["source"])
+        work_dir = Path(job["work_dir"])
+
+        def progress(stage: str, ratio: float) -> None:
+            _set(job_id, stage=stage, progress=ratio)
+
+        def notify(message: str) -> None:
+            with _lock:
+                current = _jobs.get(job_id)
+                if current is not None:
+                    current["notes"].append(message)
+                    del current["notes"][:-60]
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+
+        anciens = job["blocks"]
+        avant = (job.get("raffinage") or {}).get("part_incertaine")
+        _set(job_id, status="running", stage="Raffinage des voix",
+             progress=0.0, error=None, cancel=False)
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"] = []
+        try:
+            resultat, noms_finaux, rapport = pipeline.raffiner_selon_noms(
+                src, work_dir, options, anciens, noms, exemples, duree,
+                progress, notify, stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Raffinage annulé",
+                 progress=1.0, blocks=anciens)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Raffinage abandonné",
+                 progress=1.0, blocks=anciens, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("raffinage guidé", exc)
+            _set(job_id, status="done", stage="Raffinage abandonné",
+                 progress=1.0, blocks=anciens,
+                 error=f"Erreur inattendue : {exc}")
+            return
+
+        rapport["part_avant"] = avant
+        _set(job_id, status="done", stage="Terminé", progress=1.0,
+             duration=resultat.duration, speakers=resultat.speakers,
+             blocks=resultat.blocks, names=noms_finaux, raffinage=rapport,
+             sans_audio=False, relecture=None)
+        _retenir(job_id)
+
+
+@app.post("/api/jobs/{job_id}/raffiner-noms")
+async def raffiner_noms(job_id: str, payload: dict) -> JSONResponse:
+    """Raffine la séparation des voix d'après les noms et des exemples désignés.
+
+    `payload` : {"noms": {id_de_voix: nom}, "exemples": [{"start", "end",
+    "nom"}], "langue": ""}. Rien n'est renvoyé à Groq : seul le son est lu."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    if job["status"] not in ("done", "error"):
+        raise HTTPException(400, "Un traitement est déjà en cours.")
+    ancien = Path(job["source"]) if job.get("source") else None
+    if not (ancien and ancien.exists()):
+        raise HTTPException(
+            400, "L'enregistrement n'est plus sur cette machine. Il faut le "
+                 "fournir de nouveau (« Raffiner les voix », puis choisir le fichier).")
+    if not pipeline.mots_des_blocs(job["blocks"]):
+        raise HTTPException(400, "Ce transcript ne porte pas les horodatages des mots.")
+    noms = {str(k): str(v) for k, v in (payload.get("noms") or {}).items()}
+    exemples = []
+    for e in payload.get("exemples") or []:
+        try:
+            exemples.append({"start": float(e["start"]), "end": float(e["end"]),
+                             "nom": str(e.get("nom") or "")})
+        except (KeyError, TypeError, ValueError):
+            continue
+    if len({n.strip() for n in noms.values() if n.strip()}
+           | {e["nom"].strip() for e in exemples if e["nom"].strip()}) < 2:
+        raise HTTPException(400, "Il faut nommer au moins deux personnes pour raffiner.")
+    options = Options(language=(payload.get("langue") or "").strip() or None,
+                      diarize=True, embedding="auto", denoise="",
+                      api_key=config.get_key("groq"), raffiner=True)
+    threading.Thread(target=_run_guide,
+                     args=(job_id, options, noms, exemples, float(job["duration"] or 0.0)),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+def _contexte_enrolement(job_id: str, exiger_pret: bool = False):
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    if job["status"] not in ("done", "error"):
+        raise HTTPException(400, "Un traitement est déjà en cours.")
+    src = Path(job["source"]) if job.get("source") else None
+    if not (src and src.exists()):
+        raise HTTPException(
+            400, "L'enregistrement n'est plus sur cette machine. Il faut le fournir "
+                 "de nouveau pour identifier les voix.")
+    if not pipeline.mots_des_blocs(job["blocks"]):
+        raise HTTPException(400, "Ce transcript ne porte pas les horodatages des mots.")
+    work_dir = Path(job["work_dir"])
+    if exiger_pret and not (work_dir / "enrolement.npz").exists():
+        raise HTTPException(400, "Les empreintes ne sont pas encore calculées.")
+    return job, src, work_dir
+
+
+def _exemples(payload: dict) -> list:
+    sortie = []
+    for e in payload.get("exemples") or []:
+        try:
+            sortie.append({"start": float(e["start"]), "end": float(e["end"]),
+                           "nom": str(e.get("nom") or "").strip()})
+        except (KeyError, TypeError, ValueError):
+            continue
+    return sortie
+
+
+def _notifier(job_id: str):
+    def notify(message: str) -> None:
+        with _lock:
+            current = _jobs.get(job_id)
+            if current is not None:
+                current["notes"].append(message)
+                del current["notes"][:-60]
+    return notify
+
+
+def _run_enrol_prep(job_id: str, options: Options, duree: float) -> None:
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None:
+            return
+        src, work_dir = Path(job["source"]), Path(job["work_dir"])
+        anciens = job["blocks"]
+        _set(job_id, status="running", stage="Empreintes des voix", progress=0.0,
+             error=None, cancel=False)
+        with _lock:
+            job["notes"] = []
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+        try:
+            pipeline.preparer_enrolement(
+                src, work_dir, options, anciens, duree,
+                lambda stage, ratio: _set(job_id, stage=stage, progress=ratio),
+                _notifier(job_id), stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Préparation annulée", progress=1.0)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Préparation abandonnée", progress=1.0, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("préparation de l'identification des voix", exc)
+            _set(job_id, status="done", stage="Préparation abandonnée", progress=1.0,
+                 error=f"Erreur inattendue : {exc}")
+            return
+        _set(job_id, status="done", stage="Empreintes prêtes", progress=1.0, enrolement_pret=True)
+
+
+def _run_enrol_fin(job_id: str, options: Options, exemples: list) -> None:
+    with _gate:
+        job = _jobs.get(job_id)
+        if job is None:
+            return
+        src, work_dir = Path(job["source"]), Path(job["work_dir"])
+        anciens = job["blocks"]
+        _set(job_id, status="running", stage="Attribution des voix", progress=0.0,
+             error=None, cancel=False)
+        with _lock:
+            job["notes"] = []
+
+        def stop() -> bool:
+            current = _jobs.get(job_id)
+            return current is None or current.get("cancel", False)
+        try:
+            resultat, noms = pipeline.terminer_enrolement(
+                src, work_dir, options, anciens, exemples,
+                lambda stage, ratio: _set(job_id, stage=stage, progress=ratio),
+                _notifier(job_id), stop)
+        except Cancelled:
+            _set(job_id, status="done", stage="Attribution annulée", progress=1.0, blocks=anciens)
+            return
+        except (PipelineError, ValueError) as exc:
+            _set(job_id, status="done", stage="Attribution abandonnée", progress=1.0,
+                 blocks=anciens, error=str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur("attribution des voix", exc)
+            _set(job_id, status="done", stage="Attribution abandonnée", progress=1.0,
+                 blocks=anciens, error=f"Erreur inattendue : {exc}")
+            return
+        _set(job_id, status="done", stage="Terminé", progress=1.0,
+             duration=resultat.duration, speakers=resultat.speakers,
+             blocks=resultat.blocks, names=noms, sans_audio=False, relecture=None)
+        _retenir(job_id)
+
+
+def _options_enrol(payload: dict) -> Options:
+    return Options(language=(payload.get("langue") or "").strip() or None, diarize=True,
+                   embedding="auto", denoise="", api_key=config.get_key("groq"), raffiner=True)
+
+
+@app.post("/api/jobs/{job_id}/enrolement/preparer")
+async def enrolement_preparer(job_id: str, payload: dict | None = None) -> JSONResponse:
+    """Calcule l'empreinte de chaque passage de parole (quelques minutes)."""
+    job, src, work_dir = _contexte_enrolement(job_id)
+    threading.Thread(target=_run_enrol_prep,
+                     args=(job_id, _options_enrol(payload or {}), float(job["duration"] or 0.0)),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+@app.post("/api/jobs/{job_id}/enrolement/classer")
+async def enrolement_classer(job_id: str, payload: dict) -> dict:
+    """Où en est-on d'après les exemples, et quels passages montrer ensuite."""
+    from . import enrolement
+    job, src, work_dir = _contexte_enrolement(job_id, exiger_pret=True)
+    wav = work_dir / "audio16k.wav"
+    try:
+        return await run_in_threadpool(enrolement.classer, work_dir, _exemples(payload),
+                                       wav if wav.exists() else None,
+                                       payload.get("vus") or [], payload.get("cible") or None)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/jobs/{job_id}/enrolement/terminer")
+async def enrolement_terminer(job_id: str, payload: dict) -> JSONResponse:
+    """Attribue chaque mot d'après les exemples, et remplace le texte à une voix."""
+    job, src, work_dir = _contexte_enrolement(job_id, exiger_pret=True)
+    exemples = _exemples(payload)
+    if len({e["nom"] for e in exemples if e["nom"]}) < 2:
+        raise HTTPException(400, "Il faut au moins deux personnes avec des exemples.")
+    threading.Thread(target=_run_enrol_fin, args=(job_id, _options_enrol(payload), exemples),
+                     daemon=True).start()
+    return JSONResponse({"id": job_id}, status_code=202)
+
+
+@app.get("/api/jobs/{job_id}/forme")
+def forme_d_onde(job_id: str, start: float = 0.0, end: float = 0.0, n: int = 600) -> dict:
+    """L'enveloppe du son sur [start, end] : `n` valeurs entre 0 et 1.
+
+    Lue dans l'audio converti de la séance (celui qu'écrit la préparation de
+    l'identification des voix), sans rien recalculer ailleurs. Sert à dessiner
+    la forme d'onde, qui donne des repères pour couper."""
+    import wave
+    import numpy as np
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(404, "Traitement introuvable.")
+    wav = Path(job["work_dir"]) / "audio16k.wav"
+    if not wav.exists():
+        raise HTTPException(404, "L'audio converti n'est pas disponible.")
+    n = max(50, min(int(n), 3000))
+    with wave.open(str(wav), "rb") as w:
+        sr = w.getframerate()
+        total = w.getnframes()
+        a = max(0, int(start * sr))
+        b = min(total, int((end if end > start else total / sr) * sr))
+        if b - a < n:
+            return {"pics": [0.0] * n}
+        w.setpos(a)
+        brut = w.readframes(b - a)
+    x = np.abs(np.frombuffer(brut, dtype=np.int16).astype(np.float32)) / 32768.0
+    pas = len(x) // n
+    pics = x[: pas * n].reshape(n, pas).max(axis=1)
+    m = float(pics.max()) or 1.0
+    return {"pics": [round(float(v) / m, 3) for v in pics]}
 
 
 @app.post("/api/jobs/import")
@@ -996,25 +1325,6 @@ def cancel_job(job_id: str) -> dict:
     return {"status": _jobs[job_id]["status"]}
 
 
-@app.post("/api/jobs/{job_id}/relire/annuler")
-def annuler_relecture(job_id: str) -> dict:
-    """Demande l'arrêt de la relecture en cours.
-
-    Un drapeau, relu entre chaque fenêtre et pendant les attentes de
-    quota. Ces attentes durent de vingt à soixante-quinze secondes et
-    c'est là qu'on veut arrêter, puisque c'est là qu'il ne se passe
-    rien : elles sont donc découpées en quarts de seconde."""
-    with _lock:
-        job = _jobs.get(job_id)
-        if not job:
-            raise HTTPException(404, "Tâche inconnue.")
-        r = job.get("relecture") or {}
-        if r.get("status") == "running":
-            r["cancel"] = True
-            r["notes"] = (r.get("notes") or []) + ["arrêt demandé"]
-        return {"status": r.get("status") or "none"}
-
-
 @app.delete("/api/jobs/{job_id}")
 def delete_job(job_id: str) -> dict:
     """Retire une tâche de la mémoire vive.
@@ -1079,6 +1389,21 @@ def effacer_seance(seance_id: str) -> dict:
         _jobs.pop(seance_id, None)
     return {"efface": memoire.oublier(seance_id),
             "place": memoire.place_occupee()}
+
+
+@app.delete("/api/seances")
+def tout_effacer(audio_seulement: int = 0) -> dict:
+    """Vide la bibliotheque, ou seulement ses enregistrements.
+
+    `audio_seulement=1` garde tous les textes et ne jette que le son :
+    c'est la purge presque sans regret, puisque les transcripts ne
+    pesent rien et que l'audio est tout le poids. Sans ce parametre,
+    tout part — et rien ne revient."""
+    with _lock:
+        _jobs.clear()
+    bilan = (memoire.liberer_tous_audios() if audio_seulement
+             else memoire.tout_oublier())
+    return {**bilan, "place": memoire.place_occupee()}
 
 
 @app.delete("/api/seances/{seance_id}/audio")

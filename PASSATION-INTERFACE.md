@@ -177,3 +177,99 @@ env -i HOME=/tmp/fakehome python -m transcripteur --port 7992 --no-browser   # s
 ```
 Tester à 1440×900, 1280×720 et 390×844 : `document.documentElement.scrollHeight - innerHeight`
 doit valoir 0 sur chaque écran du parcours. Faire une capture par étape.
+
+## 6. Mise à jour du 17 novembre (après une transcription de 2 h perdue)
+
+- `server.py` : la clé Groq est éprouvée (`config.check_key`) avant de lancer un traitement.
+- `pipeline.py` : la demande d'arrêt est surveillée toutes les 0,2 s (lecture du processus de séparation dans un fil). À vérifier avec une vraie séparation.
+- Interface : bouton « Clés » dans la barre, « Changer la clé » dans l'alerte, durée restante + heure de fin sous le pourcentage, interrupteur « Détails » (journal en direct), titre à taille stable (plus de mise à l'échelle automatique), séparation forcée à « aucune » si l'interrupteur est éteint au lancement.
+- **À examiner côté serveur** : l'estimation affichée avant le lancement (« Environ 18 min » pour un fichier de 45,8 Mo sans séparation) paraît trop haute ; revoir `couts` dans `/api/health`. Une transcription seule devrait prendre quelques minutes.
+- L'application installée (`/Applications/Transcripteur.app`) ne contient aucun de ces correctifs tant que le paquet n'est pas reconstruit.
+- Séparer les voix après coup : bouton « Séparer les voix » dans la barre (visible seulement si le transcript n'a qu'une voix) → `POST /api/jobs/{id}/voix` (nombre de voix Auto/1–8), même écran de progression, ETA, Arrêter, Détails. Si l'audio n'est plus sur la machine, le sélecteur de fichier s'ouvre. Éprouvé seulement contre une simulation de la route.
+- Barre d'actions : les sous-options d'« Enregistrer » ont un autre registre (mono capitales, couleur de signal, trait vertical) que les actions de la barre.
+- Écart à vérifier : l'application empaquetée affiche « Sous-titres nommés » ; le `index-vm.html` construit ici n'a pas cette entrée (Texte / Sous-titres / Données). Reporter dans `body2.html` si le serveur la gère.
+
+## 7. v1.3.1 : raffiner la séparation des voix, mise à jour assistée
+
+- `transcripteur/raffinage.py` : passe de raffinage après la séparation de base, dans le même processus (`diariseur.py`, donc arrêtable). Empreintes des extraits, regroupement d'abord des extraits longs (≥ 2,5 s), profils moyens, classement du reste avec marge de confiance (un extrait court incertain prend la voix de son voisin), deux tours de recalcul. Le nombre de voix imposé prime ; sinon il est cherché au plus grand écart de similarité entre fusions. Option `raffiner` (`Options.raffiner`, champ de formulaire `raffiner=1` sur `/api/jobs` et `/api/jobs/{id}/voix`), interrupteur dans l'interface (retenu dans localStorage `tr-refine`), défaut éteint.
+- **Mesure** (`outils/mesure_raffinage.py`, deux enregistrements à la vérité connue, quatre modèles) : avec le nombre imposé, le raffinage rattrape l'effondrement de « VoxCeleb CAM++ » (1 voix pour 2 ou 3 demandées → 2 et 3) ; en détection libre il égale la base (5 bonnes réponses sur 8, ni mieux ni pire). Justesse tour par tour non mesurée : il manque un enregistrement annoté. À faire avant de le mettre par défaut.
+- Mise à jour assistée : `POST/GET /api/mise-a-jour` télécharge `SITE/telecharger/<plateforme>` dans Téléchargements et le montre ; bouton dans la bannière de `seances.js`. Pas de remplacement automatique (paquets non signés).
+- Les exports (`/api/enregistrer`) s'écrivent depuis le programme : la fenêtre intégrée ignore `download`.
+
+## 8. Menus Mac et mise à jour continue (non livré, après v1.3.1)
+
+- `fenetre.py::_menus` : menus de la barre du haut sous macOS seulement. Entrées « Rechercher une mise à jour… » et « Clés et services… » dans le menu Transcripteur (via `Menu("__app__")`), Fichier, Actions, Aide. Chaque entrée appelle `window.trMenu(action)` (défini dans `build2.py`), qui clique le bouton existant. Sans `menu=` (pywebview ancien, autre système) la fenêtre s'ouvre comme avant.
+- **pywebview 6.2.1 ne porte aucun raccourci clavier sur ses entrées de menu** (la touche est vide) : ⌘O, ⌘S, ⌘N et ⌘, sont gérés dans la page, seulement quand `window.pywebview` existe. Les menus Édition (copier/coller) et Présentation sont ajoutés par pywebview.
+- Non vérifié : l'aspect réel des menus (aucun accès à la barre de menus depuis les tests) et si `#pick.click()` lancé depuis un menu, sans geste de l'utilisateur, ouvre bien le sélecteur de fichier dans WebKit.
+- Mise à jour : indicateur « Mise à jour disponible » dans la barre (`#majbtn`), visible sur tous les écrans ; revérification toutes les 3 h ; `/api/version?force=1` ignore la réponse gardée en mémoire ; notification `#toast` visible partout.
+
+## 9. Après le disque plein du 17 novembre (v1.3.2 en préparation)
+
+- **Cause probable du plantage et de « Erreur 500 »** : disque plein (un envoi arrêté à 13,6 Mo sur 48, « No space left on device »). Le programme ne vérifiait rien et n'écrivait aucun journal.
+- `server.py` : espace libre vérifié avant l'envoi (≈ 6 fois la taille du fichier + 300 Mo, sinon 507 avec le chiffre) ; une écriture qui échoue pour manque de place est dite en clair et nettoie le dossier partiel ; un gestionnaire d'erreurs général remplace « Erreur 500 » par la raison et écrit la trace.
+- `transcripteur/journal.py` : `journal.log` dans le dossier de données (macOS : `~/Library/Application Support/Transcripteur/`), tourne à 2 Mo, jamais bloquant. `pipeline.log` y écrit aussi. **À proposer dans l'interface** : un lien « Ouvrir le journal ».
+- **Bug corrigé** : l'import `run_in_threadpool` manquait depuis la v1.3 ; la vérification de la clé au départ ne s'exécutait donc jamais (erreur avalée par le `try`). Elle fonctionne maintenant, mais elle bloque aussi quand Groq est injoignable : à confirmer que c'est voulu.
+- Séances enregistrées : la liste ne dépasse plus ce qui tient sous le titre ; au-delà, bouton « Toutes les séances (N) » → liste pleine fenêtre paginée (`body.sc-all`). Corrige le titre poussé sous l'en-tête quand la liste avait 2 lignes ou plus.
+
+## 10. Raffiner avec l'aide de l'utilisateur (v1.3.3 en préparation)
+
+- **Confiance** : `raffinage._niveau_conf` (écart de ressemblance entre la meilleure voix et la suivante, 0–1). Posée sur chaque passage (`block["conf"]`, `pipeline.attacher_confiance`), marquée « ? » dans le texte sous 0,3. **Mesure d'ambiguïté, pas probabilité d'exactitude, non calibrée** (aucun enregistrement annoté pour le faire).
+- **`raffinage.raffiner_guide`** : profils construits à partir d'exemples (noms donnés aux voix + passages désignés, éventuellement coupés), pas d'un regroupement calculé. Les exemples dissemblables sont écartés et signalés, sauf ceux que l'utilisateur a désignés (`forts`). Une voix sans nom reste une voix à part. **Empreintes gardées dans `empreintes.npz`** (dossier de la séance) : relancer après un nouvel exemple prend des secondes.
+- `pipeline.raffiner_selon_noms`, route `POST /api/jobs/{id}/raffiner-noms` ({noms, exemples:[{start,end,nom}]}), `_run_guide`. `job.raffinage` = rapport (`part_incertaine`, `part_avant`, `secondes_exemples`, `incertains`).
+- Interface (`build2.py`, bloc « Raffiner avec votre aide ») : onglets « Qui est qui » et « Passages à vérifier » (les plus incertains d'abord, avec « Écouter » et « Couper ici » à l'instant de la lecture pour dire qui parle quand), repères pour s'arrêter (≈ 20 s d'exemples par personne, part incertaine < 5 % : **repères indicatifs, non validés**).
+- **Pas fait** : propositions automatiques de coupes (détecter les changements de voix dans un extrait) ; tests sur une vraie réunion (seulement des enregistrements de test de quelques secondes) ; mesure de la justesse tour par tour.
+
+## 11. Identifier les voix AVANT l'analyse (refonte du raffinage guidé, v1.3.4 en préparation)
+
+- **Pourquoi** : demander de nommer les groupes d'une séparation déjà faite revient à nommer des voix pêle-mêle. Le nouveau flux part du texte (même à une seule voix) : empreintes de chaque passage de parole (`enrolement.preparer`, minutes, gardées dans `enrolement.npz` + `enrolement.json`), puis des passages sont proposés pour qu'on dise qui parle (coupes possibles, nouvelles personnes ajoutées au fil de l'eau), puis tout est classé d'après ces exemples (`enrolement.etiqueter`). Aucune séparation lourde.
+- Routes : `POST /api/jobs/{id}/enrolement/preparer` (fil, suivi par `GET /api/jobs/{id}?light=1`), `/enrolement/classer` (synchrone, secondes), `/enrolement/terminer` (fil). `pipeline.preparer_enrolement` / `terminer_enrolement`. L'audio converti `audio16k.wav` reste dans la séance (≈ 170 Mo pour 1 h 30) pour les extraits coupés.
+- Propositions : d'abord des passages aussi différents que possible (échantillonnage du plus éloigné) tant qu'il y a moins de deux personnes ; ensuite ceux qui ressemblent le moins à une voix connue, puis ceux qui hésitent. Suggestion de nom affichée en pointillés.
+- **Confiance, corrigée** : l'ancienne (écart entre les deux meilleures voix) restait élevée même pour un passage qui ne ressemble à personne. Elle est remplacée par : ressemblance absolue à la voix retenue comparée à celle des exemples de cette personne (10e centile) ; **contrôle sur les exemples** (chacun retiré, profils refaits, la bonne personne ressort-elle ? « 17 fois sur 20 ») ; exemples suspects signalés ; taux de suggestions confirmées. Reste une mesure relative aux exemples donnés : exemples faux ou mélangés, confiance trompeuse.
+- Ancien chemin `raffiner-noms` / `raffiner_guide` conservé côté serveur, plus appelé par l'interface.
+- **Pas testé sur une vraie réunion** (enregistrements de test de quelques secondes).
+
+## 12. Accueil : un seul choix « Voix » (v1.3.5 en préparation)
+
+- Le champ 02 devient un choix à trois options : **Texte seul** / **Avec mon aide** (défaut, retenu dans `localStorage` `tr-modevoix`) / **Automatique**. Seul « Automatique » ouvre les réglages de l'ancienne séparation (nombre de voix, raffinage). Le vrai interrupteur `#sep` reste dans le DOM (masqué) pour ne pas toucher à la logique d'origine : le sélecteur le pilote.
+- « Avec mon aide » : le traitement part sans séparation, et dès que le texte est prêt (`tick`, branche `done`) l'identification des voix s'ouvre d'elle-même (`window.ouvrirIdentification`). Le choix pris **au lancement** (`window.__identifierApres`) fait foi, pas celui d'après.
+- Les essais Playwright posent `tr-modevoix` via `harness.install(mode=...)` (défaut `aucune`) ; `modecheck.py` couvre les trois modes.
+
+## 13. Identification : ligne du temps et transport (v1.3.7)
+
+- Chaque passage a une **ligne du temps** (tête de lecture, clic pour se placer, morceaux colorés par personne, coupes déplaçables par glissement, double-clic pour en supprimer) et un **transport** : Lecture/Pause, ±0,5 s, ±2 s, Boucle, « Couper à la position », « Écouter ce morceau ». Clavier : Espace, C, ← →.
+- **Piège** : la page d'origine a son propre raccourci Espace (`#deck`) ; deux bascules s'annulaient. Le raccourci de l'écran d'identification est en phase de capture avec `stopImmediatePropagation`.
+- Une première version n'avait que « Écouter » et « Couper ici » sans position visible ni retour arrière : à reprendre comme exemple de ce qu'il ne faut pas livrer pour une tâche de découpe audio.
+- Test : `tlcheck.py` (faux lecteur à horloge simulée ; un vrai lecteur audio n'a pas été essayé).
+
+## 14. Profils par personne, fin des répétitions (v1.3.8)
+
+- **Cause des répétitions** : `classer` n'excluait que les passages entièrement nommés (≥ 85 % couverts). Un passage coupé ou laissé de côté revenait. Le client envoie maintenant `vus` (tous les passages montrés) et le serveur ne les repropose jamais.
+- `classer(..., vus, cible)` : avec `cible`, propose les passages les plus ressemblants au profil d'une personne (≥ 8 s d'écart entre eux) pour l'étoffer ; l'écran liste par personne ses échantillons (écouter, retirer) avec « Trouver plus de passages de X ».
+- **Limite de fond, non résolue** : les passages sont découpés sur les pauses, pas sur les changements de voix ; un passage peut mêler deux personnes et contaminer un profil. Retours réels : contrôle 46/66 sur 6 personnes avec 7 à 31 s d'exemples. Pistes : fenêtres plus courtes (1,5–3 s) avec vote, ou modèle d'empreintes plus discriminant, à mesurer sur un enregistrement annoté.
+
+## 15. v1.3.9 : identification plus lisible, panneau de nom flottant
+
+- Identification : un passage à la fois, un rang de noms pour le morceau sélectionné (clic sur la ligne du temps), noms en couleur, retrait d'une personne, **les coupes gardent les noms** (`insererCoupe` / `retirerCoupe` décalent les numéros de morceaux), complétude par profil (20 s et 3 échantillons = suffisant, 40 s et 4 = solide : **repères non validés**), forme d'onde (`GET /api/jobs/{id}/forme?start&end&n`, enveloppe tirée de `audio16k.wav`), deux colonnes profils / passage.
+- Bug corrigé : le message « Peu d'exemples… » comptait les secondes autrement que les profils (seulement les passages nommés en entier). Un seul calcul, `secondesDe`.
+- Texte : cliquer sur un nom ne ramène plus en haut ; `#flotnom` flotte et reste ouvert pendant la lecture. On y réattribue UNE réplique (`window.__corrections`) et on peut raffiner d'après exemples + corrections (route `enrolement/terminer`). Les exemples ne survivent qu'en mémoire (`window.__exemplesVoix`) : à persister côté serveur.
+- Lecteur : `jumpReply` redéfini sur les répliques affichées (`.turn[data-ts]`), « Début » recale page et suivi. Le défaut de « Début » rapporté par l'utilisateur n'a pas été reproduit en test (faux lecteur).
+- **Pas encore fait** : exemples négatifs (« ce n'est pas X ») ; sélection de plages dans tout l'enregistrement ; temps de préparation des empreintes (10–15 min sur 1 h 33).
+
+## 16. v1.3.10 : plages d'une seule voix (fenêtres fines)
+
+- **Demande** : proposer les plus longues plages où une seule voix parle, pour nommer moins de passages. Les passages de 2,5–7 s (coupés sur les pauses) enjambent souvent un changement de voix (sur `long.wav`, 33 passages sur 48 mêlés d'après la référence) ; les regrouper entre eux donnait 56 % de pureté, soit le hasard pour 2 voix.
+- `enrolement.fenetres` : empreinte de fenêtres de 2 s, pas de 2 s (`FEN`, `PAS_FEN`), sur la parole seule, gardées dans `enrolement.npz` (`fa fb fz fok`). **Coût mesuré** (ERes2Net, 4 cœurs) : ≈ 42 ms par fenêtre ; ≈ +2 min pour 1 h 33 avec un pas de 2 s (un pas de 1 s coûtait le double, pureté équivalente, couverture 99 % au lieu de 93 %).
+- `seuil_fenetres` : seuil « même voix » **sans étiquette** (Otsu sur 6000 paires de fenêtres éloignées, + 0,05 pour privilégier la pureté). Une première idée (calibrer sur les passages coupés par la durée maximale) donnait un seuil trop bas : abandonnée, gardée en repli (`seuil_meme_voix`, `plages`) pour les séances préparées avant les fenêtres.
+- `plages_fines` : suites de fenêtres proches du profil moyen de la plage, rognées de 0,5 s aux bouts, 60 s au plus. `classer` les propose (début : les plus longues et les plus différentes ; classement : les plus longues douteuses ; profil : les plus ressemblantes à la personne), exclut en temps les passages déjà vus ; la réponse porte `indices` (tous les passages recouverts, à ajouter aux « vus »), `nb`, `solide`.
+- **Mesures** (4 voix de synthèse, vérité exacte, donc OPTIMISTES : des voix humaines proches se séparent moins bien) : longs blocs (12–17 s) → 30 plages, 0 mêlée, pureté 99 %, 93 % des blocs vrais couverts par une seule plage ; changements denses (2,5–8 s) → 54 plages dont 13 mêlées (13/54), aucune ≥ 10 s. Sur `long.wav` (conversation réelle rapide) : plages de 10 s au plus, pureté 89–97 % d'après la référence (approximative).
+- **Limite** : la longueur des plages dépend de l'enregistrement (réunion à échanges rapides = plages courtes). Avec peu de plages, le premier lot peut rester sous 4.
+- À faire : coupes suggérées dans une plage douteuse ; mesurer sur une vraie réunion annotée.
+
+## 17. v1.3.11 : interruptions, reconnaissance des mots, modèles à la demande
+
+- **Défaut trouvé** : `etiqueter` donnait à chaque mot l'étiquette de son PASSAGE (≤ 7 s). Une interruption au milieu d'un passage n'était jamais vue. Mesure sur un montage à vérité connue (voix de synthèse, optimiste) : mots des interruptions de 1,5–3 s justes **0 %** avant.
+- **Correctif** (`enrolement._etiqueter_fin`) : chaque fenêtre de 2 s est classée sur les profils (construits sur les fenêtres entièrement dans les exemples) ; lissage de Viterbi (`SWITCH`, 0,12, moitié moins après un silence) ; chaque coupure est posée sur la pause la plus longue ou la fin de phrase entre deux fenêtres (`coupure`, comme des sous-titres) ; **seconde passe** (`_zones_douteuses`) : là où l'écart entre les deux meilleures voix est faible (< `ZONE_CONF` 0,6), empreintes de 1 s (pas 0,5 s) et nouveau lissage. Sans fenêtres fines (séance préparée avant v1.3.10) : ancienne méthode par passage.
+- **Mesures** (4 voix de synthèse, vérité exacte) : montage à interruptions : mots justes 71,8 → 87,1 % ; mots des interruptions 0 → 35,6 % (118 mots) ; changements rapprochés : 66,3 → 94,2 %. **Les interruptions restent majoritairement manquées** (64 % des mots des segments ≤ 3 s). Pas plus fin (1 s), lissage plus léger, zones élargies : pas de gain sûr, abandonnés. Voix humaines proches : moins bien, non mesuré. La coupe sur pause n'est testée qu'avec des mots synthétiques sans pauses réelles.
+- **Reconnaissance des mots** : `GROQ_MODEL` (turbo) ne sert plus qu'à reconnaître la langue ; la transcription utilise `STT_DEFAUT = whisper-large-v3` (option « Rapide » = turbo) et un champ **vocabulaire** envoyé comme `prompt` Whisper (`amorce_vocabulaire`, 600 caractères au plus). Repli automatique sur l'autre modèle si Groq refuse celui-ci (retiré du catalogue). Réglages retenus dans `localStorage` (`tr-stt`, `tr-vocab`). **Rien n'a été comparé sur de l'audio réel** (pas de clé Groq utilisée) : le gain annoncé repose sur la différence connue entre large-v3 et turbo.
+- **Modèles à la demande** : ResNet152/221/293 (WeSpeaker, même source) ajoutés au catalogue, hors paquet ; `POST /api/models/{cle}/telecharger` et `GET /api/models/{cle}/etat` ; bouton « Télécharger ce modèle maintenant » sous la liste. Vitesses mesurées par fenêtre de 2 s : CAM++ 29 ms, ResNet34 50, ERes2Net 54, ResNet152 104, ResNet221 159, ResNet293 209. **Justesse non mesurée** (0.0 : derrière les modèles mesurés dans le classement automatique).
+- À faire : comparer les modèles de voix sur les exemples de l'utilisateur (les garder côté serveur) ; mesurer la reconnaissance de mots sur un extrait de la vraie réunion (avec accord, l'audio part chez Groq) ; coupes suggérées.

@@ -10,6 +10,7 @@ qui ne tourne que si une clé est présente."""
 import sys, json
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+from transcripteur import routes_relecture as rr
 from transcripteur import fournisseurs as f, relecture as r
 
 ok = rate = 0
@@ -156,7 +157,7 @@ v("un 401 est reconnu comme refus de clé", isinstance(refus, f.FournisseurError
 avant = os.environ.get("GEMINI_API_KEY")
 try:
     os.environ["GEMINI_API_KEY"] = "périmée"
-    m = srv._expliquer_cle(refus, "google")
+    m = rr.expliquer_cle(refus, "google")
     v("la variable d'environnement est nommée",
       "GEMINI_API_KEY" in m and "unset" in m, m[:70])
     v("et le conflit avec le trousseau est expliqué", "emporte" in m, m[:70])
@@ -166,7 +167,7 @@ finally:
     else:
         os.environ["GEMINI_API_KEY"] = avant
 v("une panne ordinaire n'est pas déguisée en refus de clé",
-  srv._expliquer_cle(RuntimeError("réseau coupé"), "google") == "réseau coupé")
+  rr.expliquer_cle(RuntimeError("réseau coupé"), "google") == "réseau coupé")
 
 # ---- la pause est bien reprise, pas fatale
 essais = []

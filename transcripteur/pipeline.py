@@ -19,8 +19,39 @@ from pathlib import Path
 from typing import Callable
 
 from . import assets
+from .texte import join_words  # noqa: F401  (réexporté : d'autres l'importent d'ici)
 
-GROQ_MODEL = "whisper-large-v3-turbo"
+GROQ_MODEL = "whisper-large-v3-turbo"   # reconnaissance de la langue : vite fait sur une minute
+# Reconnaissance des mots. Le turbo est une version allégée de Whisper : plus rapide, et moins
+# juste, surtout hors de l'anglais. La version complète est le réglage par défaut depuis que
+# l'usage a montré des mots mal reconnus « très fréquents » sur des réunions en français.
+STT_PRECIS = "whisper-large-v3"
+STT_RAPIDE = "whisper-large-v3-turbo"
+STT_DEFAUT = STT_PRECIS
+
+
+def modele_stt(choix: str | None) -> str:
+    """« precis » ou « rapide » (ou un nom de modèle) vers le nom du modèle Groq."""
+    c = (choix or "").strip().lower()
+    if c in ("rapide", "turbo", STT_RAPIDE):
+        return STT_RAPIDE
+    return STT_PRECIS if c in ("", "precis", "précis", STT_PRECIS) else choix.strip()
+
+
+def amorce_vocabulaire(vocabulaire: str, limite: int = 600) -> str:
+    """Le texte d'amorce qui rend à Whisper les noms propres et les termes du métier.
+
+    Whisper lit ce texte comme ce qui vient d'être dit et s'en sert pour orthographier. Il
+    en retient environ 224 jetons : on coupe à 600 caractères, à une virgule."""
+    mots = [m.strip() for m in (vocabulaire or "").replace("\n", ",").replace(";", ",").split(",") if m.strip()]
+    if not mots:
+        return ""
+    texte = ""
+    for m in mots:
+        if len(texte) + len(m) + 2 > limite:
+            break
+        texte += (", " if texte else "") + m
+    return texte + "."
 
 DEFAULT_MAX_MB = 24
 SAMPLE_SECONDS = 6.0
@@ -174,6 +205,8 @@ _stop = None         # interrogé régulièrement pour savoir s'il faut s'arrêt
 def log(message: str) -> None:
     """Trace dans la fenêtre du programme et dans l'interface."""
     print(f"  [{time.time() - _started:6.1f}s] {message}", flush=True)
+    from . import journal
+    journal.ecrire(message)
     if _notify:
         _notify(message)
 
@@ -571,7 +604,7 @@ def _commande_diariseur() -> list[str] | None:
 
 
 def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
-                     seuil: float, avance) -> list | None:
+                     seuil: float, avance, raffiner: bool = False) -> list | None:
     """Sépare les voix dans un processus qu'on peut tuer.
 
     Rend None si c'est impossible — l'appelant calcule alors sur place."""
@@ -594,7 +627,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
             w.writeframes((np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes())
 
         args = commande + [chemin, str(seg_model), str(emb_model),
-                           str(nombre), str(seuil), str(DIARIZE_THREADS)]
+                           str(nombre), str(seuil), str(DIARIZE_THREADS),
+                           '1' if raffiner else '0']
         # PYTHONPATH explicite : un sous-processus n'hérite pas des
         # modifications de sys.path du parent, et `-m transcripteur…`
         # échouait alors selon le dossier courant — sans un mot, puisque
@@ -620,15 +654,28 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
             # lit par blocs et ne rend la main qu'une fois son tampon
             # rempli, ce qui retardait la lecture de la demande d'arrêt
             # de plusieurs secondes.
+            # La lecture se fait dans un fil à part : readline() bloque tant
+            # que l'enfant n'écrit rien, et pendant un long calcul il
+            # n'écrit rien — la demande d'arrêt n'était vue qu'à la ligne
+            # suivante, parfois des minutes plus tard.
+            import queue, threading
+            file = queue.Queue()
+            def _lire():
+                for l in iter(proc.stdout.readline, ""):
+                    file.put(l)
+                file.put(None)
+            threading.Thread(target=_lire, daemon=True).start()
             while True:
-                ligne = proc.stdout.readline()
-                if not ligne:
-                    break
+                try:
+                    ligne = file.get(timeout=0.2)
+                except queue.Empty:
+                    ligne = ""
+                    vide = True
+                else:
+                    vide = False
+                    if ligne is None:
+                        break
                 if _stop and _stop():
-                    # SIGTERM ne peut pas être traité tant que l'appel
-                    # C++ n'a pas rendu la main à Python : attendre cinq
-                    # secondes ne faisait qu'ajouter cinq secondes. Le
-                    # travail est jetable, on tue.
                     proc.terminate()
                     try:
                         proc.wait(timeout=0.5)
@@ -636,12 +683,18 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
                         proc.kill()
                         proc.wait()
                     raise Cancelled()
+                if vide:
+                    continue
                 ligne = ligne.strip()
                 if ligne.startswith("P "):
                     _, faits, total = ligne.split()
                     avance(int(faits), int(total))
                 elif ligne.startswith("R "):
                     tours = [tuple(t) for t in json.loads(ligne[2:])]
+                elif ligne.startswith("L "):
+                    log(ligne[2:])
+                elif ligne.startswith("C "):
+                    _CONF["v"] = json.loads(ligne[2:])
                 elif ligne.startswith("E "):
                     erreur = ligne[2:]
         finally:
@@ -669,7 +722,8 @@ def _diariser_dehors(audio, seg_model, emb_model, nombre: int,
 def diarize(audio, num_speakers: int | None, progress: Progress,
             span: tuple[float, float],
             threshold: float = CLUSTER_THRESHOLD,
-            embedding: str = "standard") -> list[tuple[float, float, str]]:
+            embedding: str = "standard",
+            raffiner: bool = False) -> list[tuple[float, float, str]]:
     try:
         import sherpa_onnx
     except ImportError as exc:
@@ -695,8 +749,8 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         )
 
     low, high = span
-    log(f"modèle « {assets.PAR_CLE[assets.resoudre(embedding)].nom} » chargé "
-        f"sur {DIARIZE_THREADS} cœurs, analyse du signal")
+    log(f"modèle chargé sur {DIARIZE_THREADS} cœurs, analyse du signal"
+        + (" — raffinage activé : séparation de base d'abord (80 % de la barre), puis raffinage (20 %)" if raffiner else ""))
 
     def avance(done: int, total: int) -> None:
         progress(f"Séparation des voix {int(100 * done / max(total, 1))} %",
@@ -708,8 +762,9 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
     # exception levée depuis ce rappel est avalée par la couche C++. Sur
     # une réunion de deux heures, « Arrêter » ne pouvait donc rien
     # pendant les trois quarts d'heure que dure cette étape.
+    _CONF["v"] = None
     turns = _diariser_dehors(audio, seg_model, emb_model, num_speakers or -1,
-                             threshold, avance)
+                             threshold, avance, raffiner)
     if turns is None:
         # Pas de processus séparé possible : on calcule ici, en sachant
         # que l'arrêt ne sera lu qu'à la fin.
@@ -723,6 +778,14 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         result = engine.process(audio, callback=report).sort_by_start_time()
         turns = [(float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}")
                  for r in result]
+        if raffiner and turns:
+            ext = sherpa_onnx.SpeakerEmbeddingExtractor(
+                sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                    model=str(emb_model), num_threads=DIARIZE_THREADS))
+            from . import raffinage
+            confs: list = []
+            turns = raffinage.raffiner(audio, turns, ext, num_speakers or -1, None, log, confs)
+            _CONF["v"] = confs
     if not turns:
         raise PipelineError("Aucune parole détectée dans ce fichier.")
     trouvees = len({t[2] for t in turns})
@@ -762,14 +825,17 @@ def diarize(audio, num_speakers: int | None, progress: Progress,
         if len({t[2] for t in repris}) > 1:
             log(f"{len({t[2] for t in repris})} voix en détection libre, "
                 f"{len(repris)} tours")
+            _CONF["v"] = None
             return repris
         log("la détection libre ne trouve pas mieux : une seule voix")
+        _CONF["v"] = None
 
     return turns
 
 
 def diarize_auto(audio, progress: Progress, span: tuple[float, float],
-                 threshold: float, embedding: str = "standard"):
+                 threshold: float, embedding: str = "standard",
+                 raffiner: bool = False):
     """Détection automatique, avec garde-fou sur le nombre de voix.
 
     Sur un enregistrement bruité ou à plusieurs micros, le regroupement
@@ -778,7 +844,7 @@ def diarize_auto(audio, progress: Progress, span: tuple[float, float],
     resserre le seuil et on recommence."""
     attempt = 0
     while True:
-        turns = diarize(audio, None, progress, span, threshold, embedding)
+        turns = diarize(audio, None, progress, span, threshold, embedding, raffiner)
         found = len({t[2] for t in turns})
         if found <= MAX_AUTO_SPEAKERS or attempt >= AUTO_RETRIES:
             if found > MAX_AUTO_SPEAKERS:
@@ -794,7 +860,8 @@ def diarize_auto(audio, progress: Progress, span: tuple[float, float],
 # Transcription
 # --------------------------------------------------------------------------
 
-def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: str) -> list[dict]:
+def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: str,
+                     modele: str | None = None, vocabulaire: str = "") -> list[dict]:
     try:
         from groq import Groq
     except ImportError as exc:
@@ -808,12 +875,16 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
 
     params = dict(
         file=(chunk.name, payload),
-        model=GROQ_MODEL,
+        model=modele_stt(modele),
         response_format="verbose_json",
         timestamp_granularities=["word", "segment"],
     )
     if language:
         params["language"] = language
+    amorce = amorce_vocabulaire(vocabulaire)
+    if amorce:
+        params["prompt"] = amorce
+    bascule = False
 
     dernier = None
     for essai in range(GROQ_RETRIES):
@@ -826,6 +897,17 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
                 raise PipelineError("Clé Groq refusée. Corrige-la dans les réglages.") from exc
             if "429" in message or "rate_limit" in message:
                 raise PipelineError("Quota Groq atteint. Réessaie dans quelques minutes.") from exc
+            # Un modèle retiré du catalogue de Groq : on bascule une fois sur l'autre plutôt
+            # que d'échouer, et on le dit.
+            bas = message.lower()
+            if (not bascule and "model" in bas
+                    and any(x in bas for x in ("decommission", "not found", "does not exist",
+                                               "no longer supported", "404"))):
+                autre = STT_RAPIDE if params["model"] != STT_RAPIDE else STT_PRECIS
+                log(f"modèle {params['model']} refusé par Groq : reprise avec {autre}")
+                params["model"] = autre
+                bascule = True
+                continue
             # Un dépassement de délai ou une coupure réseau se rejoue ;
             # perdre une heure de calcul pour un envoi qui a échoué une
             # fois serait absurde.
@@ -871,7 +953,8 @@ def transcribe_all(chunks, options: "Options", progress: Progress,
     if total == 1:
         progress("Transcription", low)
         words = transcribe_chunk(chunks[0][0], chunks[0][1],
-                                 options.language, options.api_key)
+                                 options.language, options.api_key,
+                                 options.stt, options.vocabulaire)
         chunks[0][0].unlink(missing_ok=True)
         return words
 
@@ -881,7 +964,8 @@ def transcribe_all(chunks, options: "Options", progress: Progress,
     with ThreadPoolExecutor(max_workers=TRANSCRIBE_WORKERS) as pool:
         futures = {
             pool.submit(transcribe_chunk, path, offset,
-                        options.language, options.api_key): (index, path)
+                        options.language, options.api_key,
+                        options.stt, options.vocabulaire): (index, path)
             for index, (path, offset) in enumerate(chunks)
         }
         for future in as_completed(futures):
@@ -1142,6 +1226,34 @@ def assign_speakers(words: list[dict], turns) -> list[str]:
     return snap_boundaries(labels, words)
 
 
+# Niveau de confiance par tour du dernier raffinage, dans l'ordre des tours :
+# la séparation tourne dans un processus à part qui le renvoie sur une ligne.
+_CONF: dict = {"v": None}
+
+
+def attacher_confiance(blocks: list[dict], turns, confs) -> None:
+    """Pose sur chaque passage la confiance moyenne des tours qui le recouvrent.
+
+    0 = le passage hésite entre plusieurs voix, 1 = il ressemble nettement à
+    une seule. C'est une mesure d'ambiguïté, pas une probabilité."""
+    if not confs or len(confs) != len(turns):
+        return
+    import bisect
+    ordre = sorted(range(len(turns)), key=lambda i: turns[i][0])
+    debuts = [turns[i][0] for i in ordre]
+    for b in blocks:
+        total = poids = 0.0
+        i = max(0, bisect.bisect_right(debuts, b["start"]) - 3)
+        while i < len(ordre) and debuts[i] < b["end"]:
+            a, e, _ = turns[ordre[i]]
+            ov = min(b["end"], e) - max(b["start"], a)
+            if ov > 0:
+                total += ov * confs[ordre[i]]
+                poids += ov
+            i += 1
+        b["conf"] = round(float(total / poids), 2) if poids else None
+
+
 def build_blocks(words: list[dict], turns) -> list[dict]:
     labels = assign_speakers(words, turns)
 
@@ -1197,15 +1309,10 @@ def decouper_sans_voix(words: list[dict]) -> list[dict]:
     return [b for b in blocs if b["text"]]
 
 
-def join_words(words: list[dict]) -> str:
-    """Recolle les mots avec des espaces, sans en mettre avant la ponctuation."""
-    out = ""
-    for word in words:
-        text = word["text"]
-        if out and not (text[:1] in ",.;:!?…%)]}" or out[-1:] in "\u2019'([{"):
-            out += " "
-        out += text
-    return out.strip()
+# join_words vit maintenant dans texte.py, qui n'importe rien : c'est
+# ce qui permet a sous_titres — et a la bibliotheque — de s'en servir
+# sans entrainer tout ce module derriere eux. Il reste importable
+# d'ici, puisque relecture.py et d'autres l'y cherchent encore.
 
 
 def speaker_profiles(turns, blocks, src: Path, out_dir: Path) -> list[dict]:
@@ -1276,7 +1383,10 @@ class Options:
     diarize: bool = True
     embedding: str = "standard"
     denoise: str = ""     # "" = pas de nettoyage
+    raffiner: bool = False  # raffiner la séparation des voix (voir raffinage.py)
     api_key: str = ""
+    stt: str = ""           # "" ou "precis" : whisper-large-v3 ; "rapide" : le turbo
+    vocabulaire: str = ""   # noms et termes à orthographier, séparés par des virgules
 
 
 @dataclass
@@ -1376,18 +1486,18 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
             langue = detect_language(audio, options.api_key)
             log(f"langue détectée : {langue or 'indéterminée'}")
         embedding = assets.resoudre_pour_langue(langue)
-        log(f"modèle choisi : {assets.PAR_CLE[embedding].nom}")
 
     progress("Séparation des voix", voix[0])
     if options.num_speakers:
-        log(f"séparation des voix, {options.num_speakers} demandées "
-            f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
+        log(f"séparation des voix : {options.num_speakers} demandées, modèle "
+            f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
         turns = diarize(audio, options.num_speakers, progress, voix,
-                        CLUSTER_THRESHOLD, embedding)
+                        CLUSTER_THRESHOLD, embedding, options.raffiner)
     else:
-        log("séparation des voix, nombre à déterminer")
+        log("séparation des voix : nombre à déterminer, modèle "
+            f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
         turns = diarize_auto(audio, progress, voix,
-                             CLUSTER_THRESHOLD, embedding)
+                             CLUSTER_THRESHOLD, embedding, options.raffiner)
     del audio
     wav.unlink(missing_ok=True)
     checkpoint()
@@ -1399,6 +1509,7 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
 
     progress("Assemblage", part["assemblage"][0])
     blocks = build_blocks(mots, turns)
+    attacher_confiance(blocks, turns, _CONF["v"] if options.raffiner else None)
     log(f"{len(blocks)} passages attribués")
     progress("Extraits d'écoute", sum(part["assemblage"]) / 2)
     profiles = speaker_profiles(turns, blocks, src, work_dir)
@@ -1407,6 +1518,170 @@ def separer_voix(src: Path, work_dir: Path, options: Options,
     log("terminé")
     progress("Terminé", 1.0)
     return Result(duration=duration, blocks=blocks, speakers=profiles)
+
+
+def raffiner_selon_noms(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        noms: dict, exemples: list[dict], duree_attendue: float = 0.0,
+                        progress: Progress = _noop, notify=None, stop=None):
+    """Raffine d'après ce que la personne sait : les noms donnés aux voix et
+    des passages dont elle a dit qui parle (éventuellement coupés à l'intérieur
+    d'un passage).
+
+    Les voix qui portent le même nom sont une seule personne. Une voix sans nom
+    reste une voix à part : elle n'est jamais absorbée en silence. Les passages
+    désignés à la main font foi sur le reste."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import raffinage
+
+    mots = mots_des_blocs(blocs)
+    if not mots:
+        raise PipelineError("Ce transcript ne contient pas les horodatages des mots : "
+                            "il faut repartir de l'audio.")
+    progress("Conversion", 0.02)
+    wav = work_dir / "audio16k.wav"
+    to_wav16k(src, wav)
+    audio = read_wav16k(wav)
+    duration = len(audio) / 16000.0
+    log(f"durée : {duration / 60:.1f} min")
+    repere = duree_attendue or max(m["end"] for m in mots)
+    if abs(duration - repere) > TOLERANCE_DUREE:
+        wav.unlink(missing_ok=True)
+        raise PipelineError(f"Cet enregistrement dure {duration / 60:.1f} min, le transcript "
+                            f"en couvre {repere / 60:.1f} : ce n'est pas le même fichier.")
+    checkpoint()
+
+    embedding = options.embedding
+    if embedding == "auto":
+        embedding = assets.resoudre_pour_langue(options.language)
+    _, emb_model = assets.ensure_models(embedding, note=log)
+    try:
+        import sherpa_onnx
+    except ImportError as exc:
+        raise PipelineError("sherpa-onnx n'est pas installé.") from exc
+    extracteur = sherpa_onnx.SpeakerEmbeddingExtractor(
+        sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+            model=str(emb_model), num_threads=DIARIZE_THREADS))
+
+    tours = sorted(((b["start"], b["end"], b["speaker"]) for b in blocs), key=lambda t: t[0])
+    graines: dict = {}
+    forts: dict = {}
+    for b in blocs:
+        nom = (noms.get(b["speaker"]) or "").strip()
+        graines.setdefault(nom or "#" + b["speaker"], []).append((b["start"], b["end"]))
+    for e in exemples:
+        nom = (e.get("nom") or "").strip()
+        if not nom:
+            continue
+        a, z = float(e["start"]), float(e["end"])
+        # Ce que la personne a désigné l'emporte sur le reste : on retire des
+        # autres voix les passages qu'il recouvre.
+        for autre in list(graines):
+            if autre != nom:
+                graines[autre] = [(x, y) for x, y in graines[autre] if min(y, z) - max(x, a) <= 0]
+        graines.setdefault(nom, []).append((a, z))
+        forts.setdefault(nom, []).append((a, z))
+    graines = {k: v for k, v in graines.items() if v}
+    log(f"{len(noms and [n for n in noms.values() if n])} voix nommées, {len(exemples)} exemples désignés")
+
+    turns, confs, etiquettes, rapport = raffinage.raffiner_guide(
+        audio, tours, extracteur, graines,
+        avance=lambda f: progress("Raffinage des voix", 0.05 + 0.9 * f),
+        dire=log, controle=checkpoint, forts=forts,
+        cache=work_dir / "empreintes.npz")
+    del audio
+    wav.unlink(missing_ok=True)
+    checkpoint()
+
+    blocks = build_blocks(mots, turns)
+    attacher_confiance(blocks, turns, confs)
+    log(f"{len(blocks)} passages attribués")
+    progress("Extraits d'écoute", 0.97)
+    profiles = speaker_profiles(turns, blocks, src, work_dir)
+    noms_finaux = {sid: (n if not n.startswith("#") else "") for sid, n in etiquettes.items()}
+    log("terminé")
+    progress("Terminé", 1.0)
+    return Result(duration=duration, blocks=blocks, speakers=profiles), noms_finaux, rapport
+
+
+def _modele_empreintes(options: Options) -> str:
+    embedding = options.embedding
+    if embedding == "auto":
+        embedding = assets.resoudre_pour_langue(options.language)
+    _, emb_model = assets.ensure_models(embedding, note=log)
+    return str(emb_model)
+
+
+def preparer_enrolement(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        duree_attendue: float = 0.0, progress: Progress = _noop,
+                        notify=None, stop=None) -> int:
+    """Première étape de l'identification des voix : l'empreinte de chaque passage de parole.
+
+    Rapide (quelques minutes), contrairement à la séparation complète, et gardée
+    dans la séance : la suite — proposer des passages, classer — prend des secondes.
+    L'audio converti reste dans la séance pour les extraits que la personne coupe."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import enrolement
+
+    mots = mots_des_blocs(blocs)
+    if not mots:
+        raise PipelineError("Ce transcript ne contient pas les horodatages des mots : "
+                            "il faut repartir de l'audio.")
+    progress("Conversion", 0.03)
+    wav = work_dir / "audio16k.wav"
+    to_wav16k(src, wav)
+    duration = wav.stat().st_size / 32000.0
+    repere = duree_attendue or max(m["end"] for m in mots)
+    log(f"durée : {duration / 60:.1f} min")
+    if abs(duration - repere) > TOLERANCE_DUREE:
+        wav.unlink(missing_ok=True)
+        raise PipelineError(f"Cet enregistrement dure {duration / 60:.1f} min, le transcript "
+                            f"en couvre {repere / 60:.1f} : ce n'est pas le même fichier.")
+    checkpoint()
+    modele = _modele_empreintes(options)
+    n = enrolement.preparer(wav, mots, modele, work_dir,
+                            avance=lambda f: progress("Empreintes des voix", 0.05 + 0.93 * f),
+                            dire=log, controle=checkpoint)
+    progress("Terminé", 1.0)
+    return n
+
+
+def terminer_enrolement(src: Path, work_dir: Path, options: Options, blocs: list[dict],
+                        exemples: list[dict], progress: Progress = _noop,
+                        notify=None, stop=None):
+    """Dernière étape : un nom pour chaque mot, d'après les exemples et les empreintes."""
+    global _started, _notify, _stop
+    _started = time.time()
+    _notify, _stop = notify, stop
+    from . import enrolement
+
+    mots = mots_des_blocs(blocs)
+    wav = work_dir / "audio16k.wav"
+    progress("Attribution", 0.1)
+    tours, confs, personnes = enrolement.etiqueter(work_dir, exemples, mots,
+                                                   wav if wav.exists() else None)
+    # Identifiants au format habituel, du plus au moins bavard.
+    temps: dict = {}
+    for a, b, nom in tours:
+        temps[nom] = temps.get(nom, 0.0) + (b - a)
+    ordre = sorted(temps, key=lambda n: -temps[n])
+    ident = {nom: f"SPEAKER_{i:02d}" for i, nom in enumerate(ordre)}
+    tours = [(a, b, ident[nom]) for a, b, nom in tours]
+    log(f"{len(ordre)} personnes : " + ", ".join(ordre))
+    checkpoint()
+    blocks = build_blocks(mots, tours)
+    attacher_confiance(blocks, tours, confs)
+    log(f"{len(blocks)} passages attribués")
+    progress("Extraits d'écoute", 0.6)
+    profiles = speaker_profiles(tours, blocks, src, work_dir)
+    duration = (wav.stat().st_size / 32000.0) if wav.exists() else max(m["end"] for m in mots)
+    log("terminé")
+    progress("Terminé", 1.0)
+    return (Result(duration=duration, blocks=blocks, speakers=profiles),
+            {ident[nom]: nom for nom in ordre})
 
 
 def process(src: Path, work_dir: Path, options: Options,
@@ -1469,14 +1744,14 @@ def process(src: Path, work_dir: Path, options: Options,
     if options.diarize:
         progress("Séparation des voix", voix[0])
         if options.num_speakers:
-            log(f"séparation des voix, {options.num_speakers} demandées "
-                f"(modèle « {assets.PAR_CLE[embedding].nom} »)")
+            log(f"séparation des voix : {options.num_speakers} demandées, modèle "
+                f"{assets.PAR_CLE[embedding].nom}" + (", avec raffinage" if options.raffiner else ""))
             turns = diarize(audio, options.num_speakers, progress, voix,
-                            CLUSTER_THRESHOLD, embedding)
+                            CLUSTER_THRESHOLD, embedding, options.raffiner)
         else:
             log("séparation des voix, nombre à déterminer")
             turns = diarize_auto(audio, progress, voix,
-                                 CLUSTER_THRESHOLD, embedding)
+                                 CLUSTER_THRESHOLD, embedding, options.raffiner)
     del audio
     wav.unlink(missing_ok=True)
 
@@ -1504,6 +1779,7 @@ def process(src: Path, work_dir: Path, options: Options,
                      "has_sample": False}]
     else:
         blocks = build_blocks(words, turns)
+        attacher_confiance(blocks, turns, _CONF["v"] if options.raffiner else None)
         log(f"{len(blocks)} passages attribués")
         progress("Extraits d'écoute",
                  sum(part["assemblage"]) / 2)   # à mi-chemin de l'assemblage

@@ -3,11 +3,13 @@
 
 <header class="bar" id="bar">
   <a class="wordmark" href="/"><b>Transcripteur</b></a>
+  <span class="appver" id="appver" data-no-i18n></span>
     <span class="tipwrap">
       <button class="info" type="button" aria-expanded="false" aria-label="Confidentialité" data-en-aria-label="Privacy">i</button>
       <span class="tipbody">
-        <b data-en="Stays on this computer">Reste sur cet ordinateur</b>
+        <b data-en="Privacy">Confidentialité</b>
         <span data-en="Voices are separated here. Only the audio, compressed to mono MP3, goes to Groq for speech recognition. Nothing is kept once the program is closed.">La séparation des voix se fait ici. Seul l'audio, compressé en MP3 mono, part chez Groq pour la reconnaissance de la parole. Rien n'est conservé après la fermeture du programme.</span>
+        <span class="tipver" id="tipver" data-no-i18n></span>
         <button id="changekey" class="linkbtn" hidden data-en="Change the Groq key">Changer la clé Groq</button>
       </span>
     </span>
@@ -23,11 +25,23 @@
     </span>
     <button id="reread" data-en="Correct">Corriger</button>
     <button id="sum" data-en="Summarize">Résumer</button>
+    <span class="sepwrap" id="sepwrap"><button id="sepafter" type="button" hidden aria-expanded="false" data-en="Separate voices">Séparer les voix</button>
+      <span class="sepbox" id="sepbox"><b data-en="Separate the voices now">Séparer les voix maintenant</b>
+        <span data-en="No new upload to Groq: only computing time. Say how many people speak if known.">Aucun nouvel envoi à Groq : seulement du temps de calcul. Indiquer le nombre de personnes si connu.</span>
+        <span class="numchips" id="afterchips" role="radiogroup"><button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button></span>
+        <span class="refine2"><button type="button" class="tgl" id="refine2" role="switch" aria-checked="false" aria-labelledby="refinelab2"><i></i></button>
+          <span class="rtxt"><label id="refinelab2" data-en="Refine voice separation">Raffiner la séparation des voix</label>
+          <small data-en="Re-sorts each passage against the clearest samples of every voice. Fewer mix-ups, a little longer.">Reclasse chaque passage d'après les extraits les plus nets de chaque voix. Moins de confusions, un peu plus long.</small></span></span>
+        <button type="button" id="sepgo" class="linkbtn" data-en="Start">Lancer</button>
+        <button type="button" id="aidego" class="linkbtn" hidden data-en="Identify the voices with my help…">Identifier les voix avec mon aide…</button></span></span>
     <button id="asread" hidden>Version relue</button>
     <span class="said" id="said" role="status"></span>
-    <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to notes">Retour aux notes</span></button>
+    <button id="newjob" class="newjob" type="button"><span class="l1" data-en="New">Nouveau</span><span class="l2" data-en="Back to the open project">Retour au projet ouvert</span><!-- Dans la bibliothèque, « Nouveau » ne mène nulle part : rien ne
+         s'y transcrit. Le même bouton ramène à la liste. --><span class="l3" data-en="All sessions">Toutes les séances</span></button>
   </nav>
   <div class="tools">
+    <button class="linkbtn" id="majbtn" type="button" hidden data-en="Update available">Mise à jour disponible</button>
+    <button class="linkbtn" id="keysbtn" type="button" data-en="Keys">Clés</button>
     <div class="vm-lang"></div>
     <button class="vm-theme" type="button" aria-label="Changer de thème" data-en-aria-label="Switch light / dark"></button>
   </div>
@@ -41,14 +55,23 @@
       <div class="stampline"><div class="stamp" data-en="Audio or video">Audio ou vidéo</div></div>
       <h1 class="giant ask"><span class="a" data-en="Drop">Déposer</span><span class="b" data-en="a file.">un fichier.</span></h1>
       <h1 class="giant got" aria-live="polite"><span class="a" id="fname" data-no-i18n></span><span class="b" id="fmeta" data-no-i18n></span></h1>
-      <div class="pctwrap" aria-hidden="true"><em id="pct">0 %</em></div>
+      <div class="verbose" id="verbose" data-no-i18n aria-live="off"></div>
+      <div class="pctwrap"><em id="pct" aria-hidden="true">0 %</em><p class="etaline" id="eta" data-no-i18n></p></div>
     </div>
     <div class="pickrow">
       <button type="button" id="pick" class="big"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 34V6M12 18L24 6l12 12M6 32v10h36V32"/></svg><span data-en="Choose a file">Choisir un fichier</span></button>
       <a href="#" id="reopen" data-en="Reopen a .json">Rouvrir un .json</a>
+      <!-- Dans la bibliothèque, c'est la seule porte d'entrée : rien ne
+           s'y transcrit, tout y vient d'ailleurs. -->
+      <a href="#" id="importer" data-en="Add a transcript">Ajouter un transcript</a>
       <button type="button" id="clear" class="linkbtn" data-en="Change file">Changer de fichier</button>
       <p class="working" id="working" hidden data-en="Keep this page open.">Garder cette page ouverte.</p>
+      <input type="file" id="voixfile" accept="audio/*,video/mp4,video/quicktime" hidden>
       <input type="file" id="jsonfile" accept=".json,application/json" hidden>
+      <!-- Le .json et son enregistrement d'un seul geste : importer le
+           texte sans le son donnerait une séance qu'on ne peut pas
+           réécouter, ce qui est la raison d'être de la bibliothèque. -->
+      <input type="file" id="importfile" accept=".json,application/json,audio/*,video/*" multiple hidden>
       <input type="file" id="file" accept="audio/*,video/*" hidden>
     </div>
   </div>
@@ -95,16 +118,25 @@
       </select>
     </div>
     <div class="field voices">
-      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Separate voices">Séparer les voix</label>
+      <div class="lab"><span class="no">02</span><label id="seplab" data-en="Voices">Voix</label>
         <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="counthint"></span><span data-en="If you know how many people speak, say so: the separation is much more reliable.">Si le nombre de personnes est connu, l'indiquer : la séparation est bien plus fiable.</span></span></span>
         <span class="cout" id="coutvoix" data-no-i18n></span>
       </div>
+      <div class="vmode" id="vmode" role="radiogroup" aria-labelledby="seplab">
+        <button type="button" role="radio" data-m="aucune" data-en="Text only">Texte seul</button><button type="button" role="radio" data-m="aide" data-en="With my help">Avec mon aide</button><button type="button" role="radio" data-m="auto" data-en="Automatic">Automatique</button>
+      </div>
+      <p class="vmode-dit" id="vmodedit"></p>
+      <div class="vauto" id="vauto"><div class="vin">
       <div class="sepline">
         <button type="button" class="tgl" id="sep" role="switch" aria-checked="false" aria-labelledby="seplab"><i></i></button>
         <div class="numchips" id="numchips" role="radiogroup" aria-label="Nombre de voix" data-en-aria-label="Number of voices">
           <button type="button" data-v="auto" class="on" data-en="Auto">Auto</button><button type="button" data-v="1">1</button><button type="button" data-v="2">2</button><button type="button" data-v="3">3</button><button type="button" data-v="4">4</button><button type="button" data-v="5">5</button><button type="button" data-v="6">6</button><button type="button" data-v="7">7</button><button type="button" data-v="8">8</button>
         </div>
       </div>
+      <div class="refine"><button type="button" class="tgl" id="refine" role="switch" aria-checked="false" aria-labelledby="refinelab"><i></i></button>
+        <label id="refinelab" data-en="Refine voice separation">Raffiner la séparation des voix</label>
+        <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><b data-en="Refine voice separation">Raffiner la séparation des voix</b><span data-en="First groups the long, reliable passages of each person, builds a profile of each voice, then sorts the short ones against those profiles. More reliable, especially for short interjections, and a little longer.">Regroupe d'abord les passages longs et sûrs de chaque personne, fait un profil de chaque voix, puis classe les passages courts sur ces profils. Plus fiable, surtout pour les interjections, et un peu plus long.</span></span></span></div>
+      </div></div>
       <div hidden><select id="count"><option value="auto">auto</option><option value="none" selected>none</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option></select></div>
     </div>
     <details class="vm-acc more">
@@ -114,12 +146,25 @@
           <div class="lab"><span class="no">03</span><label for="emb" data-en="Voice model">Modèle de voix</label>
             <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="embnote"></span></span></span></div>
           <select id="emb"></select>
+          <div class="embget" id="embgetwrap" hidden><button type="button" class="linkbtn" id="embget" data-no-i18n></button><span class="embst" id="embst" aria-live="polite"></span></div>
         </div>
         <div class="field">
           <div class="lab"><span class="no">04</span><label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
             <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span>
             <span class="cout" id="coutnet" data-no-i18n></span></div>
           <select id="clean"></select>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <div class="lab"><span class="no">05</span><label for="stt" data-en="Word recognition">Reconnaissance des mots</label>
+            <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="sttnote"></span></span></span></div>
+          <select id="stt"><option value="precis" data-en="Precise (recommended)">Précise (recommandé)</option><option value="rapide" data-en="Fast">Rapide</option></select>
+        </div>
+        <div class="field">
+          <div class="lab"><span class="no">06</span><label for="vocab" data-en="Words to recognise">Mots à reconnaître</label>
+            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="vocabnote"></span></span></span></div>
+          <input type="text" id="vocab" class="vocab" autocomplete="off" spellcheck="false" placeholder="Karina, Marcello, Élaine…" data-en-placeholder="Karina, Marcello, Élaine…">
         </div>
       </div>
     </details>
@@ -139,6 +184,7 @@
     <span id="stage" aria-live="polite">En attente</span>
     <span id="elapsed"></span>
     <button class="stop" id="stop" hidden data-en="Stop">Arrêter</button>
+    <button class="linkbtn" id="verbosebtn" type="button" aria-pressed="false" data-en="Details">Détails</button>
     <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Détails techniques" data-en-aria-label="Technical details">i</button><span class="tipbody wide"><div class="journal" id="journal" data-no-i18n lang="fr"></div></span></span>
   </div>
 </section>

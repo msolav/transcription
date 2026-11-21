@@ -395,6 +395,38 @@ def liberer_audio(seance_id: str) -> bool:
     return bool(n)
 
 
+def liberer_tous_audios() -> dict:
+    """Jette les enregistrements, garde tous les textes.
+
+    La grosse part du disque est l'audio ; les transcripts ne pèsent
+    rien. On peut donc récupérer presque toute la place sans perdre une
+    ligne de ce qui a été écrit — c'est la purge qu'on veut faire en
+    premier, et la seule qui soit à peu près sans regret."""
+    libere = jetees = 0
+    for ligne in liste():
+        avant = _poids(seances_dir() / ligne["id"])
+        if liberer_audio(ligne["id"]):
+            jetees += 1
+            libere += avant - _poids(seances_dir() / ligne["id"])
+    return {"seances": jetees, "octets": libere}
+
+
+def tout_oublier() -> dict:
+    """Efface toutes les séances, textes compris.
+
+    Sans retour possible : ni corbeille, ni copie. L'appelant doit
+    l'avoir fait confirmer."""
+    avant = _poids(seances_dir())
+    effacees = 0
+    for ligne in liste():
+        if oublier(ligne["id"]):
+            effacees += 1
+    # Les dossiers sans ligne en base partent aussi : après une purge,
+    # « tout effacer » doit vouloir dire tout.
+    balayer(age=0)
+    return {"seances": effacees, "octets": avant - _poids(seances_dir())}
+
+
 def place_occupee() -> dict:
     """Ce que le programme occupe sur le disque, et où."""
     return {

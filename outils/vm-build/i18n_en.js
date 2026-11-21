@@ -80,8 +80,9 @@ vm.lang.add({
     `Texte copié.`: `Text copied.`, `Copie refusée par le navigateur.`: `Copy refused by the browser.`
   },
   rules: [
-    [/^Relecture en cours$/, () => `Correction in progress`],
-    [/^Relecture arrêtée$/, () => `Correction stopped`],
+    [/^Correction$/, () => `Correction`],
+    [/^Correction en cours$/, () => `Correction in progress`],
+    [/^Correction arrêtée$/, () => `Correction stopped`],
     [/^Arrêt…$/, () => `Stopping…`],
     [/^arrêt demandé$/, () => `stop requested`],
     [/^Aucune correction n'a été trouvée avant l'arrêt\. Le transcript\s+est inchangé\.$/, () => `No correction was found before the stop. The transcript is unchanged.`],

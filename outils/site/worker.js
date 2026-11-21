@@ -39,7 +39,21 @@ async function derniere() {
       { headers: { 'user-agent': 'transcripteur-site',
                    accept: 'application/vnd.github+json' },
         cf: { cacheTtl: 900, cacheEverything: true } });
-    if (r.ok) return (await r.json()).tag_name || null;
+    if (r.ok) {
+      const tag = (await r.json()).tag_name;
+      if (tag) return tag;
+    }
+  } catch (e) { /* on essaie la redirection */ }
+  /* Repli : l'adresse « latest » de GitHub redirige vers l'étiquette de la
+     dernière publication. Elle n'est pas soumise à la limite d'appels de
+     l'API, que les serveurs partagés de Cloudflare atteignent vite — le
+     relevé de version rendait alors « null » sans autre explication. */
+  try {
+    const r = await fetch(`https://github.com/${DEPOT}/releases/latest`,
+      { redirect: 'manual', headers: { 'user-agent': 'transcripteur-site' },
+        cf: { cacheTtl: 900, cacheEverything: true } });
+    const m = (r.headers.get('location') || '').match(/\/tag\/([^/?#]+)/);
+    if (m) return decodeURIComponent(m[1]);
   } catch (e) { /* on retombe sur l'adresse « latest » de GitHub */ }
   return null;
 }
@@ -80,15 +94,7 @@ export default {
        du dépôt plutôt qu'écrite en dur : un paquet livré sans que ce
        fichier soit remis à jour ne serait annoncé à personne. */
     if (url.pathname === '/version.json') {
-      let tag = null;
-      try {
-        const r = await fetch(
-          `https://api.github.com/repos/${DEPOT}/releases/latest`,
-          { headers: { 'user-agent': 'transcripteur-site',
-                       accept: 'application/vnd.github+json' },
-            cf: { cacheTtl: 900, cacheEverything: true } });
-        if (r.ok) tag = (await r.json()).tag_name;
-      } catch (e) { /* on rend null : l'application se taira */ }
+      const tag = await derniere();
       return new Response(
         JSON.stringify({ version: tag, url: url.origin }),
         { headers: { 'content-type': 'application/json; charset=utf-8',

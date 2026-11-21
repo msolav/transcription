@@ -42,8 +42,11 @@ def make_wav(path, secs=12):
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
         w.writeframes(b''.join(struct.pack('<h', int(3000 * math.sin(2 * math.pi * 330 * i / 16000))) for i in range(16000 * secs)))
 
-def install(page, has_key=True, state=None):
+def install(page, has_key=True, state=None, mode='aucune'):
     state = state if state is not None else {}
+    # Les essais antérieurs au choix « Voix » transcrivent sans identification : on pose ce mode d'avance.
+    if mode:
+        page.add_init_script("try{localStorage.setItem('tr-modevoix','%s')}catch(e){}" % mode)
     state.setdefault('polls', 0)
     def handler(route):
         req = route.request; url = req.url

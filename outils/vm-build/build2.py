@@ -17,6 +17,23 @@ rep("$('#fill').style.width = (ratio * 100) + '%';", "busy.set(ratio);")
 rep("$('#status').hidden = false;", "$('#status').hidden = false; busy.start(); busy.set(0.01); { const wk = $('#working'); if (wk) wk.hidden = false; }")
 rep("function idle(label) {\n  clearInterval(poll);", "function idle(label) {\n  clearInterval(poll);\n  busy.stop();\n  { const wk = $('#working'); if (wk) wk.hidden = true; }")
 rep("idle('Terminé');", "idle('Transcrire à nouveau');")
+rep("      idle('Transcrire à nouveau');\n      render();", "      idle('Transcrire à nouveau');\n      render();\n      if (window.__identifierApres) { window.__identifierApres = false; setTimeout(() => window.ouvrirIdentification && window.ouvrirIdentification(), 700); }")
+rep("`${clock(secs)} écoulées${eta(ratio)}`", "`${clock(secs)} écoulées`")
+rep("  form.append('denoise', $('#clean').value);","  form.append('denoise', $('#clean').value);\n  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');",1)
+rep("  form.append('denoise', $('#clean').value);", "  form.append('denoise', $('#clean').value);\n  form.append('stt', $('#stt').value); if ($('#vocab').value.trim()) form.append('vocabulaire', $('#vocab').value.trim());", 1)
+rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
+    "  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));")
+rep("function download(text, filename) {", """/* Dans la fenêtre de l'application, un lien « download » navigue au lieu d'enregistrer : le programme écrit le fichier. Dans un navigateur ordinaire, téléchargement normal. */
+async function enregistrerFichier(text, filename) {
+  const fenetre = !!window.pywebview || !/Safari|Chrome|Firefox/.test(navigator.userAgent);
+  if (fenetre) {
+    try { const r = await api('/api/enregistrer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nom: filename, texte: text }) });
+      return `${r.nom} ${vm.lang.t('enregistré dans', 'saved in')} ${r.dossier}.`; } catch (e) { /* repli : téléchargement du navigateur */ }
+  }
+  download(text, filename); return null;
+}
+function download(text, filename) {""")
+rep("      names = { ...job.names };", "      names = { ...job.names };\n      if (job.error) $('#alerts').innerHTML = `<div class=\"alert\">${escapeHtml(job.error)}</div>`;")
 rep("  $('#go').disabled = false;\n}\n\n/* ---------- lancement", "  $('#go').disabled = false;\n  const gh = $('#gohint'); if (gh) gh.hidden = true;\n}\n\n/* ---------- lancement")
 # ---- dropdowns created inside panels ----
 rep("  const majCout = async () => {", "  enh(p);\n  const majCout = async () => {")
@@ -98,8 +115,8 @@ cut("  const strips = (expanded ? ranked", "  $('#dock').hidden = false;", r""" 
 cut("  $('#stage-area').innerHTML = `\n    ${multi ?", "  document.querySelectorAll('.strip input')", r"""  const fn = job.filename || '', dt = fn.lastIndexOf('.');
   const title = `${escapeHtml(dt > 0 ? fn.slice(0, dt) : fn)}${dt > 0 ? `<i>${escapeHtml(fn.slice(dt))}</i>` : ''}`;
   $('#stage-area').innerHTML = `<div class="sheet">
-    <h1 class="title" data-no-i18n>${title}</h1>
-    <p class="metaline"><span data-no-i18n>${clock(job.duration || 0)}</span>${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
+    <h1 class="title" data-no-i18n>${title}<em>${clock(job.duration || 0)}</em></h1>
+    <p class="metaline">${multi ? `<span>${job.speakers.length} ${vm.lang.t(job.speakers.length > 1 ? 'voix' : 'voix', job.speakers.length > 1 ? 'voices' : 'voice')}</span>` : ''}</p>
     ${multi ? `<section class="channels">
       <header>
         <h2><span data-en="Name the voices">Nommer les voix</span>
@@ -120,9 +137,10 @@ cut("  $('#stage-area').innerHTML = `\n    ${multi ?", "  document.querySelector
 cut("    return `<div class=\"turn ${same", "  }).join('');", r"""    const parts = []; { const sn = b.text.match(/[^.!?…]+[.!?…]*\s*/g) || [b.text]; let cur = ''; for (const x of sn) { if (cur && (cur + x).length > 420) { parts.push(cur); cur = ''; } cur += x; } if (cur) parts.push(cur); }
     let acc = 0; const tot = b.text.length || 1;
     return parts.map((tx, k) => { const ts = b.start + (b.end - b.start) * acc / tot; acc += tx.length;
-      return `<div class="turn ${same || k ? 'same' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
+      const incertain = b.conf != null && b.conf < 0.3;
+      return `<div class="turn ${same || k ? 'same' : ''}${incertain ? ' inc' : ''}" ${k ? `data-c="${i}"` : `data-i="${i}"`} data-ts="${ts}" style="--c:${colorOf(b.speaker)}">
         <button class="tc" data-t="${ts}">${clock(ts)}</button>
-        <div class="who">${escapeHtml(labelOf(b.speaker))}</div>
+        <div class="who">${escapeHtml(labelOf(b.speaker))}${incertain && !k ? `<span class="incm" title="${vm.lang.t('Attribution incertaine : ce passage hésite entre plusieurs voix.', 'Uncertain attribution: this passage is torn between several voices.')}">?</span>` : ''}</div>
         <p>${escapeHtml(tx.trim())}</p>
       </div>`; }).join('');
 """)
@@ -487,6 +505,7 @@ addon = r"""
     const qui = ev.target.closest && ev.target.closest('.turn .who');
     if (!qui) return;
     const tour = qui.closest('.turn');
+    if (typeof window.ouvrirFlot === 'function') { window.ouvrirFlot(tour); return; }
     const bloc = tour && shown[+tour.dataset.i];
     versNoms(bloc && bloc.speaker);
   });
@@ -513,6 +532,42 @@ window.apresCles = function () {
     if (bandeau && h && !h.vierge) bandeau.remove();
   }).catch(() => {});
 };
+
+
+/* ---------- la porte d'entrée de la bibliothèque ----------
+
+   Le .json et son enregistrement d'un seul geste. Importer le texte
+   sans le son donnerait une séance qu'on ne peut pas réécouter, ce qui
+   est exactement ce qu'on vient chercher ici. */
+{
+  const bouton = $('#importer'), champ = $('#importfile');
+  if (bouton && champ) {
+    bouton.onclick = e => { e.preventDefault(); champ.click(); };
+    champ.onchange = async () => {
+      const fichiers = [...champ.files];
+      champ.value = '';                 // sans quoi le même lot ne se redépose pas
+      if (!fichiers.length) return;
+      const json = fichiers.find(f => /\.json$/i.test(f.name));
+      if (!json) {
+        flash(vm.lang.t('Il faut le fichier .json du transcript.',
+                        'The transcript .json file is required.'));
+        return;
+      }
+      const son = fichiers.find(f => f !== json);
+      const corps = new FormData();
+      corps.append('file', json);
+      if (son) corps.append('audio', son);
+      try {
+        await api('/api/jobs/import', { method: 'POST', body: corps });
+        /* On revient à la liste plutôt que d'ouvrir la séance : on vient
+           souvent d'en déposer plusieurs, et la liste le montre. */
+        if (typeof window.repeindreSeances === 'function') window.repeindreSeances();
+      } catch (err) {
+        flash(err.message);
+      }
+    };
+  }
+}
 
 /* ---------- opened as a plain file (no server behind it): say so, with the way out ---------- */
 if (location.protocol === 'file:') {
@@ -604,7 +659,7 @@ if (location.protocol === 'file:') {
     clearTimeout(repos);
     repos = setTimeout(mesurer, 1200);
   };
-  if (cap) {
+  if (cap && false) { /* mise à l'échelle retirée : un titre qui change de taille est pire qu'un titre un peu grand */
     new ResizeObserver(fitCap).observe(cap);
     new MutationObserver(fitCap).observe(cap, { childList: true, subtree: true });
     addEventListener('resize', fitCap);
@@ -688,15 +743,555 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.info[aria-expanded="true"]').forEach(x => x.setAttribute('aria-expanded', 'false')); });
 $('#newjob').onclick = () => document.body.classList.toggle('back');
+/* Raffiner la séparation : retenu d'une fois à l'autre. */
+{ const r1 = $('#refine'), r2 = $('#refine2'); let on = false; try { on = localStorage.getItem('tr-refine') === '1'; } catch (e) {}
+  const poser = v => { on = v; [r1, r2].forEach(b => { b.classList.toggle('on', v); b.setAttribute('aria-checked', String(v)); }); try { localStorage.setItem('tr-refine', v ? '1' : '0'); } catch (e) {} };
+  r1.onclick = () => poser(!on); r2.onclick = () => poser(!on); poser(on); }
+/* Séparer les voix après coup : le texte existe déjà, seul le son est relu (aucun quota Groq). */
+{ const btn = $('#sepafter'), box = $('#sepbox'), wrap = $('#sepwrap'); let n = 'auto';
+  /* Disponible sur tout texte ouvert. Une seule voix : « Séparer les voix ». Plusieurs : « Raffiner les voix », avec le raffinage déjà allumé et le nombre de voix de départ proposé. */
+  let etat = '';
+  setInterval(() => {
+    const ok = typeof job !== 'undefined' && job && job.blocks && job.speakers && document.querySelector('#doc');
+    btn.hidden = !ok; if (!ok) return;
+    const multi = job.speakers.length > 1, cle = multi ? 'raffiner' : 'separer';
+    if (etat === cle) return; etat = cle;
+    const t = multi ? ['Raffiner les voix', 'Refine voices'] : ['Séparer les voix', 'Separate voices'];
+    btn.textContent = vm.lang.t(t[0], t[1]); btn.dataset.en = t[1];
+    const titre = $('#sepbox b'); if (titre) { titre.textContent = vm.lang.t(multi ? 'Raffiner la séparation des voix' : 'Séparer les voix maintenant', multi ? 'Refine the voice separation' : 'Separate the voices now'); titre.dataset.en = multi ? 'Refine the voice separation' : 'Separate the voices now'; }
+    const r2 = $('#refine2'); if (multi && r2.getAttribute('aria-checked') !== 'true') r2.click();
+    { const ag = $('#aidego'); if (ag) ag.hidden = false; }
+  }, 500);
+  btn.onclick = () => { const o = !wrap.classList.contains('open'); wrap.classList.toggle('open', o); btn.setAttribute('aria-expanded', String(o)); };
+  $('#afterchips').addEventListener('click', e => { const c = e.target.closest('button'); if (!c) return; n = c.dataset.v; document.querySelectorAll('#afterchips button').forEach(x => x.classList.toggle('on', x === c)); });
+  async function lancer(fichier) {
+    const form = new FormData(); form.append('embedding', 'auto'); form.append('denoise', '');
+    if ($('#refine2').getAttribute('aria-checked') === 'true') form.append('raffiner', '1'); if (n !== 'auto') form.append('speakers', n); if (fichier) form.append('file', fichier);
+    wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = [];
+    document.body.classList.remove('back'); $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Séparation des voix', 0.01);
+    try { await api(`/api/jobs/${jobId}/voix`, { method: 'POST', body: form }); poll = setInterval(tick, 1000); tick(); }
+    catch (err) {
+      idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true;
+      if (/plus sur cette machine|de nouveau/i.test(err.message) && !fichier) { $('#voixfile').click(); return; }
+      fail(err.message); }
+  }
+  $('#sepgo').onclick = () => lancer();
+  $('#voixfile').onchange = e => { if (e.target.files[0]) lancer(e.target.files[0]); };
+  document.addEventListener('click', e => { if (wrap.classList.contains('open') && !e.target.closest('#sepwrap')) { wrap.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); } }); }
+/* Mode détaillé : les lignes du journal, en direct, à côté du pourcentage. */
+{ const vb = $('#verbosebtn'), box = $('#verbose'), j = $('#journal');
+  const poser = on => { document.body.classList.toggle('detail-on', on); vb.setAttribute('aria-pressed', String(on)); try { localStorage.setItem('tr-verbose', on ? '1' : '0'); } catch (e) {} };
+  const peindre = () => { const l = [...j.querySelectorAll('div')].map(d => d.textContent).slice(-12);
+    box.innerHTML = l.map((t, i) => `<div style="opacity:${(.35 + .65 * (i + 1) / l.length).toFixed(2)}">${t.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;')}</div>`).join('');
+    const st = $('#stage'); if (st && st.textContent) box.insertAdjacentHTML('beforeend', '<b>' + st.textContent.replace(/[<&]/g, c => c === '<' ? '&lt;' : '&amp;') + '</b>'); };
+  vb.onclick = () => poser(!document.body.classList.contains('detail-on'));
+  new MutationObserver(peindre).observe(j, { childList: true, subtree: true });
+  new MutationObserver(peindre).observe($('#stage'), { childList: true, characterData: true, subtree: true });
+  let v = false; try { v = localStorage.getItem('tr-verbose') === '1'; } catch (e) {} poser(v); }
+/* Durée restante : un seul calcul, affiché une seule fois (celui de l'ancienne ligne du bas est retiré).
+   Vitesse de la dernière minute quand elle est mesurable — la séparation n'avance pas à vitesse constante —
+   sinon vitesse moyenne ; heure de fin en 24 h. */
+{ let t0 = 0, last = 0, echantillons = []; const eta = $('#eta'), pct = $('#pct');
+  const dire = s => { const m = Math.max(1, Math.round(s / 60)); return m >= 60 ? Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') : m + ' min'; };
+  new MutationObserver(() => { const p = parseInt(pct.textContent, 10) || 0, now = Date.now();
+    if (p < last || !t0 || p === 0) { t0 = now; echantillons = []; } last = p;
+    if (p <= 0 || p >= 100) { eta.textContent = ''; return; }
+    echantillons.push([now, p]); while (echantillons.length > 2 && now - echantillons[0][0] > 90000) echantillons.shift();
+    const el = (now - t0) / 1000; if (p < 1 || el < 20) { eta.textContent = vm.lang.t('Calcul de la durée…', 'Working out the time left…'); return; }
+    const [ta, pa] = echantillons[0], span = (now - ta) / 1000, gain = p - pa;
+    const vitesse = (span >= 20 && gain >= 1) ? gain / span : p / el;      // % par seconde
+    const left = (100 - p) / vitesse, fin = new Date(now + left * 1000);
+    eta.textContent = vm.lang.t('Encore environ ', 'About ') + dire(left) + vm.lang.t(' · fin vers ', ' left · done around ')
+      + fin.toLocaleTimeString(document.documentElement.lang || 'fr', { hour: '2-digit', minute: '2-digit', hour12: false }); })
+    .observe(pct, { childList: true, characterData: true, subtree: true }); }
+/* Les clés : un bouton visible dans la barre, et un raccourci dans l'alerte quand la clé est refusée. */
+const ouvrirCles = () => { const c = $('#changekey'); if (c) c.click(); else if (window.askForKey) askForKey({ sommaire: true }); };
+$('#keysbtn').onclick = ouvrirCles;
+/* La version installée, à côté du titre et dans la bulle « i ». */
+fetch('/api/version').then(r => r.json()).then(v => { if (!v || !v.installee) return;
+  $('#appver').textContent = 'v' + v.installee; $('#tipver').textContent = vm.lang.t('Version ', 'Version ') + v.installee; }).catch(() => {});
+/* Menus de la barre (Mac) et raccourcis : chaque action appelle le bouton qui existe déjà, pour qu'il n'y ait qu'un chemin par action. */
+const toast = m => { let t = document.getElementById('toast'); if (!t) { t = document.createElement('div'); t.id = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+  t.textContent = m; void t.offsetWidth; t.classList.add('on'); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove('on'), 4200); };
+window.trMenu = async a => {
+  const clic = s => { const e = document.querySelector(s); if (e && !e.hidden && !e.disabled) { e.click(); return true; } return false; };
+  const accueil = () => { if (document.querySelector('#doc')) clic('#newjob'); };
+  if (a === 'cles') return ouvrirCles();
+  if (a === 'maj') {
+    const v = typeof trVerifierMaj === 'function' ? await trVerifierMaj() : null;
+    toast(!v ? vm.lang.t('Vérification impossible pour le moment.', 'Could not check right now.')
+      : v.retard ? vm.lang.t('Version ' + v.publiee + ' disponible : voir « Mise à jour » dans la barre.', 'Version ' + v.publiee + ' available: see “Update” in the bar.')
+      : vm.lang.t('Vous avez la dernière version.', 'You have the latest version.'));
+    return;
+  }
+  if (a === 'ouvrir') { accueil(); setTimeout(() => clic('#pick'), 900); return; }
+  if (a === 'json') { accueil(); setTimeout(() => clic('#reopen'), 900); return; }
+  const cible = { txt: '[data-x="txt"]', srt: '[data-x="srt"]', copier: '[data-x="copy"]', nouveau: '#newjob', corriger: '#reread', resumer: '#sum', voix: '#sepafter' };
+  const texteOuvert = typeof job !== 'undefined' && job && job.blocks && document.querySelector('#doc');
+  if (cible[a] && a !== 'nouveau' && !texteOuvert || cible[a] && !clic(cible[a])) toast(vm.lang.t('Disponible une fois un texte ouvert.', 'Available once a text is open.'));
+};
+/* Raccourcis clavier : seulement dans la fenêtre de l'application, où le menu n'en porte pas. */
+document.addEventListener('keydown', e => {
+  if (!window.pywebview || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+  if (/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) return;
+  const m = { o: 'ouvrir', s: 'txt', n: 'nouveau', ',': 'cles' }[e.key.toLowerCase()];
+  if (m) { e.preventDefault(); trMenu(m); }
+});
+new MutationObserver(() => { document.querySelectorAll('#alerts .alert').forEach(a => {
+  if (!a.querySelector('.alertkey') && /cl[ée]/i.test(a.textContent) && /(refus|aucune|invalide|absente)/i.test(a.textContent)) {
+    const k = document.createElement('button'); k.type = 'button'; k.className = 'linkbtn alertkey'; k.textContent = vm.lang.t('Changer la clé', 'Change the key'); k.onclick = ouvrirCles; a.appendChild(k); } }); }).observe($('#alerts'), { childList: true, subtree: true, characterData: true });
+/* Au lancement, l'interrupteur fait foi : éteint, jamais de séparation, quoi que #count ait gardé en mémoire. */
+$('#go').addEventListener('click', () => { const sw = $('#sep'), c = $('#count'); if (sw && c && sw.getAttribute('aria-checked') !== 'true' && c.value !== 'none') { c.value = 'none'; c.dispatchEvent(new Event('change')); } }, true);
 const setCount = v => { const c = $('#count'); c.value = v; c.dispatchEvent(new Event('change')); };
 let lastN = 'auto';
 document.addEventListener('click', e => {
   const t = e.target.closest('#sep'), c = e.target.closest('#numchips button'), pg = e.target.closest('#pgprev, #pgnext');
   if (t) { const on = !t.classList.contains('on'); t.classList.toggle('on', on); t.setAttribute('aria-checked', String(on)); setCount(on ? lastN : 'none'); }
-  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c)); setCount(lastN); }
+  if (c) { lastN = c.dataset.v; document.querySelectorAll('#numchips button').forEach(x => x.classList.toggle('on', x === c));
+    /* Le nombre de voix ne vaut que si l'interrupteur est allumé : le choisir l'allume, il ne peut jamais séparer en cachette. */
+    const sw = $('#sep'); if (!sw.classList.contains('on')) { sw.classList.add('on'); sw.setAttribute('aria-checked', 'true'); }
+    setCount(lastN); }
   if (pg) nav(pg.id === 'pgnext' ? 1 : -1);
 });
 $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.tipwrap, button, a')) $('#file').click(); });
+
+/* Identifier les voix avec votre aide, AVANT l'analyse : le programme propose des passages choisis dans
+   l'enregistrement, vous dites qui parle (en coupant au besoin), et tout le reste est classé d'après ces échantillons.
+   Les empreintes sont calculées une fois (quelques minutes) ; la suite prend des secondes. */
+{ let confirmeSuppr = null, actif = 0, boucle = false, limite = null, glisse = null, vus = [], cible = null, ouvert = {}; let etat = 'prep', exemples = [], rows = [], rapport = null, extra = [], nouveau = null, msg = '', prog = 0, stage = '', suivi = 0, timer = 0, verif = { ok: 0, sur: 0 };
+  const hms = t => clock(Math.round(t));
+  const echap = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const T = (f, e) => vm.lang.t(f, e);
+  const personnes = () => [...new Set([...(rapport ? rapport.personnes : []), ...extra])];
+  const bornes = r => [r.start, ...r.cuts.slice().sort((a, z) => a - z), r.end];
+  const post = (url, corps) => api(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corps || {}) });
+
+  function repere() {
+    if (!rapport) return '';
+    const noms = personnes(), pi = rapport.part_incertaine, c = rapport.controle;
+    const lignes = [];
+    if (c && c.sur > 0) lignes.push('<div class="ar-part">' + T('Contrôle sur vos exemples : le programme retrouve la bonne personne ' + c.justes + ' fois sur ' + c.sur + '.', 'Check on your examples: the program finds the right person ' + c.justes + ' times out of ' + c.sur + '.') + '</div>');
+    if (verif.sur > 0) lignes.push('<div class="ar-part">' + T('Ses suggestions : ' + verif.ok + ' confirmées sur ' + verif.sur + '.', 'Its suggestions: ' + verif.ok + ' confirmed out of ' + verif.sur + '.') + '</div>');
+    if (pi != null) lignes.push('<div class="ar-part">' + T('Parole encore incertaine : ' + Math.round(pi * 100) + ' %', 'Speech still uncertain: ' + Math.round(pi * 100) + ' %') + '</div>');
+    (rapport.suspects || []).slice(0, 2).forEach(x => lignes.push('<div class="ar-susp">' + T('Un exemple de ' + x.nom + ' ne ressemble pas aux autres : ', 'An example of ' + x.nom + ' does not look like the others: ') + hms(x.start) + ' <button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button></div>'));
+    const faibles = noms.filter(n => secondesDe(n) < 20 || echantillons(n).length < 2);
+    let verdict = '';
+    if (noms.length >= 2) {
+      const bon = !c || c.sur === 0 || c.justes / c.sur >= 0.9;
+      verdict = (pi != null && pi < 0.05 && !faibles.length && bon) ? T('Vous pouvez terminer l’analyse.', 'You can finish the analysis.')
+        : faibles.length ? T('Profils encore incomplets : ' + faibles.join(', ') + ' (moins de 20 s ou de 2 échantillons ; voir la barre de chaque personne).', 'Profiles still incomplete: ' + faibles.join(', ') + ' (under 20 s or 2 samples; see each person’s bar).')
+        : !bon ? T('Le contrôle se trompe sur certains de vos exemples : vérifiez-les, ou ajoutez-en.', 'The check gets some of your examples wrong: review them, or add more.')
+        : T('Continuez avec quelques passages : si la part incertaine baisse peu, vous pouvez terminer.', 'Continue with a few passages: if the uncertain share drops little, you can finish.');
+    }
+    if (verdict) lignes.push('<div class="ar-verdict">' + echap(verdict) + '</div>');
+    lignes.push('<div class="ar-note">' + T('Repères indicatifs. La confiance mesure la ressemblance avec VOS exemples : si ceux-ci sont mélangés ou faux, elle peut rester élevée à tort.', 'Indicative guides. Confidence measures similarity to YOUR examples: if those are mixed or wrong, it can stay high wrongly.') + '</div>');
+    return lignes.join('');
+  }
+
+  const COUL = ['#e2563a', '#4a90d9', '#6aa84f', '#e0a23a', '#9b6fd1', '#2fb3b3', '#c9577a', '#8a8a3a'];
+  const coul = n => { const i = personnes().indexOf(n); return i < 0 ? 'rgba(128,128,128,.35)' : COUL[i % COUL.length]; };
+  const pct = (r, t) => (100 * (t - r.start) / (r.end - r.start)).toFixed(2);
+  const fine = t => { const m = Math.floor(t / 60), x = (t % 60).toFixed(1).padStart(4, '0'); return m + ':' + x; };
+
+  function ligneTemps(r, k) {
+    const bs = bornes(r);
+    return '<div class="ar-tl" data-r="' + k + '" tabindex="0" aria-label="' + T('Ligne du temps du passage', 'Passage timeline') + '">'
+      + bs.slice(0, -1).map((a, j) => '<i class="tl-seg' + (r.sel === j ? ' sel' : '') + '" style="left:' + pct(r, a) + '%;width:' + (pct(r, bs[j + 1]) - pct(r, a)).toFixed(2) + '%;background:' + coul(r.aff[j]) + '"></i>').join('')
+      + r.cuts.map((c, i) => '<b class="tl-cut" data-r="' + k + '" data-c="' + i + '" style="left:' + pct(r, c) + '%" title="' + T('Glisser pour déplacer · double-clic pour supprimer', 'Drag to move · double-click to delete') + '"></b>').join('')
+      + '<canvas class="tl-wave" data-r="' + k + '"></canvas><u class="tl-head" style="left:0%"></u></div>'
+      + '<div class="ar-tt"><span class="tl-t" data-r="' + k + '">' + fine(0) + '</span><span>' + fine(r.end - r.start) + '</span></div>';
+  }
+
+  /* Complétude du profil : indicatif. Moins de 20 s ou moins de 3 échantillons, trop peu pour s'y fier ; 40 s et 4 échantillons ou plus, solide. */
+  const secondesDe = n => { const sec = (rapport && rapport.secondes) || {}; return Math.max(echantillons(n).reduce((a, x) => a + (x.end - x.start), 0), sec[n] || 0); };
+  function completude(n, nb, s) {
+    const niveau = s <= 0 ? ['vide', 'Aucun échantillon', 'No sample'] : (s >= 40 && nb >= 3) ? ['solide', 'Solide', 'Solid'] : (s >= 20 && nb >= 2) ? ['correct', 'Suffisant', 'Enough'] : ['faible', 'Insuffisant', 'Too little'];
+    const manque = s >= 40 && nb >= 3 ? '' : T(' · encore ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 3 ? ' et ' + (3 - nb) + ' échantillon(s)' : '') + ' pour solide', ' · ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 3 ? ' and ' + (3 - nb) + ' sample(s)' : '') + ' more for solid');
+    return '<span class="pf-comp ' + niveau[0] + '" title="' + T('Repère indicatif : 20 s et 2 échantillons = suffisant, 40 s et 3 = solide. Des échantillons pris à des moments différents valent mieux qu’une seule longue plage.', 'Indicative guide: 20 s and 2 samples = enough, 40 s and 3 = solid. Samples from different moments beat one long stretch.') + '">'
+      + '<span class="pf-bar"><i style="width:' + Math.round(Math.min(1, s / 40) * 100) + '%"></i><u></u></span>'
+      + '<span class="pf-lab" title="' + echap(manque.replace(/^ · /, '')) + '"><b>' + T(niveau[1], niveau[2]) + '</b> · ' + Math.round(s) + ' s · ' + nb + ' ' + T('éch.', 'smp.') + '</span></span>';
+  }
+  function echantillons(nom) { return exemples.filter(x => x.nom === nom); }
+  function profils() {
+    const noms = personnes(); if (!noms.length) return '';
+    const sec = (rapport && rapport.secondes) || {};
+    return '<div class="ar-profils"><h3>' + T('Profils', 'Profiles') + '</h3>' + noms.map(n => {
+      const ech = echantillons(n), tot = ech.reduce((a, x) => a + (x.end - x.start), 0), ouv = !!ouvert[n];
+      return '<div class="ar-pf' + (cible === n ? ' cible' : '') + '"><span class="pf-c" style="background:' + coul(n) + '"></span>'
+        + '<b>' + echap(n) + '</b>' + completude(n, ech.length, Math.max(tot, sec[n] || 0))
+        + '<button type="button" data-a="plus-de" data-n="' + echap(n) + '">' + T('Trouver plus de passages', 'Find more passages') + '</button>'
+        + '<button type="button" data-a="voir-ech" data-n="' + echap(n) + '" aria-expanded="' + ouv + '">' + T('Échantillons', 'Samples') + '</button>'
+        + '<button type="button" class="pf-del" data-a="suppr-pers" data-n="' + echap(n) + '">' + (confirmeSuppr === n ? T('Confirmer', 'Confirm') : T('Retirer', 'Remove')) + '</button>'
+        + (ouv ? '<div class="pf-liste">' + (ech.length ? ech.map((x, i) => '<div class="pf-e"><span>' + hms(x.start) + ' – ' + hms(x.end) + '</span>'
+          + '<button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button>'
+          + '<button type="button" data-a="retire-ech" data-n="' + echap(n) + '" data-i="' + i + '">' + T('Retirer', 'Remove') + '</button></div>').join('') : '<p class="ar-dit">' + T('Aucun échantillon : cherchez-en avec le bouton ci-dessus.', 'No sample yet: look for some with the button above.') + '</p>') + '</div>' : '')
+        + '</div>'; }).join('')
+      + (cible ? '<button type="button" class="pf-retour" data-a="retour-lot">' + T('Revenir aux passages incertains', 'Back to uncertain passages') + '</button>' : '') + '</div>';
+  }
+
+  function vueLot() {
+    if (msg) return '<p class="ar-dit">' + echap(msg) + '</p>';
+    const noms = personnes();
+    const intro = !noms.length || noms.length < 2
+      ? T('Voici les plus longues plages où une seule voix semble parler, prises à des endroits différents de l’enregistrement. Pour chacune, écoutez un peu, puis dites qui parle : choisissez un nom, ou ajoutez une personne. La détection peut se tromper : si la voix change, coupez à cet instant.', 'Here are the longest stretches where a single voice seems to speak, taken from different places in the recording. For each, listen a little, then say who speaks: pick a name, or add a person. Detection can be wrong: if the voice changes, cut at that moment.')
+      : T('Voici les passages dont le programme est le moins sûr. Il propose un nom : confirmez-le ou corrigez-le.', 'Here are the passages the program is least sure about. It suggests a name: confirm or correct it.');
+    const lotVide = !rows.length;
+    return '<div class="ar-duo"><div class="ar-colp">' + profils() + '</div><div class="ar-colr">' + (lotVide ? '<p class="ar-dit">' + (cible ? T('Plus aucun passage à proposer pour ' + cible + '.', 'No more passages to suggest for ' + cible + '.') : T('Plus aucun passage à vous montrer. Vous pouvez terminer l’analyse.', 'No passage left to show. You can finish the analysis.')) + '</p>' : '<p class="ar-dit">' + (cible ? T('Passages qui ressemblent le plus à ' + cible + ' : confirmez ceux qui sont bien lui/elle, sinon corrigez.', 'Passages that look most like ' + cible + ': confirm the ones that really are, otherwise correct.') : intro) + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>')
+      + (rows.length ? '<div class="ar-liste">' + [rows[actif]].map(r => { const k = actif, bs = bornes(r), nb = bs.length - 1;
+      r.sel = Math.min(r.sel == null ? 0 : r.sel, nb - 1);
+      const a = bs[r.sel], z = bs[r.sel + 1], fait = Object.values(r.aff).filter(Boolean).length;
+      return '<div class="ar-pass actif" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b><span class="ar-long">' + Math.round(r.end - r.start) + ' s' + (r.nb > 1 ? ' · ' + r.nb + ' ' + T('passages', 'passages') : '') + '</span>'
+        + (r.solide === false ? '<em class="ar-mel">' + T('peut mêler plusieurs voix : écoutez', 'may mix several voices: listen') + '</em>' : '')
+        + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '')
+        + '<span class="ar-pgp">' + T('Passage ', 'Passage ') + (k + 1) + ' / ' + rows.length
+        + ' <button type="button" data-a="pass-p"' + (k === 0 ? ' disabled' : '') + '>' + T('Précédent', 'Previous') + '</button>'
+        + '<button type="button" data-a="pass-s"' + (k === rows.length - 1 ? ' disabled' : '') + '>' + T('Suivant', 'Next') + '</button></span></div>'
+        + '<div class="ar-tr">'
+        + '<button type="button" class="pl" data-a="basc" data-r="' + k + '">' + T('Lecture / Pause', 'Play / Pause') + '</button>'
+        + '<button type="button" data-a="nudge" data-d="-2" data-r="' + k + '">−2 s</button><button type="button" data-a="nudge" data-d="-0.5" data-r="' + k + '">−0,5</button>'
+        + '<button type="button" data-a="nudge" data-d="0.5" data-r="' + k + '">+0,5</button><button type="button" data-a="nudge" data-d="2" data-r="' + k + '">+2 s</button>'
+        + '<button type="button" data-a="boucle" aria-pressed="' + boucle + '">' + T('Boucle', 'Loop') + '</button>'
+        + '<button type="button" class="cut" data-a="couper" data-r="' + k + '">' + T('Couper à la position', 'Cut at position') + '</button>'
+        + (r.cuts.length ? '<button type="button" data-a="recoller" data-r="' + k + '">' + T('Annuler les coupes', 'Undo cuts') + '</button>' : '') + '</div>'
+        + ligneTemps(r, k)
+        + '<p>' + echap(r.text.slice(0, 160)) + (r.text.length > 160 ? '…' : '') + '</p>'
+        + '<div class="ar-sel"><div class="ar-selh"><span><i class="pt" style="background:' + coul(r.aff[r.sel]) + '"></i>' + T('Morceau ', 'Part ') + (r.sel + 1) + ' / ' + nb + ' · ' + hms(a) + ' – ' + hms(z) + ' · ' + fait + '/' + nb + ' ' + T('nommés', 'named') + '</span>'
+        + '<button type="button" data-a="seg" data-r="' + k + '" data-j="' + r.sel + '">' + T('Écouter ce morceau', 'Play this part') + '</button>'
+        + '<button type="button" data-a="sel-p" data-r="' + k + '"' + (r.sel === 0 ? ' disabled' : '') + '>' + T('Morceau précédent', 'Previous part') + '</button>'
+        + '<button type="button" data-a="sel-s" data-r="' + k + '"' + (r.sel >= nb - 1 ? ' disabled' : '') + '>' + T('Morceau suivant', 'Next part') + '</button></div>'
+        + '<div class="ar-seg">' + noms.map(nm => '<button type="button" class="chip' + (r.aff[r.sel] === nm ? ' on' : '') + (!r.cuts.length && r.suggestion === nm && r.aff[r.sel] !== nm ? ' sug' : '') + '" style="--pc:' + coul(nm) + '" data-a="aff" data-r="' + k + '" data-j="' + r.sel + '" data-n="' + echap(nm) + '">' + echap(nm) + '</button>').join('')
+        + (nouveau && nouveau.k === k && nouveau.j === r.sel
+          ? '<input type="text" class="ar-new" data-r="' + k + '" data-j="' + r.sel + '" placeholder="' + T('Nom', 'Name') + '" autofocus><button type="button" data-a="ajout" data-r="' + k + '" data-j="' + r.sel + '">OK</button>'
+          : '<button type="button" class="chip plus" data-a="nouv" data-r="' + k + '" data-j="' + r.sel + '">+ ' + T('Autre personne', 'Other person') + '</button>') + '</div></div>'
+        + '</div>'; }).join('') + '</div>' : '') + '</div></div>';
+  }
+
+  function vuePrep() {
+    return '<p class="ar-dit">' + T('Préparation : le programme calcule l’empreinte vocale de chaque passage de parole. C’est ce qui lui permettra de choisir des passages à vous montrer. Quelques minutes pour une longue réunion, une seule fois.', 'Preparation: the program computes the voice print of every speech passage. This lets it choose passages to show you. A few minutes for a long meeting, only once.') + '</p>'
+      + '<div class="ar-barre"><i style="width:' + Math.round(prog * 100) + '%"></i></div><p class="ar-dit">' + echap(stage) + ' · ' + Math.round(prog * 100) + ' %</p>';
+  }
+
+  const formes = {};
+  function dessiner() {
+    document.querySelectorAll('#aide canvas.tl-wave').forEach(cv => { const r = rows[+cv.dataset.r]; if (!r) return;
+      const cle = r.start + '-' + r.end, p = formes[cle];
+      if (p === undefined) { formes[cle] = null; api('/api/jobs/' + jobId + '/forme?start=' + r.start + '&end=' + r.end + '&n=700').then(d => { formes[cle] = d.pics; dessiner(); }).catch(() => { formes[cle] = []; }); return; }
+      if (!p || !p.length) return;
+      const w = cv.clientWidth, h = cv.clientHeight, d = devicePixelRatio || 1; cv.width = Math.round(w * d); cv.height = Math.round(h * d);
+      const g = cv.getContext('2d'); g.scale(d, d); g.clearRect(0, 0, w, h);
+      g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--vm-ink').trim() || '#111'; g.globalAlpha = .75;
+      const m = h / 2, bw = w / p.length;
+      p.forEach((v, i) => { const y = Math.max(1, v * (h - 4) / 2); g.fillRect(i * bw, m - y, Math.max(1, bw - .4), y * 2); });
+      // repères de seconde : petites graduations sous la forme d'onde
+      g.globalAlpha = .5; const dur = r.end - r.start, pas = dur > 120 ? 30 : dur > 40 ? 10 : dur > 15 ? 5 : 1;
+      for (let t = Math.ceil(r.start / pas) * pas; t < r.end; t += pas) { const x = (t - r.start) / dur * w; g.fillRect(x, h - 5, 1, 5); }
+    }); }
+  function peindre() {
+    let el = document.getElementById('aide');
+    if (!el) { el = document.createElement('section'); el.id = 'aide'; document.body.appendChild(el); }
+    const enCours = etat === 'prep', noms = personnes();
+    const assigne = rows.some(r => Object.values(r.aff).some(Boolean));
+    el.innerHTML = '<div class="ar-in"><header><h2>' + T('Identifier les voix', 'Identify the voices') + '</h2>'
+      + '<button type="button" data-a="fermer">' + T('Fermer', 'Close') + '</button></header>'
+      + '<div class="ar-corps">' + (enCours ? vuePrep() : vueLot()) + '</div>'
+      + '<footer><div class="ar-rep">' + repere() + '</div><div class="ar-btns">'
+      + '<button type="button" class="ar-go sec" data-a="continuer"' + (enCours || !assigne ? ' disabled' : '') + '>' + T('Valider et continuer', 'Confirm and continue') + '</button>'
+      + '<button type="button" class="ar-go" data-a="terminer"' + (enCours || noms.length < 2 ? ' disabled' : '') + '>' + T('Terminer l’analyse', 'Finish the analysis') + '</button></div></footer></div>';
+    const ni = el.querySelector('input.ar-new'); if (ni) ni.focus();
+    requestAnimationFrame(dessiner);
+  }
+
+  function collecter() {
+    rows.forEach(r => { (r.indices || [r.index]).forEach(i => { if (i != null && !vus.includes(i)) vus.push(i); }); });
+    rows.forEach(r => { const bs = bornes(r);
+      for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) {
+        exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] });
+        if (r.suggestion && !r.cuts.length) { verif.sur += 1; if (r.aff[j] === r.suggestion) verif.ok += 1; }
+      } });
+  }
+  async function suite() {
+    try { const r = await post('/api/jobs/' + jobId + '/enrolement/classer', { exemples, vus, cible });
+      rapport = r.rapport; rows = r.propositions.map(p => ({ ...p, cuts: [], aff: {} })); msg = ''; etat = 'lot'; actif = 0; }
+    catch (err) { msg = err.message; etat = 'lot'; rows = []; }
+    peindre();
+  }
+  async function ouvrir() {
+    if (typeof job === 'undefined' || !job || !job.blocks) return;
+    exemples = []; rows = []; rapport = null; extra = []; nouveau = null; msg = ''; prog = 0; stage = ''; verif = { ok: 0, sur: 0 }; vus = []; cible = null; ouvert = {};
+    document.body.classList.add('aide-on'); etat = 'prep'; peindre();
+    if (job.enrolement_pret) return suite();
+    try { await post('/api/jobs/' + jobId + '/enrolement/preparer', {}); } catch (err) { msg = err.message; etat = 'lot'; peindre(); return; }
+    clearInterval(suivi);
+    suivi = setInterval(async () => {
+      let d; try { d = await api('/api/jobs/' + jobId + '?light=1'); } catch (e) { return; }
+      prog = d.progress || 0; stage = d.stage || '';
+      if (d.status === 'done') { clearInterval(suivi); if (d.error) { msg = d.error; etat = 'lot'; peindre(); } else { job.enrolement_pret = true; suite(); } }
+      else peindre();
+    }, 1000);
+  }
+  window.ouvrirIdentification = ouvrir;
+  const fermer = () => { clearInterval(suivi); document.body.classList.remove('aide-on'); };
+  const lire = (a, z, k) => { limite = { k: k == null ? -1 : k, start: a, end: z }; player.currentTime = a; player.play().catch(() => {}); };
+  const basculer = k => { const r = rows[k]; if (!r) return; actif = k;
+    if (!player.paused && limite && limite.k === k) { player.pause(); return; }
+    if (player.currentTime < r.start || player.currentTime >= r.end - 0.2) player.currentTime = r.start;
+    limite = { k, start: r.start, end: r.end }; player.play().catch(() => {}); suivre(); };
+  const aller = (k, t) => { const r = rows[k]; if (!r) return; actif = k; player.currentTime = Math.max(r.start, Math.min(r.end, t)); suivre(); };
+  const heureDe = (ev, el, r) => { const b = el.getBoundingClientRect(); return r.start + (r.end - r.start) * Math.max(0, Math.min(1, (ev.clientX - b.left) / b.width)); };
+  function suivre() {
+    if (limite && !player.paused && player.currentTime >= limite.end - 0.05) { if (boucle) player.currentTime = limite.start; else player.pause(); }
+    document.querySelectorAll('#aide .ar-tl').forEach(el => { const k = +el.dataset.r, r = rows[k]; if (!r) return;
+      const t = player.currentTime, dedans = t >= r.start - 0.05 && t <= r.end + 0.05, h = el.querySelector('.tl-head');
+      h.style.opacity = dedans ? 1 : 0; if (dedans) h.style.left = pct(r, Math.min(r.end, Math.max(r.start, t))) + '%';
+      const tt = document.querySelector('#aide .tl-t[data-r="' + k + '"]'); if (tt) tt.textContent = fine(dedans ? t - r.start : 0); });
+    document.querySelectorAll('#aide .pl').forEach(b => { const k = +b.dataset.r, joue = !player.paused && limite && limite.k === k; b.classList.toggle('joue', !!joue); });
+  }
+  setInterval(() => { if (document.body.classList.contains('aide-on')) suivre(); }, 120);
+
+  async function terminer() {
+    collecter();
+    fermer(); document.body.classList.remove('back');
+    $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
+    { const fn = $('#fname'); if (fn && !fn.textContent) { fn.textContent = (job.filename || '').replace(/\.[^.]+$/, ''); fn.style.setProperty('--n', String(fn.textContent.length)); } }
+    $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false;
+    $('#go').disabled = true; $('#stop').hidden = false; setStage('Attribution des voix', 0.01);
+    window.__exemplesVoix = exemples.slice();
+    try { await post('/api/jobs/' + jobId + '/enrolement/terminer', { exemples }); poll = setInterval(tick, 1000); tick(); }
+    catch (err) { idle('Transcrire'); busy.stop(); $('#status').hidden = true; $('#working').hidden = true; fail(err.message); }
+  }
+
+  /* Les noms sont rangés par numéro de morceau : quand une coupe apparaît ou disparaît, les numéros se décalent.
+     Un morceau coupé en deux garde son nom des deux côtés ; deux morceaux réunis gardent le nom du premier qui en a un. */
+  function insererCoupe(r, t) { const bs = bornes(r); let j = 0; for (let i = 0; i < bs.length - 1; i++) if (t >= bs[i] && t < bs[i + 1]) j = i;
+    const n = {}; for (let i = 0; i < bs.length - 1; i++) { if (i < j) n[i] = r.aff[i]; else if (i === j) { n[j] = r.aff[j]; n[j + 1] = r.aff[j]; } else n[i + 1] = r.aff[i]; }
+    r.cuts.push(t); r.cuts.sort((x, z) => x - z); r.aff = n; r.sel = j + 1; }
+  function retirerCoupe(r, c) { const bs = bornes(r), n = {}; for (let i = 0; i < bs.length - 1; i++) { if (i <= c) n[i] = r.aff[i] || (i === c ? r.aff[i + 1] : undefined); else if (i > c + 1) n[i - 1] = r.aff[i]; }
+    r.cuts.splice(c, 1); r.aff = n; r.sel = Math.min(r.sel || 0, r.cuts.length); }
+  function couper(k) { const r = rows[k]; if (!r) return; const t = player.currentTime;
+    if (t > r.start + 0.3 && t < r.end - 0.3) { insererCoupe(r, t); actif = k; peindre(); }
+    else toast(T('Placez d’abord la tête de lecture dans le passage (cliquez sur la ligne du temps), puis coupez.', 'First place the playhead inside the passage (click the timeline), then cut.')); }
+  document.addEventListener('pointerdown', e => { const el = e.target.closest('#aide .ar-tl'); if (!el) return; const k = +el.dataset.r, r = rows[k]; if (!r) return;
+    const m = e.target.closest('.tl-cut'); actif = k;
+    if (m) { glisse = { k, i: +m.dataset.c, el }; e.preventDefault(); return; }
+    const th = heureDe(e, el, r); aller(k, th); const bs = bornes(r); for (let i = 0; i < bs.length - 1; i++) if (th >= bs[i] && th < bs[i + 1]) r.sel = i; peindre(); });
+  document.addEventListener('pointermove', e => { if (!glisse) return; const r = rows[glisse.k], el = glisse.el;
+    const bs = bornes(r), lo = bs[glisse.i] + 0.3, hi = bs[glisse.i + 2] - 0.3, t = Math.max(lo, Math.min(hi, heureDe(e, el, r))); r.cuts[glisse.i] = t;
+    const mk = el.querySelectorAll('.tl-cut')[glisse.i]; if (mk) mk.style.left = pct(r, t) + '%'; });
+  document.addEventListener('pointerup', () => { if (!glisse) return; const r = rows[glisse.k]; glisse = null; r.cuts.sort((x, z) => x - z); peindre(); });
+  document.addEventListener('dblclick', e => { const m = e.target.closest('#aide .tl-cut'); if (!m) return; const r = rows[+m.dataset.r]; retirerCoupe(r, +m.dataset.c); peindre(); });
+  /* Espace sur un bouton qui a le focus déclenche aussi son clic au relâchement : on l'annule, sinon la bascule se fait deux fois. */
+  document.addEventListener('keyup', e => { if (document.body.classList.contains('aide-on') && e.code === 'Space' && !/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) e.preventDefault(); });
+  document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
+    if (/^(input|textarea|select)$/i.test((e.target && e.target.tagName) || '')) return;
+    if (['Space', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.stopImmediatePropagation();   // l'écran d'origine a ses propres raccourcis de lecture
+    if (e.code === 'Space') { e.preventDefault(); if (e.target && e.target.blur) e.target.blur(); basculer(actif); }
+    else if (e.key === 'c' || e.key === 'C') { e.preventDefault(); couper(actif); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); aller(actif, player.currentTime - 1); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); aller(actif, player.currentTime + 1); } }, true);
+  document.addEventListener('click', e => {
+    if (e.target.closest('#aidego')) { const w = $('#sepwrap'); if (w) w.classList.remove('open'); ouvrir(); return; }
+    const b = e.target.closest('#aide [data-a]'); if (!b) return; const a = b.dataset.a, k = +b.dataset.r, j = +b.dataset.j;
+    if (a === 'fermer') fermer();
+    else if (a === 'plus-de') { collecter(); cible = b.dataset.n; etat = 'prep'; prog = 1; stage = T('Recherche', 'Searching'); peindre(); suite(); }
+    else if (a === 'retour-lot') { collecter(); cible = null; etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'suppr-pers') { const n = b.dataset.n;
+      if (confirmeSuppr !== n) { confirmeSuppr = n; peindre(); setTimeout(() => { if (confirmeSuppr === n) { confirmeSuppr = null; if (document.body.classList.contains('aide-on')) peindre(); } }, 4000); return; }
+      confirmeSuppr = null; collecter();
+      for (let i = exemples.length - 1; i >= 0; i--) if (exemples[i].nom === n) exemples.splice(i, 1);
+      extra = extra.filter(x => x !== n); rows.forEach(r => { Object.keys(r.aff).forEach(j => { if (r.aff[j] === n) r.aff[j] = undefined; }); });
+      if (cible === n) cible = null;
+      if (rapport) rapport.personnes = rapport.personnes.filter(x => x !== n);
+      if (exemples.length) { etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); } else { rapport = rapport ? { ...rapport, personnes: [], secondes: {} } : rapport; peindre(); } }
+    else if (a === 'voir-ech') { ouvert[b.dataset.n] = !ouvert[b.dataset.n]; peindre(); }
+    else if (a === 'retire-ech') { const l = echantillons(b.dataset.n), x = l[+b.dataset.i]; exemples.splice(exemples.indexOf(x), 1); collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'pass-p') { actif = Math.max(0, actif - 1); peindre(); }
+    else if (a === 'pass-s') { actif = Math.min(rows.length - 1, actif + 1); peindre(); }
+    else if (a === 'sel-p' || a === 'sel-s') { const r = rows[k], bs = bornes(r); r.sel = Math.max(0, Math.min(bs.length - 2, (r.sel || 0) + (a === 'sel-s' ? 1 : -1))); player.currentTime = bs[r.sel]; peindre(); }
+    else if (a === 'basc') basculer(k);
+    else if (a === 'nudge') aller(k, player.currentTime + parseFloat(b.dataset.d));
+    else if (a === 'boucle') { boucle = !boucle; peindre(); }
+    else if (a === 'seg') { const bs = bornes(rows[k]); actif = k; lire(bs[j], bs[j + 1], k); }
+    else if (a === 'ecoute-t') lire(+b.dataset.s, +b.dataset.e);
+    else if (a === 'couper') couper(k);
+    else if (a === 'recoller') { const r = rows[k], nom = Object.values(r.aff).find(Boolean); r.cuts = []; r.aff = nom ? { 0: nom } : {}; r.sel = 0; peindre(); }
+    else if (a === 'aff') { const r = rows[k]; r.aff[j] = r.aff[j] === b.dataset.n ? undefined : b.dataset.n; if (r.aff[j]) { const bs = bornes(r); if (j < bs.length - 2) { r.sel = j + 1; player.currentTime = bs[j + 1]; } } peindre(); }
+    else if (a === 'nouv') { nouveau = { k, j }; peindre(); }
+    else if (a === 'ajout') { const inp = document.querySelector('#aide input.ar-new'), nom = inp ? inp.value.trim() : ''; if (nom) { if (!personnes().includes(nom)) extra.push(nom); rows[k].aff[j] = nom; } nouveau = null; peindre(); }
+    else if (a === 'continuer') { collecter(); etat = 'prep'; prog = 1; stage = T('Calcul', 'Computing'); peindre(); suite(); }
+    else if (a === 'terminer') terminer();
+  });
+  document.addEventListener('keydown', e => { if (!document.body.classList.contains('aide-on')) return;
+    if (e.key === 'Escape') fermer();
+    if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('ar-new')) { const b = document.querySelector('#aide [data-a="ajout"]'); if (b) b.click(); } });
+}
+
+/* Voix : un seul choix, trois façons. « Avec mon aide » : on transcrit sans séparer, puis l'identification s'ouvre
+   toute seule dès que le texte est prêt. « Automatique » : l'ancienne séparation, longue. */
+{ const boutons = [...document.querySelectorAll('#vmode button')], dit = $('#vmodedit'), sep = $('#sep');
+  const texte = { aucune: ['Pas de séparation des voix : le texte seul, le plus rapide.', 'No voice separation: text only, the fastest.'],
+    aide: ['Après la transcription, vous identifiez les personnes sur quelques extraits. Recommandé : c’est plus fiable que l’automatique.', 'After transcription, you identify the people on a few samples. Recommended: more reliable than automatic.'],
+    auto: ['Le programme sépare seul. Long, et il peut mélanger les voix.', 'The program separates on its own. Slow, and it may mix voices up.'] };
+  let mode = 'aide'; try { mode = localStorage.getItem('tr-modevoix') || 'aide'; } catch (e) {}
+  function appliquer(m) {
+    mode = m; window.__modeVoix = m;
+    boutons.forEach(x => { const on = x.dataset.m === m; x.classList.toggle('on', on); x.setAttribute('aria-checked', String(on)); });
+    dit.textContent = vm.lang.t(texte[m][0], texte[m][1]);
+    if ((m === 'auto') !== sep.classList.contains('on')) sep.click();
+    $('#vauto').classList.toggle('open', m === 'auto');
+    try { localStorage.setItem('tr-modevoix', m); } catch (e) {}
+    if (typeof majEstim === 'function') majEstim();
+  }
+  boutons.forEach(x => x.addEventListener('click', () => appliquer(x.dataset.m)));
+  if (window.vm && vm.lang && vm.lang.onChange) vm.lang.onChange(() => { dit.textContent = vm.lang.t(texte[mode][0], texte[mode][1]); });
+  /* ce qui compte est le choix fait AU LANCEMENT, pas celui d'après */
+  $('#go').addEventListener('click', () => { window.__identifierApres = (mode === 'aide'); }, true);
+  appliquer(mode);
+}
+
+/* Panneau flottant : cliquer sur un nom ne ramène plus en haut. Il reste affiché pendant qu'on lit et qu'on tourne les pages ;
+   on y renomme la voix, ou on dit à qui appartient CETTE réplique (correction), puis on peut raffiner d'après ses corrections. */
+{ let cur = null; const corr = window.__corrections = window.__corrections || [];
+  const T = (f, e) => vm.lang.t(f, e);
+  const ech = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const nomsPresents = () => [...new Set(job.speakers.map(x => (names[x.id] || '').trim()).filter(Boolean))];
+  function el() { let p = document.getElementById('flotnom'); if (!p) { p = document.createElement('aside'); p.id = 'flotnom'; document.body.appendChild(p); } return p; }
+  function fermerFlot() { document.body.classList.remove('flot-on'); cur = null; }
+  function peindreFlot() {
+    if (!cur) return; const b = shown[cur.i]; if (!b) return; const p = el(); const sid = b.speaker;
+    const nbCorr = corr.length, avecNom = new Set([...corr.map(c => c.nom), ...(window.__exemplesVoix || []).map(c => c.nom)]).size;
+    p.innerHTML = '<header><b>' + T('Cette réplique', 'This reply') + '</b><button type="button" data-f="x" aria-label="' + T('Fermer', 'Close') + '">×</button></header>'
+      + '<div class="fl-t"><button type="button" data-f="ecouter">' + T('Écouter', 'Listen') + '</button><span>' + clock(b.start) + ' – ' + clock(b.end) + '</span></div>'
+      + '<p class="fl-p">' + ech(b.text.slice(0, 140)) + (b.text.length > 140 ? '…' : '') + '</p>'
+      + (b.conf != null && b.conf < 0.3 ? '<p class="fl-inc">' + T('Attribution incertaine.', 'Uncertain attribution.') + '</p>' : '')
+      + '<h4>' + T('À qui est cette réplique ?', 'Who says this?') + '</h4><div class="fl-ch">'
+      + job.speakers.map(x => { const n = labelOf(x.id); return '<button type="button" class="chip' + (x.id === sid ? ' on' : '') + '" style="--pc:' + x.color + '" data-f="qui" data-id="' + ech(x.id) + '">' + ech(n) + '</button>'; }).join('') + '</div>'
+      + '<h4>' + T('Renommer cette voix', 'Rename this voice') + '</h4><input type="text" class="fl-nom" data-id="' + ech(sid) + '" value="' + ech(names[sid] || '') + '" placeholder="' + T('Voix', 'Voice') + ' ' + ((job.speakers.find(x => x.id === sid) || { index: 0 }).index + 1) + '">'
+      + '<footer><span>' + nbCorr + ' ' + T('correction(s)', 'correction(s)') + '</span>'
+      + '<button type="button" data-f="raff"' + (nbCorr && avecNom >= 2 && job.enrolement_pret ? '' : ' disabled') + ' title="' + T('Recalcule tout le texte d’après vos exemples et vos corrections.', 'Recomputes the whole text from your examples and corrections.') + '">' + T('Raffiner d’après mes corrections', 'Refine from my corrections') + '</button></footer>';
+  }
+  window.ouvrirFlot = tour => { if (!tour || typeof job === 'undefined' || !job) return; const i = +(tour.dataset.i ?? tour.dataset.c); cur = { i }; peindreFlot(); document.body.classList.add('flot-on'); };
+  document.addEventListener('click', e => { const bt = e.target.closest('#flotnom [data-f]'); if (!bt || !cur) return; const f = bt.dataset.f, b = shown[cur.i];
+    if (f === 'x') return fermerFlot();
+    if (f === 'ecouter') { seek(b.start); if (player.paused) play(); return; }
+    if (f === 'qui') { const sid = bt.dataset.id; if (sid === b.speaker) return;
+      job.blocks.forEach(x => { if (x.start >= b.start - .01 && x.end <= b.end + .01) { x.speaker = sid; x.conf = 1; } });
+      const nom = labelOf(sid); corr.push({ start: b.start, end: b.end, nom });
+      paintDoc(); queueSave(); const nb = shown.findIndex(x => x.start <= b.start + .01 && x.end >= b.start); cur = { i: nb < 0 ? cur.i : nb }; peindreFlot(); return; }
+    if (f === 'raff') { const exemples = [...(window.__exemplesVoix || []), ...corr].map(x => ({ start: x.start, end: x.end, nom: x.nom }));
+      fermerFlot(); document.body.classList.remove('back'); $('#alerts').innerHTML = ''; $('#journal').innerHTML = ''; startedAt = 0; marks = []; $('#stage-area').innerHTML = '';
+      $('#dropzone').classList.add('filled'); $('#status').hidden = false; busy.start(); $('#working').hidden = false; $('#go').disabled = true; $('#stop').hidden = false; setStage('Attribution des voix', 0.01);
+      window.__exemplesVoix = exemples; corr.length = 0;
+      api('/api/jobs/' + jobId + '/enrolement/terminer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exemples }) })
+        .then(() => { poll = setInterval(tick, 1000); tick(); }).catch(err => { idle('Transcrire'); busy.stop(); $('#status').hidden = true; fail(err.message); }); } });
+  document.addEventListener('input', e => { const i = e.target.closest('#flotnom .fl-nom'); if (!i) return; names[i.dataset.id] = i.value; paintDoc(); queueSave(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && document.body.classList.contains('flot-on') && !document.body.classList.contains('aide-on')) fermerFlot(); });
+}
+
+/* Lecteur : « Suivant » et « Précédent » vont à la réplique AFFICHÉE (les longs passages sont découpés en répliques de quelques phrases),
+   « Début » et « Fin » recalent la page et le suivi. */
+jumpReply = function (direction) {
+  const tours = [...document.querySelectorAll('.turn')].map(t => ({ el: t, t: parseFloat(t.dataset.ts) })).filter(x => isFinite(x.t));
+  if (!tours.length) return; const now = player.currentTime; let cible = null;
+  if (direction > 0) cible = tours.find(x => x.t > now + 0.15);
+  else { let k = -1; tours.forEach((x, i) => { if (x.t <= now + 0.05) k = i; }); cible = k >= 0 && now - tours[k].t > 1.5 ? tours[k] : tours[Math.max(0, k - 1)]; }
+  if (!cible) return;
+  const joue = !player.paused; seek(cible.t); setFollow(true); pageToEl(cible.el); if (joue) play();
+};
+$('#first').addEventListener('click', () => { seek(0); setFollow(true); setPage(0); }, true);
+
+/* Télécharger un modèle de voix, seul, depuis l'application installée : ils ne sont pas dans le paquet. */
+{ const wrap = $('#embgetwrap'), bt = $('#embget'), st = $('#embst'); let suivi = 0;
+  const courant = () => { const v = $('#emb').value; return v === 'auto' ? null : (catalogue || []).find(m => m.cle === v) || null; };
+  function maj() {
+    const m = courant();
+    if (!m || m.telecharge) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    if (!suivi) { bt.disabled = false; bt.textContent = vm.lang.t('Télécharger ce modèle maintenant (' + Math.round(m.mo) + ' Mo)', 'Download this model now (' + Math.round(m.mo) + ' MB)'); st.textContent = ''; }
+  }
+  bt.addEventListener('click', async () => {
+    const m = courant(); if (!m || suivi) return; bt.disabled = true; st.textContent = '…';
+    try { const r = await api('/api/models/' + m.cle + '/telecharger', { method: 'POST' }); if (r.etat === 'pret') { await loadModels(); maj(); return; } }
+    catch (err) { bt.disabled = false; st.textContent = err.message; return; }
+    suivi = setInterval(async () => {
+      let d; try { d = await api('/api/models/' + m.cle + '/etat'); } catch (e) { return; }
+      if (d.etat === 'pret') { clearInterval(suivi); suivi = 0; st.textContent = vm.lang.t('Prêt.', 'Ready.'); await loadModels(); maj(); setTimeout(() => { st.textContent = ''; }, 3000); }
+      else if (d.etat === 'erreur') { clearInterval(suivi); suivi = 0; bt.disabled = false; st.textContent = d.erreur; }
+      else if (d.etat === 'en_cours') st.textContent = Math.round(100 * (d.recu || 0) / Math.max(d.total || 1, 1)) + ' % · ' + Math.round((d.recu || 0) / 1048576) + ' / ' + Math.round((d.total || 0) / 1048576) + ' ' + vm.lang.t('Mo', 'MB');
+      else { clearInterval(suivi); suivi = 0; maj(); }
+    }, 700);
+  });
+  describeModel = (function (o) { return function () { o(); maj(); }; })(describeModel);
+  $('#emb').addEventListener('change', maj);
+}
+
+/* Reconnaissance des mots : modèle et vocabulaire, retenus d'une fois à l'autre. */
+{ const stt = $('#stt'), voc = $('#vocab'), n1 = $('#sttnote'), n2 = $('#vocabnote');
+  const notes = () => {
+    n1.textContent = vm.lang.t('Précise : le modèle complet de Whisper, plus juste en français, un peu plus lent. Rapide : la version allégée, qui se trompe plus souvent sur les mots.', 'Precise: the full Whisper model, more accurate in French, a little slower. Fast: the lighter version, which gets more words wrong.');
+    n2.textContent = vm.lang.t('Noms de personnes, de lieux, termes de métier, séparés par des virgules. Le modèle les orthographie comme écrits ici au lieu de les deviner. Une quarantaine de mots au plus.', 'Names of people, places, trade terms, separated by commas. The model spells them as written here instead of guessing. About forty words at most.');
+  };
+  try { stt.value = localStorage.getItem('tr-stt') || 'precis'; voc.value = localStorage.getItem('tr-vocab') || ''; } catch (e) {}
+  stt.addEventListener('change', () => { try { localStorage.setItem('tr-stt', stt.value); } catch (e) {} });
+  voc.addEventListener('input', () => { try { localStorage.setItem('tr-vocab', voc.value); } catch (e) {} });
+  notes(); if (vm.lang && vm.lang.onChange) vm.lang.onChange(notes);
+}
+
+/* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
+   l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,
+   une liste pleine fenêtre, par pages. */
+{ let page = 0, occupe = false;
+  const sc = () => document.querySelector('.tr-sc');
+  function nav(h, texte) {
+    let n = h.querySelector('.sc-nav');
+    if (!n) { n = document.createElement('div'); n.className = 'sc-nav'; h.appendChild(n); }
+    if (n.dataset.t !== texte) { n.dataset.t = texte; n.innerHTML = texte; }
+    return n;
+  }
+  function ajuster() {
+    const h = sc(); if (occupe || !h || h.hidden) return;
+    const lis = [...h.querySelectorAll('ul > li')]; if (!lis.length) return;
+    occupe = true;
+    try {
+      document.documentElement.style.setProperty('--barh', Math.round($('#bar').getBoundingClientRect().bottom) + 'px');
+      lis.forEach(l => { l.hidden = false; });
+      if (document.body.classList.contains('sc-all')) {
+        const ul = h.querySelector('ul'), dispo = innerHeight - ul.getBoundingClientRect().top - 84;
+        const par = Math.max(2, Math.floor(dispo / (lis[0].getBoundingClientRect().height || 72)));
+        const pages = Math.ceil(lis.length / par); page = Math.min(page, pages - 1);
+        lis.forEach((l, i) => { l.hidden = !(i >= page * par && i < (page + 1) * par); });
+        const n = nav(h, '<button type="button" data-sc="retour">' + vm.lang.t('Retour', 'Back') + '</button>'
+          + (pages > 1 ? '<span class="sc-pg"><button type="button" data-sc="moins" aria-label="' + vm.lang.t('Page précédente', 'Previous page') + '">−</button> ' + (page + 1) + ' / ' + pages
+            + ' <button type="button" data-sc="plus" aria-label="' + vm.lang.t('Page suivante', 'Next page') + '">+</button></span>' : ''));
+        n.dataset.mode = 'tout'; n.dataset.pages = pages;
+        return;
+      }
+      const bas = $('#bar').getBoundingClientRect().bottom;
+      const titre = document.querySelector($('#dropzone').classList.contains('filled') ? '.giant.got .a' : '.giant.ask .a');
+      let vis = lis.length;
+      h.classList.remove('sc-min');
+      while (titre && vis > 0 && titre.getBoundingClientRect().top < bas + 10) { lis[--vis].hidden = true; if (vis === 0) h.classList.add('sc-min'); }
+      const reste = lis.length - vis;
+      if (reste > 0) nav(h, '<button type="button" data-sc="tout">' + vm.lang.t('Toutes les séances', 'All sessions') + ' (' + lis.length + ')</button>').dataset.mode = 'court';
+      else { const n = h.querySelector('.sc-nav'); if (n) n.remove(); }
+    } finally { occupe = false; }
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-sc]'); if (!b) return; const a = b.dataset.sc;
+    if (a === 'tout') { page = 0; document.body.classList.add('sc-all'); }
+    else if (a === 'retour') document.body.classList.remove('sc-all');
+    else if (a === 'plus') page += 1; else if (a === 'moins') page = Math.max(0, page - 1);
+    ajuster();
+  });
+  const relancer = () => requestAnimationFrame(ajuster);
+  new MutationObserver(relancer).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(relancer).observe($('#dropzone'), { attributes: true, attributeFilter: ['class'] });
+  addEventListener('resize', relancer);
+  if (document.fonts) document.fonts.ready.then(relancer);
+}
 """
 js = js.rstrip() + "\n" + addon + "\n"
 

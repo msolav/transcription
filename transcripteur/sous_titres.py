@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import re
 
-from .pipeline import join_words
+from .texte import join_words
 
 # Deux lignes de ~42 caractères : la limite du sous-titrage télévisé, et
 # ce que l'œil lit sans quitter l'image des yeux.

@@ -42,6 +42,7 @@ def lire_wav(chemin: str):
 def main(argv: list[str]) -> int:
     try:
         audio_path, seg, emb, nombre, seuil, fils = argv[:6]
+        raffiner = len(argv) > 6 and argv[6] == '1'
         import sherpa_onnx
 
         audio = lire_wav(audio_path)
@@ -64,20 +65,42 @@ def main(argv: list[str]) -> int:
         moteur = sherpa_onnx.OfflineSpeakerDiarization(config)
 
         dernier = [-1]
+        # Avec le raffinage, la séparation de base occupe les 80 premiers
+        # pour cent de la barre et le raffinage les 20 derniers : sans
+        # cela, la progression resterait à 100 % pendant le raffinage.
+        part = 0.8 if raffiner else 1.0
+
+        def emettre(fraction: float) -> None:
+            cent = int(100 * fraction)
+            if cent != dernier[0]:
+                dernier[0] = cent
+                print(f"P {cent} 100", flush=True)
 
         def rappel(faits: int, total: int) -> int:
             # Une ligne par pour cent : le parent n'a pas besoin de
             # davantage, et des milliers de lignes coûteraient plus
             # cher à transmettre qu'à calculer.
-            cent = int(100 * faits / max(total, 1))
-            if cent != dernier[0]:
-                dernier[0] = cent
-                print(f"P {faits} {total}", flush=True)
+            emettre(part * faits / max(total, 1))
             return 0
 
         res = moteur.process(audio, callback=rappel).sort_by_start_time()
         tours = [[float(r.start), float(r.end), f"SPEAKER_{r.speaker:02d}"]
                  for r in res]
+        def dire(message: str) -> None:
+            print("L " + message, flush=True)
+
+        dire(f"séparation de base terminée : {len(tours)} tours, "
+             f"{len({t[2] for t in tours})} voix")
+        if raffiner and tours:
+            from transcripteur import raffinage
+            extracteur = sherpa_onnx.SpeakerEmbeddingExtractor(
+                sherpa_onnx.SpeakerEmbeddingExtractorConfig(
+                    model=emb, num_threads=int(fils)))
+            confs: list = []
+            tours = [list(t) for t in raffinage.raffiner(
+                audio, [tuple(t) for t in tours], extracteur, int(nombre),
+                lambda f: emettre(0.8 + 0.2 * f), dire, confs)]
+            print("C " + json.dumps([round(c, 3) for c in confs]), flush=True)
         print("R " + json.dumps(tours), flush=True)
         return 0
     except Exception as exc:  # noqa: BLE001

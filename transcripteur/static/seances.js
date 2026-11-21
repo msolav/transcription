@@ -33,6 +33,17 @@
   text-transform: uppercase; color: var(--vm-mute, #666); display: flex;
   gap: .6rem; align-items: baseline; }
 .tr-sc > h3 em { font-style: normal; margin-left: auto; font-size: .92em; }
+/* Les purges, au bout de la ligne de titre : discrètes au repos, elles
+   ne doivent pas se cliquer en visant autre chose. */
+.tr-sc .sc-purge { display: flex; gap: .4rem; align-items: center; }
+.tr-sc .sc-purge button { font: inherit; letter-spacing: inherit;
+  text-transform: inherit; background: none; border: 0; cursor: pointer;
+  padding: .25em .5em; color: var(--vm-mute, #666); opacity: .7;
+  white-space: nowrap; transition: opacity .3s, color .3s; }
+.tr-sc .sc-purge button:hover { opacity: 1; color: var(--vm-ink, #111); }
+.tr-sc .sc-purge button.danger:hover { color: var(--tr-warn, #b4341f); }
+.tr-sc .sc-purge button[data-sur="1"] { opacity: 1;
+  color: var(--tr-warn, #b4341f); }
 .tr-sc ul { list-style: none; margin: 0; padding: 0;
   border-top: 1px solid color-mix(in oklab, var(--vm-ink, #000) 15%, transparent); }
 .tr-sc li { display: flex; align-items: center; gap: .7rem; padding: .5rem 0;
@@ -55,7 +66,9 @@
   var(--vm-font-mono, ui-monospace, monospace); letter-spacing: .04em;
   text-transform: uppercase; color: var(--vm-mute, #666); }
 .tr-maj a { color: var(--vm-accent, #ff3d12); }
-`;
+.tr-maj-go { font: 600 .8125rem/1 inherit; margin: 0 .5rem; padding: .55rem .9rem; background: var(--vm-ink, #0c0c0b); color: var(--vm-paper, #f1efe9); border: 0; cursor: pointer; transition: background-color .5s var(--vm-ease, ease); }
+.tr-maj-go:hover:not(:disabled) { background: var(--vm-accent, #ff3d12); }
+.tr-maj-go:disabled { opacity: .5; }`;
 
   function styler() {
     if (document.getElementById('tr-sc-css')) return;
@@ -124,10 +137,29 @@
     hote.hidden = false;
 
     const total = d.place && d.place.octets ? poids(d.place.octets) : '';
+    /* Deux purges, et l'ordre compte : jeter les sons récupère presque
+       toute la place sans perdre une ligne de texte, et c'est donc ce
+       qu'on propose en premier. Tout effacer vient après, et le dit. */
+    const avecSon = liste.filter(s => s.audio_present).length;
+    const octetsSon = liste.reduce((t, s) => t + (s.audio_present ? (s.octets || 0) : 0), 0);
     hote.innerHTML = `
       <h3><span>${L('Séances enregistrées', 'Saved sessions')}</span>
-        ${total ? `<em title="${escapeHtml(d.place.dossier)}">${total}</em>` : ''}</h3>
+        ${total ? `<em title="${escapeHtml(d.place.dossier)}">${total}</em>` : ''}
+        <span class="sc-purge">
+          ${avecSon ? `<button data-act="tous-sons"
+              title="${L('Garde tous les textes. L’aperçu et la séparation des voix ne seront plus possibles.',
+                         'Keeps every transcript. Preview and voice separation will no longer be possible.')}"
+            >${L('Jeter les sons', 'Drop all audio')} (${poids(octetsSon)})</button>` : ''}
+          <button class="danger" data-act="tout"
+            title="${L('Textes et enregistrements. Sans retour possible.',
+                       'Transcripts and recordings. No way back.')}"
+            >${L('Tout effacer', 'Delete everything')}</button>
+        </span></h3>
       <ul>${liste.map(ligne).join('')}</ul>`;
+
+    hote.querySelectorAll('.sc-purge button').forEach(b => {
+      b.onclick = () => purger(b.dataset.act, b, liste.length, avecSon, octetsSon);
+    });
 
     hote.querySelectorAll('button[data-id]').forEach(b => {
       b.onclick = () => agir(b.dataset.act, b.dataset.id, b);
@@ -176,6 +208,33 @@
     const url = acte === 'audio'
       ? `/api/seances/${id}/audio` : `/api/seances/${id}`;
     try { await api(url, { method: 'DELETE' }); } catch (e) { alert(e.message); }
+    peindre();
+  }
+
+
+  /* Les deux purges. Même geste en deux temps que pour une séance : le
+     premier clic change le mot du bouton, le second agit. Une fenêtre
+     de confirmation s'expédie sans lire ; un bouton qui dit ce qu'il va
+     emporter se remarque.
+     Six secondes plutôt que quatre : ce qui part ici ne revient pas. */
+  async function purger(acte, bouton, combien, avecSon, octetsSon) {
+    const tout = acte === 'tout';
+    if (bouton.dataset.sur !== '1') {
+      const avant = bouton.innerHTML;
+      bouton.dataset.sur = '1';
+      bouton.textContent = tout
+        ? L(`Effacer ${combien} séance${combien > 1 ? 's' : ''} — sans retour`,
+            `Delete ${combien} session${combien > 1 ? 's' : ''} — no way back`)
+        : L(`Jeter ${avecSon} enregistrement${avecSon > 1 ? 's' : ''} (${poids(octetsSon)})`,
+            `Drop ${avecSon} recording${avecSon > 1 ? 's' : ''} (${poids(octetsSon)})`);
+      setTimeout(() => {
+        if (bouton.dataset.sur === '1') { bouton.dataset.sur = ''; bouton.innerHTML = avant; }
+      }, 6000);
+      return;
+    }
+    try {
+      await api(`/api/seances${tout ? '' : '?audio_seulement=1'}`, { method: 'DELETE' });
+    } catch (e) { alert(e.message); }
     peindre();
   }
 
@@ -298,12 +357,50 @@
      est sortie : il n'y a pas de mise à jour automatique, et rien dans
      l'application ne le dit. En cas d'échec on se tait — une panne de
      réseau n'est pas une nouvelle à annoncer. */
-  async function majDisponible() {
+  /* Télécharge la bonne version (le programme l'écrit dans Téléchargements
+     et la montre) et rend compte de l'avancement à `ecrire`. */
+  async function telechargerMaj(bouton, ecrire) {
+    bouton.disabled = true;
+    try { await api('/api/mise-a-jour', { method: 'POST' }); } catch (e) { bouton.disabled = false; return; }
+    const t = setInterval(async () => {
+      let m; try { m = await api('/api/mise-a-jour'); } catch (e) { return; }
+      if (m.etat === 'cours') {
+        const mo = n => (n / 1048576).toFixed(0);
+        ecrire(m.total ? `${Math.round(100 * m.octets / m.total)} % (${mo(m.octets)}/${mo(m.total)} Mo)` : `${mo(m.octets)} Mo`);
+      } else {
+        clearInterval(t);
+        if (m.etat === 'fini') {
+          bouton.hidden = true;
+          ecrire(L(`${m.nom} est dans Téléchargements. Quitter l'application, puis ouvrir le nouveau fichier.`,
+            `${m.nom} is in Downloads. Quit the app, then open the new file.`));
+        } else {
+          bouton.disabled = false;
+          ecrire(L('Téléchargement impossible. Réessayer plus tard.', 'Download failed. Try again later.'));
+        }
+      }
+    }, 700);
+  }
+
+  /* `force` : ignorer la réponse gardée en mémoire par le serveur (menu
+     « Rechercher une mise à jour », revérification périodique). Rend la
+     réponse, ou null si la vérification a échoué. */
+  async function majDisponible(force) {
     let v = null;
-    try { v = await api('/api/version'); } catch (e) { return; }
-    if (!v || !v.retard || document.getElementById('tr-maj')) return;
+    try { v = await api('/api/version' + (force ? '?force=1' : '')); } catch (e) { return null; }
+    if (!v || !v.retard) return v;
+    window.trVersion = v;
+
+    // L'indicateur de la barre : visible sur tous les écrans.
+    const bm = document.getElementById('majbtn');
+    if (bm && !bm.dataset.lie) {
+      bm.dataset.lie = '1'; bm.hidden = false;
+      bm.title = L(`Version ${v.publiee} disponible`, `Version ${v.publiee} available`);
+      bm.onclick = () => telechargerMaj(bm, t => { bm.textContent = t; bm.hidden = false; });
+    }
+
+    if (document.getElementById('tr-maj')) return v;
     const ancre = $$('.pickrow') || $$('#dropzone');
-    if (!ancre) return;
+    if (!ancre) return v;
     styler();
     const el = document.createElement('p');
     el.id = 'tr-maj';
@@ -312,14 +409,29 @@
     el.innerHTML = L(
       `Version ${v.publiee} disponible — installée : ${v.installee}.`,
       `Version ${v.publiee} available — installed: ${v.installee}.`)
-      + ` <a href="${v.url}" target="_blank" rel="noopener">`
-      + L('Télécharger', 'Download') + '</a>';
+      + ' <button type="button" id="tr-maj-go" class="tr-maj-go">'
+      + L('Télécharger la mise à jour', 'Download the update') + '</button>'
+      + ' <span id="tr-maj-etat"></span>';
+    /* Le programme télécharge lui-même la bonne version dans Téléchargements
+       et la montre ; il reste à l'ouvrir (clic droit, Ouvrir, la première
+       fois : le paquet n'est pas signé). */
+    const go = el.querySelector('#tr-maj-go'), etat = el.querySelector('#tr-maj-etat');
+    go.onclick = () => telechargerMaj(go, t => { etat.textContent = t; });
     ancre.after(el);
+    return v;
   }
+  window.trVerifierMaj = () => majDisponible(true);
+  // Revérifiée de temps en temps : une version peut sortir pendant que l'application reste ouverte.
+  setInterval(() => majDisponible(true), 3 * 3600 * 1000);
+
+  /* Exposée pour l'import de la bibliothèque : après un dépôt, la liste
+     doit se remettre à jour sans recharger la page. `peindre` est une
+     fonction du module, invisible de l'extérieur sans cela. */
+  window.repeindreSeances = peindre;
 
   function demarrer() {
     retablir();
-    majDisponible();
+    majDisponible(false);
     peindre();
     retenirLancement();
 

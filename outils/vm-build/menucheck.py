@@ -1,0 +1,20 @@
+import os,sys,json; sys.path.insert(0,os.path.dirname(os.path.abspath(__file__)))
+from harness import *
+calls=[]
+with sync_playwright() as p:
+    b=p.chromium.launch(channel='chrome'); pg=b.new_page(viewport=dict(width=1440,height=900),accept_downloads=True); errs=[]; pg.on('pageerror',lambda e:errs.append(str(e))); st=install(pg)
+    J=lambda d: dict(status=200,content_type='application/json',body=json.dumps(d))
+    def ver(r,q): calls.append(q.url.split('?')[1] if '?' in q.url else ''); r.fulfill(**J(dict(installee='1.3.1',publiee='v1.4',retard=True,url='https://x')))
+    pg.route('**/api/version*',ver); pg.route('**/api/seances',lambda r,q:r.fulfill(**J([])))
+    pg.goto(ORIGIN+'/'); pg.wait_for_timeout(800)
+    pg.add_script_tag(path=os.path.join(os.path.dirname(__file__),'..','..','transcripteur','static','seances.js')); pg.wait_for_timeout(1500)
+    print('header update button visible:', pg.is_visible('#majbtn'), '| text:', pg.inner_text('#majbtn'))
+    pg.evaluate("trMenu('maj')"); pg.wait_for_timeout(1500); print('forced check sent:', calls)
+    pg.evaluate("trMenu('txt')"); pg.wait_for_timeout(600); print('toast when no text:', pg.inner_text('#toast'))
+    pg.set_input_files('#file','/tmp/tr/meeting.wav'); pg.click('#go'); pg.wait_for_timeout(5500)
+    with pg.expect_download(timeout=4000) as d: pg.evaluate("trMenu('txt')")
+    print('txt via menu -> download', d.value.suggested_filename)
+    pg.evaluate("trMenu('nouveau')"); pg.wait_for_timeout(1200); print('nouveau -> back', pg.evaluate("document.body.classList.contains('back')"))
+    pg.evaluate("window.pywebview={}"); pg.keyboard.press('Meta+n'); pg.wait_for_timeout(1200); print('Cmd+N toggled back', pg.evaluate("document.body.classList.contains('back')"))
+    print('errors', errs, 'overflow', pg.evaluate("document.documentElement.scrollHeight-innerHeight"))
+    pg.screenshot(path='/tmp/tr/menu.png',clip=dict(x=0,y=0,width=1440,height=70)); b.close()
