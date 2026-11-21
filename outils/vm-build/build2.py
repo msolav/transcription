@@ -877,12 +877,12 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     if (verif.sur > 0) lignes.push('<div class="ar-part">' + T('Ses suggestions : ' + verif.ok + ' confirmées sur ' + verif.sur + '.', 'Its suggestions: ' + verif.ok + ' confirmed out of ' + verif.sur + '.') + '</div>');
     if (pi != null) lignes.push('<div class="ar-part">' + T('Parole encore incertaine : ' + Math.round(pi * 100) + ' %', 'Speech still uncertain: ' + Math.round(pi * 100) + ' %') + '</div>');
     (rapport.suspects || []).slice(0, 2).forEach(x => lignes.push('<div class="ar-susp">' + T('Un exemple de ' + x.nom + ' ne ressemble pas aux autres : ', 'An example of ' + x.nom + ' does not look like the others: ') + hms(x.start) + ' <button type="button" data-a="ecoute-t" data-s="' + x.start + '" data-e="' + x.end + '">' + T('Écouter', 'Listen') + '</button></div>'));
-    const faibles = noms.filter(n => secondesDe(n) < 20 || echantillons(n).length < 3);
+    const faibles = noms.filter(n => secondesDe(n) < 20 || echantillons(n).length < 2);
     let verdict = '';
     if (noms.length >= 2) {
       const bon = !c || c.sur === 0 || c.justes / c.sur >= 0.9;
       verdict = (pi != null && pi < 0.05 && !faibles.length && bon) ? T('Vous pouvez terminer l’analyse.', 'You can finish the analysis.')
-        : faibles.length ? T('Profils encore incomplets : ' + faibles.join(', ') + ' (moins de 20 s ou de 3 échantillons ; voir la barre de chaque personne).', 'Profiles still incomplete: ' + faibles.join(', ') + ' (under 20 s or 3 samples; see each person’s bar).')
+        : faibles.length ? T('Profils encore incomplets : ' + faibles.join(', ') + ' (moins de 20 s ou de 2 échantillons ; voir la barre de chaque personne).', 'Profiles still incomplete: ' + faibles.join(', ') + ' (under 20 s or 2 samples; see each person’s bar).')
         : !bon ? T('Le contrôle se trompe sur certains de vos exemples : vérifiez-les, ou ajoutez-en.', 'The check gets some of your examples wrong: review them, or add more.')
         : T('Continuez avec quelques passages : si la part incertaine baisse peu, vous pouvez terminer.', 'Continue with a few passages: if the uncertain share drops little, you can finish.');
     }
@@ -908,9 +908,9 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   /* Complétude du profil : indicatif. Moins de 20 s ou moins de 3 échantillons, trop peu pour s'y fier ; 40 s et 4 échantillons ou plus, solide. */
   const secondesDe = n => { const sec = (rapport && rapport.secondes) || {}; return Math.max(echantillons(n).reduce((a, x) => a + (x.end - x.start), 0), sec[n] || 0); };
   function completude(n, nb, s) {
-    const niveau = s <= 0 ? ['vide', 'Aucun échantillon', 'No sample'] : (s >= 40 && nb >= 4) ? ['solide', 'Solide', 'Solid'] : (s >= 20 && nb >= 3) ? ['correct', 'Suffisant', 'Enough'] : ['faible', 'Insuffisant', 'Too little'];
-    const manque = s >= 40 && nb >= 4 ? '' : T(' · encore ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 4 ? ' et ' + (4 - nb) + ' échantillon(s)' : '') + ' pour solide', ' · ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 4 ? ' and ' + (4 - nb) + ' sample(s)' : '') + ' more for solid');
-    return '<span class="pf-comp ' + niveau[0] + '" title="' + T('Repère indicatif : 20 s et 3 échantillons = suffisant, 40 s et 4 = solide. Des échantillons variés comptent plus qu’un long passage.', 'Indicative guide: 20 s and 3 samples = enough, 40 s and 4 = solid. Varied samples count more than one long passage.') + '">'
+    const niveau = s <= 0 ? ['vide', 'Aucun échantillon', 'No sample'] : (s >= 40 && nb >= 3) ? ['solide', 'Solide', 'Solid'] : (s >= 20 && nb >= 2) ? ['correct', 'Suffisant', 'Enough'] : ['faible', 'Insuffisant', 'Too little'];
+    const manque = s >= 40 && nb >= 3 ? '' : T(' · encore ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 3 ? ' et ' + (3 - nb) + ' échantillon(s)' : '') + ' pour solide', ' · ' + Math.max(0, Math.ceil(40 - s)) + ' s' + (nb < 3 ? ' and ' + (3 - nb) + ' sample(s)' : '') + ' more for solid');
+    return '<span class="pf-comp ' + niveau[0] + '" title="' + T('Repère indicatif : 20 s et 2 échantillons = suffisant, 40 s et 3 = solide. Des échantillons pris à des moments différents valent mieux qu’une seule longue plage.', 'Indicative guide: 20 s and 2 samples = enough, 40 s and 3 = solid. Samples from different moments beat one long stretch.') + '">'
       + '<span class="pf-bar"><i style="width:' + Math.round(Math.min(1, s / 40) * 100) + '%"></i><u></u></span>'
       + '<span class="pf-lab" title="' + echap(manque.replace(/^ · /, '')) + '"><b>' + T(niveau[1], niveau[2]) + '</b> · ' + Math.round(s) + ' s · ' + nb + ' ' + T('éch.', 'smp.') + '</span></span>';
   }
@@ -936,14 +936,15 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
     if (msg) return '<p class="ar-dit">' + echap(msg) + '</p>';
     const noms = personnes();
     const intro = !noms.length || noms.length < 2
-      ? T('Voici des passages pris à des endroits très différents de l’enregistrement. Pour chacun, dites qui parle : choisissez un nom, ou ajoutez une nouvelle personne. Si plusieurs personnes parlent dans un passage, écoutez-le et coupez à l’instant du changement.', 'Here are passages taken from very different places in the recording. For each one, say who speaks: pick a name, or add a new person. If several people speak in a passage, listen and cut at the moment the voice changes.')
+      ? T('Voici les plus longues plages où une seule voix semble parler, prises à des endroits différents de l’enregistrement. Pour chacune, écoutez un peu, puis dites qui parle : choisissez un nom, ou ajoutez une personne. La détection peut se tromper : si la voix change, coupez à cet instant.', 'Here are the longest stretches where a single voice seems to speak, taken from different places in the recording. For each, listen a little, then say who speaks: pick a name, or add a person. Detection can be wrong: if the voice changes, cut at that moment.')
       : T('Voici les passages dont le programme est le moins sûr. Il propose un nom : confirmez-le ou corrigez-le.', 'Here are the passages the program is least sure about. It suggests a name: confirm or correct it.');
     const lotVide = !rows.length;
     return '<div class="ar-duo"><div class="ar-colp">' + profils() + '</div><div class="ar-colr">' + (lotVide ? '<p class="ar-dit">' + (cible ? T('Plus aucun passage à proposer pour ' + cible + '.', 'No more passages to suggest for ' + cible + '.') : T('Plus aucun passage à vous montrer. Vous pouvez terminer l’analyse.', 'No passage left to show. You can finish the analysis.')) + '</p>' : '<p class="ar-dit">' + (cible ? T('Passages qui ressemblent le plus à ' + cible + ' : confirmez ceux qui sont bien lui/elle, sinon corrigez.', 'Passages that look most like ' + cible + ': confirm the ones that really are, otherwise correct.') : intro) + ' <span class="ar-clav">' + T('Espace : lecture/pause · C : couper · ← → : ±1 s', 'Space: play/pause · C: cut · ← →: ±1 s') + '</span></p>')
       + (rows.length ? '<div class="ar-liste">' + [rows[actif]].map(r => { const k = actif, bs = bornes(r), nb = bs.length - 1;
       r.sel = Math.min(r.sel == null ? 0 : r.sel, nb - 1);
       const a = bs[r.sel], z = bs[r.sel + 1], fait = Object.values(r.aff).filter(Boolean).length;
-      return '<div class="ar-pass actif" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b>'
+      return '<div class="ar-pass actif" data-r="' + k + '"><div class="ar-ph"><b>' + hms(r.start) + ' – ' + hms(r.end) + '</b><span class="ar-long">' + Math.round(r.end - r.start) + ' s' + (r.nb > 1 ? ' · ' + r.nb + ' ' + T('passages', 'passages') : '') + '</span>'
+        + (r.solide === false ? '<em class="ar-mel">' + T('peut mêler plusieurs voix : écoutez', 'may mix several voices: listen') + '</em>' : '')
         + (r.motif === 'inconnu' ? '<em>' + T('ne ressemble à personne de connu', 'looks like nobody known') + '</em>' : '')
         + '<span class="ar-pgp">' + T('Passage ', 'Passage ') + (k + 1) + ' / ' + rows.length
         + ' <button type="button" data-a="pass-p"' + (k === 0 ? ' disabled' : '') + '>' + T('Précédent', 'Previous') + '</button>'
@@ -1004,7 +1005,7 @@ $('#hero').addEventListener('click', e => { if (!picked && !e.target.closest('.t
   }
 
   function collecter() {
-    rows.forEach(r => { if (r.index != null && !vus.includes(r.index)) vus.push(r.index); });
+    rows.forEach(r => { (r.indices || [r.index]).forEach(i => { if (i != null && !vus.includes(i)) vus.push(i); }); });
     rows.forEach(r => { const bs = bornes(r);
       for (let j = 0; j < bs.length - 1; j++) if (r.aff[j]) {
         exemples.push({ start: bs[j], end: bs[j + 1], nom: r.aff[j] });

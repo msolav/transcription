@@ -849,3 +849,6 @@ body.flot-on #flotnom { opacity: 1; visibility: visible; translate: 0 0; transit
 #flotnom .fl-nom { font: 400 1rem var(--vm-font-display); border: 0; border-bottom: 1px solid var(--vm-ink); background: none; color: inherit; padding: .35rem 0; }
 #flotnom footer { display: flex; align-items: center; justify-content: space-between; gap: .6rem; border-top: 1px solid color-mix(in oklab, var(--vm-ink) 30%, transparent); padding-top: .5rem; font: 500 .75rem var(--vm-font-mono); }
 @media (max-width: 900px) { #flotnom { right: 12px; left: 12px; width: auto; } }
+
+#aide .ar-long { font: 500 .75rem var(--vm-font-mono); opacity: .7; margin-left: .6rem; }
+#aide .ar-mel { font: 600 .6875rem var(--vm-font-mono); letter-spacing: .05em; text-transform: uppercase; color: #d9534f; margin-left: .8rem; }
