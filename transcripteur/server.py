@@ -556,6 +556,59 @@ def list_models(langue: str = "") -> dict:
             "nettoyeur_defaut": assets.DEBRUITEUR_DEFAUT}
 
 
+_telechargements: dict[str, dict] = {}
+
+
+@app.post("/api/models/{cle}/telecharger")
+def telecharger_modele(cle: str) -> dict:
+    """Télécharge un modèle de voix, seul, depuis l'application installée."""
+    if cle not in assets.PAR_CLE:
+        raise HTTPException(404, "Modèle inconnu.")
+    if assets.est_telecharge(cle):
+        return {"etat": "pret"}
+    emp = assets.PAR_CLE[cle]
+    libre = _espace_libre(assets.MODELS_DIR)
+    if libre is not None and libre < emp.mo * 1048576 * 2:
+        raise HTTPException(507, f"Espace disque insuffisant : {libre / 1e9:.1f} Go libres, "
+                                 f"{emp.mo * 2 / 1000:.1f} Go nécessaires.")
+    with _lock:
+        etat = _telechargements.get(cle)
+        if etat and etat["en_cours"]:
+            return {"etat": "en_cours", "recu": etat["recu"], "total": etat["total"]}
+        etat = _telechargements[cle] = {"en_cours": True, "recu": 0, "total": int(emp.mo * 1048576), "erreur": None}
+
+    def progression(recu: int, total: int) -> None:
+        etat["recu"], etat["total"] = recu, total
+
+    def travail() -> None:
+        try:
+            assets.telecharger_modele(cle, progression)
+        except Exception as exc:  # noqa: BLE001
+            journal.erreur(f"téléchargement du modèle {cle}", exc)
+            etat["erreur"] = (_message_disque(exc) if isinstance(exc, OSError)
+                              else f"Le téléchargement a échoué : {exc}")
+        finally:
+            etat["en_cours"] = False
+
+    threading.Thread(target=travail, daemon=True).start()
+    return {"etat": "en_cours", "recu": 0, "total": etat["total"]}
+
+
+@app.get("/api/models/{cle}/etat")
+def etat_modele(cle: str) -> dict:
+    if cle not in assets.PAR_CLE:
+        raise HTTPException(404, "Modèle inconnu.")
+    if assets.est_telecharge(cle):
+        return {"etat": "pret"}
+    etat = _telechargements.get(cle)
+    if not etat:
+        return {"etat": "absent"}
+    if etat["erreur"]:
+        return {"etat": "erreur", "erreur": etat["erreur"]}
+    return {"etat": "en_cours" if etat["en_cours"] else "absent",
+            "recu": etat["recu"], "total": etat["total"]}
+
+
 @app.post("/api/jobs")
 async def create_job(
     file: UploadFile = File(...),
@@ -565,6 +618,8 @@ async def create_job(
     embedding: str = Form(""),
     denoise: str = Form(""),
     raffiner: str = Form(""),
+    stt: str = Form(""),
+    vocabulaire: str = Form(""),
 ) -> JSONResponse:
     def as_int(value: str) -> int | None:
         value = (value or "").strip()
@@ -656,6 +711,8 @@ async def create_job(
         denoise=denoise if denoise in assets.DEB_PAR_CLE else "",
         raffiner=raffiner == "1",
         api_key=config.get_key("groq"),
+        stt=stt if stt in ("precis", "rapide") else "",
+        vocabulaire=vocabulaire.strip()[:2000],
     )
 
     # Les réglages sont retenus par l'interface, qui les lit sur les

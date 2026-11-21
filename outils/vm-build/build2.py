@@ -20,6 +20,7 @@ rep("idle('Terminé');", "idle('Transcrire à nouveau');")
 rep("      idle('Transcrire à nouveau');\n      render();", "      idle('Transcrire à nouveau');\n      render();\n      if (window.__identifierApres) { window.__identifierApres = false; setTimeout(() => window.ouvrirIdentification && window.ouvrirIdentification(), 700); }")
 rep("`${clock(secs)} écoulées${eta(ratio)}`", "`${clock(secs)} écoulées`")
 rep("  form.append('denoise', $('#clean').value);","  form.append('denoise', $('#clean').value);\n  if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');",1)
+rep("  form.append('denoise', $('#clean').value);", "  form.append('denoise', $('#clean').value);\n  form.append('stt', $('#stt').value); if ($('#vocab').value.trim()) form.append('vocabulaire', $('#vocab').value.trim());", 1)
 rep("  download(payload, `${base}.${ext}`);\n  flash(`${base}.${ext} enregistré.`);",
     "  enregistrerFichier(payload, `${base}.${ext}`).then(m => flash(m || `${base}.${ext} enregistré.`));")
 rep("function download(text, filename) {", """/* Dans la fenêtre de l'application, un lien « download » navigue au lieu d'enregistrer : le programme écrit le fichier. Dans un navigateur ordinaire, téléchargement normal. */
@@ -1201,6 +1202,43 @@ jumpReply = function (direction) {
   const joue = !player.paused; seek(cible.t); setFollow(true); pageToEl(cible.el); if (joue) play();
 };
 $('#first').addEventListener('click', () => { seek(0); setFollow(true); setPage(0); }, true);
+
+/* Télécharger un modèle de voix, seul, depuis l'application installée : ils ne sont pas dans le paquet. */
+{ const wrap = $('#embgetwrap'), bt = $('#embget'), st = $('#embst'); let suivi = 0;
+  const courant = () => { const v = $('#emb').value; return v === 'auto' ? null : (catalogue || []).find(m => m.cle === v) || null; };
+  function maj() {
+    const m = courant();
+    if (!m || m.telecharge) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    if (!suivi) { bt.disabled = false; bt.textContent = vm.lang.t('Télécharger ce modèle maintenant (' + Math.round(m.mo) + ' Mo)', 'Download this model now (' + Math.round(m.mo) + ' MB)'); st.textContent = ''; }
+  }
+  bt.addEventListener('click', async () => {
+    const m = courant(); if (!m || suivi) return; bt.disabled = true; st.textContent = '…';
+    try { const r = await api('/api/models/' + m.cle + '/telecharger', { method: 'POST' }); if (r.etat === 'pret') { await loadModels(); maj(); return; } }
+    catch (err) { bt.disabled = false; st.textContent = err.message; return; }
+    suivi = setInterval(async () => {
+      let d; try { d = await api('/api/models/' + m.cle + '/etat'); } catch (e) { return; }
+      if (d.etat === 'pret') { clearInterval(suivi); suivi = 0; st.textContent = vm.lang.t('Prêt.', 'Ready.'); await loadModels(); maj(); setTimeout(() => { st.textContent = ''; }, 3000); }
+      else if (d.etat === 'erreur') { clearInterval(suivi); suivi = 0; bt.disabled = false; st.textContent = d.erreur; }
+      else if (d.etat === 'en_cours') st.textContent = Math.round(100 * (d.recu || 0) / Math.max(d.total || 1, 1)) + ' % · ' + Math.round((d.recu || 0) / 1048576) + ' / ' + Math.round((d.total || 0) / 1048576) + ' ' + vm.lang.t('Mo', 'MB');
+      else { clearInterval(suivi); suivi = 0; maj(); }
+    }, 700);
+  });
+  describeModel = (function (o) { return function () { o(); maj(); }; })(describeModel);
+  $('#emb').addEventListener('change', maj);
+}
+
+/* Reconnaissance des mots : modèle et vocabulaire, retenus d'une fois à l'autre. */
+{ const stt = $('#stt'), voc = $('#vocab'), n1 = $('#sttnote'), n2 = $('#vocabnote');
+  const notes = () => {
+    n1.textContent = vm.lang.t('Précise : le modèle complet de Whisper, plus juste en français, un peu plus lent. Rapide : la version allégée, qui se trompe plus souvent sur les mots.', 'Precise: the full Whisper model, more accurate in French, a little slower. Fast: the lighter version, which gets more words wrong.');
+    n2.textContent = vm.lang.t('Noms de personnes, de lieux, termes de métier, séparés par des virgules. Le modèle les orthographie comme écrits ici au lieu de les deviner. Une quarantaine de mots au plus.', 'Names of people, places, trade terms, separated by commas. The model spells them as written here instead of guessing. About forty words at most.');
+  };
+  try { stt.value = localStorage.getItem('tr-stt') || 'precis'; voc.value = localStorage.getItem('tr-vocab') || ''; } catch (e) {}
+  stt.addEventListener('change', () => { try { localStorage.setItem('tr-stt', stt.value); } catch (e) {} });
+  voc.addEventListener('input', () => { try { localStorage.setItem('tr-vocab', voc.value); } catch (e) {} });
+  notes(); if (vm.lang && vm.lang.onChange) vm.lang.onChange(notes);
+}
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
    l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,

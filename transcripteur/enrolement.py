@@ -36,6 +36,8 @@ PLAGE_MAX = 60.0   # durée maximale d'une plage proposée (assez pour un profil
 PLAGE_ECART = 4.0  # silence au-delà duquel une plage s'arrête
 FEN = 2.0          # fenêtre d'empreinte fine (secondes) : assez courte pour voir un changement de voix
 PAS_FEN = 2.0      # pas entre deux fenêtres (mesuré : 2 s coûte moitié moins qu’1 s, pour une pureté équivalente)
+ZONE_CONF = 0.6    # sous cette confiance, une fenêtre est réexaminée à l'échelle d'une seconde
+SWITCH = 0.12      # coût (en ressemblance) d'un changement de voix d'une fenêtre à la suivante
 RABOT = 0.5        # on rogne autant aux deux bouts d'une plage : la fenêtre de bord peut déborder sur une autre voix
 
 _extracteurs: dict = {}
@@ -531,6 +533,174 @@ def classer(dossier: Path, exemples: list[dict], wav: Path | None = None,
     return {"propositions": props, "rapport": rapport}
 
 
+def _chemin_viterbi(S, ecarts, penalite):
+    """La suite de voix qui colle le mieux aux fenêtres sans changer à tout bout de champ.
+
+    `S[i][v]` : ressemblance de la fenêtre i à la voix v. Un changement de voix coûte
+    `penalite`, moitié moins après un silence (on change volontiers de locuteur à une
+    pause). Évite qu'une fenêtre bruitée isolée soit prise pour une interruption."""
+    import numpy as np
+    m, p = S.shape
+    score = S[0].copy()
+    retour = np.zeros((m, p), dtype=int)
+    hors_diag = 1.0 - np.eye(p)
+    for i in range(1, m):
+        lam = penalite * (0.5 if ecarts[i] >= 0.6 else 1.0)
+        cand = score[None, :] - lam * hors_diag        # cand[v][u] : venir de u pour finir en v
+        retour[i] = cand.argmax(axis=1)
+        score = cand.max(axis=1) + S[i]
+    chemin = [int(np.argmax(score))]
+    for i in range(m - 1, 0, -1):
+        chemin.append(int(retour[i][chemin[-1]]))
+    return chemin[::-1]
+
+
+def _zones_douteuses(E, wav, P, lab, conf_f, ok, fa, fb):
+    """Seconde passe, sur les seules zones où la voix retenue est peu sûre.
+
+    Une fenêtre de 2 s qui contient une interruption et son voisin ressemble à la voix
+    dominante : l'interruption passe inaperçue. Là où l'écart entre les deux meilleures
+    voix est faible, on recalcule des empreintes sur des fenêtres d'une seconde (pas d'une
+    demi-seconde), plus fines mais plus bruitées, et on relisse la suite. Le coût reste
+    proportionnel à ces zones. Rend [(début, fin, centres, voix, confiances)]."""
+    import numpy as np
+    if wav is None or not Path(wav).exists():
+        return []
+    douteux = [i for i in range(len(ok)) if conf_f[i] < ZONE_CONF]
+    groupes: list[list[int]] = []
+    for i in douteux:
+        if groupes and i - groupes[-1][-1] <= 1 and fa[ok[i]] - fb[ok[groupes[-1][-1]]] < 0.05:
+            groupes[-1].append(i)
+        else:
+            groupes.append([i])
+    if not groupes:
+        return []
+    ext = _extracteur(E["modele"], 4)
+    zones = []
+    with wave.open(str(wav), "rb") as w:
+        total = w.getnframes() / SR
+        for g in groupes:
+            d0 = float(fa[ok[max(g[0] - 1, 0)]])
+            d1 = min(float(fb[ok[min(g[-1] + 1, len(ok) - 1)]]), total)
+            starts = np.arange(d0, d1 - 1.0 + 1e-6, 0.5)
+            if len(starts) < 3:
+                continue
+            Zs = []
+            for t0 in starts:
+                w.setpos(int(t0 * SR))
+                brut = w.readframes(SR)
+                e = _empreinte(ext, np.frombuffer(brut, dtype=np.int16).astype(np.float32) / 32768.0)
+                Zs.append(e if e is not None else np.zeros(P.shape[1], dtype=np.float32))
+            Ss = np.stack(Zs) @ P.T
+            ls = _chemin_viterbi(Ss, np.zeros(len(starts)), SWITCH * 0.6)
+            cf = []
+            for i2, l2 in enumerate(ls):
+                autres = np.delete(Ss[i2], l2)
+                cf.append(max(0.0, min(1.0, float(Ss[i2][l2] - (autres.max() if len(autres) else -1)) / 0.2)))
+            zones.append((float(starts[0]), float(starts[-1] + 1.0), starts + 0.5, ls, cf))
+    return zones
+
+
+def _etiqueter_fin(E: dict, personnes: list[str], amorces: dict, exemples: list[dict], mots: list[dict],
+                   wav: Path | None = None):
+    """Un nom pour chaque mot, au grain de la fenêtre de 2 s : les interruptions se voient.
+
+    Attribuer un passage entier à celui qui l'a commencé manque toute interruption en
+    cours de route. Ici chaque fenêtre de 2 s est classée sur les profils, la suite est
+    lissée (un changement doit être net pour compter), puis chaque coupure est posée
+    sur une vraie pause ou une fin de phrase, comme on découpe des sous-titres.
+    Rend (noms, confiances) par mot, ou None si les fenêtres manquent."""
+    import numpy as np
+    F = E.get("F")
+    if F is None:
+        return None
+    fa, fb, fz, fok = F["fa"], F["fb"], F["fz"], F["fok"]
+    ok = np.where(fok)[0]
+    if len(ok) < 4:
+        return None
+    # profils : les fenêtres entièrement dans les exemples ; à défaut, les passages
+    grp: dict[str, list[int]] = {}
+    for ex in exemples:
+        nom = (ex.get("nom") or "").strip()
+        a, b = float(ex["start"]), float(ex["end"])
+        if not nom:
+            continue
+        for k in ok:
+            if min(b, fb[k]) - max(a, fa[k]) >= 0.9 * (fb[k] - fa[k]):
+                grp.setdefault(nom, []).append(int(k))
+    vecs = []
+    own = {}
+    for nom in personnes:
+        if grp.get(nom):
+            v = fz[grp[nom]].sum(axis=0)
+            own[nom] = [float(fz[k] @ (v / np.linalg.norm(v))) for k in grp[nom]]
+        else:
+            v = sum(e * d for e, d, _ in amorces[nom])
+        vecs.append(v / np.linalg.norm(v))
+    P = np.stack(vecs)
+    seuils = {nom: (float(np.percentile(own[nom], 10)) - 0.05 if len(own.get(nom, [])) >= 5 else 0.3)
+              for nom in personnes}
+    S = fz[ok] @ P.T
+    ecarts = np.concatenate([[0.0], fa[ok][1:] - fb[ok][:-1]])
+    lab = _chemin_viterbi(S, ecarts, SWITCH)
+    conf_f = []
+    for i in range(len(ok)):
+        autres = np.delete(S[i], lab[i])
+        marge = float(S[i][lab[i]] - (autres.max() if len(autres) else -1))
+        c = max(0.0, min(1.0, marge / 0.2))
+        if float(S[i][lab[i]]) < seuils[personnes[lab[i]]]:
+            c = 0.0                     # ne ressemble pas assez à la voix retenue
+        conf_f.append(c)
+    zones = _zones_douteuses(E, wav, P, lab, conf_f, ok, fa, fb)
+    cen = (fa[ok] + fb[ok]) / 2
+    ws = np.array([m["start"] for m in mots]); we = np.array([m["end"] for m in mots])
+    wm = (ws + we) / 2
+    fin_phrase = [str(m.get("text", "")).rstrip()[-1:] in (".", "?", "!", "…") for m in mots]
+    coupures: dict[int, float] = {}
+
+    def coupure(j):
+        """Où, entre deux fenêtres contiguës de voix différentes, la parole change de main."""
+        if j in coupures:
+            return coupures[j]
+        front = float(fb[ok[j]])
+        lo = int(np.searchsorted(wm, cen[j], side="left"))
+        hi = int(np.searchsorted(wm, cen[j + 1], side="right")) - 1
+        meilleur, ts = None, front
+        for c in range(lo, hi + 2):
+            if c <= 0 or c >= len(mots):
+                continue
+            ecart = float(ws[c] - we[c - 1])
+            mid = (float(we[c - 1]) + float(ws[c])) / 2
+            sc = ecart + (0.25 if fin_phrase[c - 1] else 0.0) - 0.05 * abs(mid - front)
+            if meilleur is None or sc > meilleur:
+                meilleur, ts = sc, mid
+        coupures[j] = ts
+        return ts
+
+    noms, confs = [], []
+    debuts_z = [z[0] for z in zones]
+    for i, t in enumerate(wm):
+        iz = int(np.searchsorted(debuts_z, t, side="right")) - 1
+        if iz >= 0 and zones[iz][0] <= t <= zones[iz][1]:
+            d0, d1, cs_, ls_, cf_ = zones[iz]
+            q = int(np.argmin(np.abs(cs_ - t)))
+            noms.append(personnes[ls_[q]])
+            confs.append(cf_[q])
+            continue
+        j = int(np.searchsorted(cen, t)) - 1
+        j = min(max(j, 0), len(ok) - 1)
+        j2 = j + 1
+        if j2 < len(ok) and lab[j] != lab[j2] and float(fa[ok[j2]] - fb[ok[j]]) < 0.05:
+            pris = j if t < coupure(j) else j2
+        elif j2 < len(ok):
+            pris = j if abs(t - cen[j]) <= abs(cen[j2] - t) else j2
+        else:
+            pris = j
+        noms.append(personnes[lab[pris]])
+        confs.append(conf_f[pris])
+    return noms, confs
+
+
 def etiqueter(dossier: Path, exemples: list[dict], mots: list[dict], wav: Path | None = None):
     """Un nom pour chaque mot : d'abord les exemples, puis le classement.
 
@@ -564,7 +734,15 @@ def etiqueter(dossier: Path, exemples: list[dict], mots: list[dict], wav: Path |
                     break
     starts = E["a"]
     etiq_mot, conf_mot = [], []
-    for m in mots:
+    fin = _etiqueter_fin(E, personnes, amorces, exemples, mots, wav)
+    if fin is not None:
+        etiq_mot, conf_mot = fin
+        for i, m in enumerate(mots):
+            milieu = (m["start"] + m["end"]) / 2
+            for ex in exemples:           # un exemple désigné (même coupé) l'emporte sur le classement
+                if ex.get("nom") and float(ex["start"]) <= milieu <= float(ex["end"]):
+                    etiq_mot[i], conf_mot[i] = ex["nom"].strip(), 1.0
+    for m in ([] if fin is not None else mots):
         milieu = (m["start"] + m["end"]) / 2
         # un exemple désigné (même coupé) l'emporte sur le classement
         nom = None

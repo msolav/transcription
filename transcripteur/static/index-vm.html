@@ -1253,6 +1253,17 @@ body.flot-on #flotnom { opacity: 1; visibility: visible; translate: 0 0; transit
 
 #aide .ar-long { font: 500 .75rem var(--vm-font-mono); opacity: .7; margin-left: .6rem; }
 #aide .ar-mel { font: 600 .6875rem var(--vm-font-mono); letter-spacing: .05em; text-transform: uppercase; color: #d9534f; margin-left: .8rem; }
+
+/* champ de vocabulaire */
+.vocab { width: 100%; font: 400 1.125rem/1.2 var(--vm-font-display); font-stretch: 75%; color: inherit; background: none; border: 0; border-bottom: 1px solid var(--vm-ink); padding: .65rem 0; border-radius: 0; }
+.vocab::placeholder { color: var(--vm-mute); opacity: .8; }
+.vocab:focus { outline: none; border-bottom-width: 3px; padding-bottom: calc(.65rem - 2px); }
+
+/* téléchargement d'un modèle de voix */
+.embget { display: flex; align-items: center; gap: .9rem; margin-top: .55rem; font: 500 .75rem var(--vm-font-mono); }
+.embget[hidden] { display: none; }
+.embget .linkbtn { padding: .5rem .8rem; border: 1px solid var(--vm-ink); font: 600 .8125rem var(--vm-font-display); }
+.embget .linkbtn:disabled { opacity: .5; }
 </style>
 </head>
 <body>
@@ -1403,12 +1414,25 @@ body.flot-on #flotnom { opacity: 1; visibility: visible; translate: 0 0; transit
           <div class="lab"><span class="no">03</span><label for="emb" data-en="Voice model">Modèle de voix</label>
             <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="embnote"></span></span></span></div>
           <select id="emb"></select>
+          <div class="embget" id="embgetwrap" hidden><button type="button" class="linkbtn" id="embget" data-no-i18n></button><span class="embst" id="embst" aria-live="polite"></span></div>
         </div>
         <div class="field">
           <div class="lab"><span class="no">04</span><label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
             <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span>
             <span class="cout" id="coutnet" data-no-i18n></span></div>
           <select id="clean"></select>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <div class="lab"><span class="no">05</span><label for="stt" data-en="Word recognition">Reconnaissance des mots</label>
+            <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="sttnote"></span></span></span></div>
+          <select id="stt"><option value="precis" data-en="Precise (recommended)">Précise (recommandé)</option><option value="rapide" data-en="Fast">Rapide</option></select>
+        </div>
+        <div class="field">
+          <div class="lab"><span class="no">06</span><label for="vocab" data-en="Words to recognise">Mots à reconnaître</label>
+            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="vocabnote"></span></span></span></div>
+          <input type="text" id="vocab" class="vocab" autocomplete="off" spellcheck="false" placeholder="Karina, Marcello, Élaine…" data-en-placeholder="Karina, Marcello, Élaine…">
         </div>
       </div>
     </details>
@@ -2554,6 +2578,7 @@ $('#go').onclick = async () => {
   form.append('diarize', separe ? 'true' : 'false');
   form.append('embedding', $('#emb').value);
   form.append('denoise', $('#clean').value);
+  form.append('stt', $('#stt').value); if ($('#vocab').value.trim()) form.append('vocabulaire', $('#vocab').value.trim());
   if (separe && $('#refine').getAttribute('aria-checked') === 'true') form.append('raffiner', '1');
   if (separe && count !== 'auto') form.append('speakers', count);
 
@@ -4196,6 +4221,43 @@ jumpReply = function (direction) {
   const joue = !player.paused; seek(cible.t); setFollow(true); pageToEl(cible.el); if (joue) play();
 };
 $('#first').addEventListener('click', () => { seek(0); setFollow(true); setPage(0); }, true);
+
+/* Télécharger un modèle de voix, seul, depuis l'application installée : ils ne sont pas dans le paquet. */
+{ const wrap = $('#embgetwrap'), bt = $('#embget'), st = $('#embst'); let suivi = 0;
+  const courant = () => { const v = $('#emb').value; return v === 'auto' ? null : (catalogue || []).find(m => m.cle === v) || null; };
+  function maj() {
+    const m = courant();
+    if (!m || m.telecharge) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    if (!suivi) { bt.disabled = false; bt.textContent = vm.lang.t('Télécharger ce modèle maintenant (' + Math.round(m.mo) + ' Mo)', 'Download this model now (' + Math.round(m.mo) + ' MB)'); st.textContent = ''; }
+  }
+  bt.addEventListener('click', async () => {
+    const m = courant(); if (!m || suivi) return; bt.disabled = true; st.textContent = '…';
+    try { const r = await api('/api/models/' + m.cle + '/telecharger', { method: 'POST' }); if (r.etat === 'pret') { await loadModels(); maj(); return; } }
+    catch (err) { bt.disabled = false; st.textContent = err.message; return; }
+    suivi = setInterval(async () => {
+      let d; try { d = await api('/api/models/' + m.cle + '/etat'); } catch (e) { return; }
+      if (d.etat === 'pret') { clearInterval(suivi); suivi = 0; st.textContent = vm.lang.t('Prêt.', 'Ready.'); await loadModels(); maj(); setTimeout(() => { st.textContent = ''; }, 3000); }
+      else if (d.etat === 'erreur') { clearInterval(suivi); suivi = 0; bt.disabled = false; st.textContent = d.erreur; }
+      else if (d.etat === 'en_cours') st.textContent = Math.round(100 * (d.recu || 0) / Math.max(d.total || 1, 1)) + ' % · ' + Math.round((d.recu || 0) / 1048576) + ' / ' + Math.round((d.total || 0) / 1048576) + ' ' + vm.lang.t('Mo', 'MB');
+      else { clearInterval(suivi); suivi = 0; maj(); }
+    }, 700);
+  });
+  describeModel = (function (o) { return function () { o(); maj(); }; })(describeModel);
+  $('#emb').addEventListener('change', maj);
+}
+
+/* Reconnaissance des mots : modèle et vocabulaire, retenus d'une fois à l'autre. */
+{ const stt = $('#stt'), voc = $('#vocab'), n1 = $('#sttnote'), n2 = $('#vocabnote');
+  const notes = () => {
+    n1.textContent = vm.lang.t('Précise : le modèle complet de Whisper, plus juste en français, un peu plus lent. Rapide : la version allégée, qui se trompe plus souvent sur les mots.', 'Precise: the full Whisper model, more accurate in French, a little slower. Fast: the lighter version, which gets more words wrong.');
+    n2.textContent = vm.lang.t('Noms de personnes, de lieux, termes de métier, séparés par des virgules. Le modèle les orthographie comme écrits ici au lieu de les deviner. Une quarantaine de mots au plus.', 'Names of people, places, trade terms, separated by commas. The model spells them as written here instead of guessing. About forty words at most.');
+  };
+  try { stt.value = localStorage.getItem('tr-stt') || 'precis'; voc.value = localStorage.getItem('tr-vocab') || ''; } catch (e) {}
+  stt.addEventListener('change', () => { try { localStorage.setItem('tr-stt', stt.value); } catch (e) {} });
+  voc.addEventListener('input', () => { try { localStorage.setItem('tr-vocab', voc.value); } catch (e) {} });
+  notes(); if (vm.lang && vm.lang.onChange) vm.lang.onChange(notes);
+}
 
 /* Séances enregistrées : seulement ce qui tient sans pousser le titre sous
    l'en-tête (jamais de défilement). Le reste est dans « Toutes les séances »,

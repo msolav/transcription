@@ -21,7 +21,37 @@ from typing import Callable
 from . import assets
 from .texte import join_words  # noqa: F401  (réexporté : d'autres l'importent d'ici)
 
-GROQ_MODEL = "whisper-large-v3-turbo"
+GROQ_MODEL = "whisper-large-v3-turbo"   # reconnaissance de la langue : vite fait sur une minute
+# Reconnaissance des mots. Le turbo est une version allégée de Whisper : plus rapide, et moins
+# juste, surtout hors de l'anglais. La version complète est le réglage par défaut depuis que
+# l'usage a montré des mots mal reconnus « très fréquents » sur des réunions en français.
+STT_PRECIS = "whisper-large-v3"
+STT_RAPIDE = "whisper-large-v3-turbo"
+STT_DEFAUT = STT_PRECIS
+
+
+def modele_stt(choix: str | None) -> str:
+    """« precis » ou « rapide » (ou un nom de modèle) vers le nom du modèle Groq."""
+    c = (choix or "").strip().lower()
+    if c in ("rapide", "turbo", STT_RAPIDE):
+        return STT_RAPIDE
+    return STT_PRECIS if c in ("", "precis", "précis", STT_PRECIS) else choix.strip()
+
+
+def amorce_vocabulaire(vocabulaire: str, limite: int = 600) -> str:
+    """Le texte d'amorce qui rend à Whisper les noms propres et les termes du métier.
+
+    Whisper lit ce texte comme ce qui vient d'être dit et s'en sert pour orthographier. Il
+    en retient environ 224 jetons : on coupe à 600 caractères, à une virgule."""
+    mots = [m.strip() for m in (vocabulaire or "").replace("\n", ",").replace(";", ",").split(",") if m.strip()]
+    if not mots:
+        return ""
+    texte = ""
+    for m in mots:
+        if len(texte) + len(m) + 2 > limite:
+            break
+        texte += (", " if texte else "") + m
+    return texte + "."
 
 DEFAULT_MAX_MB = 24
 SAMPLE_SECONDS = 6.0
@@ -830,7 +860,8 @@ def diarize_auto(audio, progress: Progress, span: tuple[float, float],
 # Transcription
 # --------------------------------------------------------------------------
 
-def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: str) -> list[dict]:
+def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: str,
+                     modele: str | None = None, vocabulaire: str = "") -> list[dict]:
     try:
         from groq import Groq
     except ImportError as exc:
@@ -844,12 +875,16 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
 
     params = dict(
         file=(chunk.name, payload),
-        model=GROQ_MODEL,
+        model=modele_stt(modele),
         response_format="verbose_json",
         timestamp_granularities=["word", "segment"],
     )
     if language:
         params["language"] = language
+    amorce = amorce_vocabulaire(vocabulaire)
+    if amorce:
+        params["prompt"] = amorce
+    bascule = False
 
     dernier = None
     for essai in range(GROQ_RETRIES):
@@ -862,6 +897,17 @@ def transcribe_chunk(chunk: Path, offset: float, language: str | None, api_key: 
                 raise PipelineError("Clé Groq refusée. Corrige-la dans les réglages.") from exc
             if "429" in message or "rate_limit" in message:
                 raise PipelineError("Quota Groq atteint. Réessaie dans quelques minutes.") from exc
+            # Un modèle retiré du catalogue de Groq : on bascule une fois sur l'autre plutôt
+            # que d'échouer, et on le dit.
+            bas = message.lower()
+            if (not bascule and "model" in bas
+                    and any(x in bas for x in ("decommission", "not found", "does not exist",
+                                               "no longer supported", "404"))):
+                autre = STT_RAPIDE if params["model"] != STT_RAPIDE else STT_PRECIS
+                log(f"modèle {params['model']} refusé par Groq : reprise avec {autre}")
+                params["model"] = autre
+                bascule = True
+                continue
             # Un dépassement de délai ou une coupure réseau se rejoue ;
             # perdre une heure de calcul pour un envoi qui a échoué une
             # fois serait absurde.
@@ -907,7 +953,8 @@ def transcribe_all(chunks, options: "Options", progress: Progress,
     if total == 1:
         progress("Transcription", low)
         words = transcribe_chunk(chunks[0][0], chunks[0][1],
-                                 options.language, options.api_key)
+                                 options.language, options.api_key,
+                                 options.stt, options.vocabulaire)
         chunks[0][0].unlink(missing_ok=True)
         return words
 
@@ -917,7 +964,8 @@ def transcribe_all(chunks, options: "Options", progress: Progress,
     with ThreadPoolExecutor(max_workers=TRANSCRIBE_WORKERS) as pool:
         futures = {
             pool.submit(transcribe_chunk, path, offset,
-                        options.language, options.api_key): (index, path)
+                        options.language, options.api_key,
+                        options.stt, options.vocabulaire): (index, path)
             for index, (path, offset) in enumerate(chunks)
         }
         for future in as_completed(futures):
@@ -1337,6 +1385,8 @@ class Options:
     denoise: str = ""     # "" = pas de nettoyage
     raffiner: bool = False  # raffiner la séparation des voix (voir raffinage.py)
     api_key: str = ""
+    stt: str = ""           # "" ou "precis" : whisper-large-v3 ; "rapide" : le turbo
+    vocabulaire: str = ""   # noms et termes à orthographier, séparés par des virgules
 
 
 @dataclass

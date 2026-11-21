@@ -146,12 +146,25 @@
           <div class="lab"><span class="no">03</span><label for="emb" data-en="Voice model">Modèle de voix</label>
             <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="embnote"></span></span></span></div>
           <select id="emb"></select>
+          <div class="embget" id="embgetwrap" hidden><button type="button" class="linkbtn" id="embget" data-no-i18n></button><span class="embst" id="embst" aria-live="polite"></span></div>
         </div>
         <div class="field">
           <div class="lab"><span class="no">04</span><label for="clean" data-en="Audio cleanup">Nettoyage du son</label>
             <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="cleannote"></span></span></span>
             <span class="cout" id="coutnet" data-no-i18n></span></div>
           <select id="clean"></select>
+        </div>
+      </div>
+      <div class="two">
+        <div class="field">
+          <div class="lab"><span class="no">05</span><label for="stt" data-en="Word recognition">Reconnaissance des mots</label>
+            <span class="tipwrap up"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="sttnote"></span></span></span></div>
+          <select id="stt"><option value="precis" data-en="Precise (recommended)">Précise (recommandé)</option><option value="rapide" data-en="Fast">Rapide</option></select>
+        </div>
+        <div class="field">
+          <div class="lab"><span class="no">06</span><label for="vocab" data-en="Words to recognise">Mots à reconnaître</label>
+            <span class="tipwrap up end"><button class="info" type="button" aria-expanded="false" aria-label="Plus d'infos" data-en-aria-label="More info">i</button><span class="tipbody"><span id="vocabnote"></span></span></span></div>
+          <input type="text" id="vocab" class="vocab" autocomplete="off" spellcheck="false" placeholder="Karina, Marcello, Élaine…" data-en-placeholder="Karina, Marcello, Élaine…">
         </div>
       </div>
     </details>

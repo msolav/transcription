@@ -103,6 +103,25 @@ CATALOGUE = (
               "Le plus juste à la mesure, et le plus lent : deux fois et "
               "demie le temps du CAM++. À prendre quand l'attribution "
               "compte plus que l'attente.", 0.648),
+    # Les trois suivants ne sont PAS dans le paquet : ils se téléchargent à la demande,
+    # un par un, depuis l'application installée. Même famille que le ResNet34, en plus
+    # profond. Les chiffres publiés par WeSpeaker sur VoxCeleb les donnent plus justes ;
+    # ils n'ont pas été mesurés ici (justesse 0.0), donc ils passent derrière les modèles
+    # mesurés dans le classement automatique.
+    Empreinte("voxceleb_resnet152", "wespeaker_en_voxceleb_resnet152_LM.onnx",
+              75.5, "Multilingue ResNet152", "multi", 3.2,
+              "Plus profond que le ResNet34, environ 2 fois plus lent que lui (104 ms contre "
+              "50 ms par fenêtre de 2 s, mesuré). Justesse non mesurée ici : à essayer si les "
+              "voix se confondent. À télécharger à part."),
+    Empreinte("voxceleb_resnet221", "wespeaker_en_voxceleb_resnet221_LM.onnx",
+              90.6, "Multilingue ResNet221", "multi", 4.9,
+              "Encore plus profond : environ 3 fois plus lent que le ResNet34 (159 ms par fenêtre "
+              "de 2 s, mesuré). Justesse non mesurée ici. À télécharger à part."),
+    Empreinte("voxceleb_resnet293", "wespeaker_en_voxceleb_resnet293_LM.onnx",
+              109.0, "Multilingue ResNet293", "multi", 6.4,
+              "Le plus profond de la série : environ 4 fois plus lent que le ERes2Net (209 ms "
+              "contre 54 ms par fenêtre de 2 s, mesuré), soit une préparation de l'ordre de "
+              "16 minutes pour 1 h 30. Justesse non mesurée ici. À télécharger à part."),
     Empreinte("titanet_large", "nemo_en_titanet_large.onnx",
               96.7, "Anglais TitaNet (grand)", "anglais", 2.6,
               "Anglais uniquement, mais réputé solide. Lent et lourd."),
@@ -425,7 +444,7 @@ def _ecrire(texte: str) -> None:
         pass
 
 
-def _download(url: str, dst: Path, label: str) -> None:
+def _download(url: str, dst: Path, label: str, progression=None) -> None:
     dst.parent.mkdir(parents=True, exist_ok=True)
     tmp = dst.with_suffix(dst.suffix + ".part")
 
@@ -435,6 +454,8 @@ def _download(url: str, dst: Path, label: str) -> None:
         if total <= 0:
             return
         done = min(count * block, total)
+        if progression:
+            progression(done, total)
         # Une ligne par pour cent : le retour chariot se voit dans un
         # terminal, mais redirigé vers un fichier il produit des mégaoctets
         # de barre de progression.
@@ -483,6 +504,18 @@ def ensure_models(embedding: str = DEFAULT_EMBEDDING,
         dire(f"modèle « {emp.nom} » prêt")
 
     return SEG_FILE, emb_file
+
+
+def telecharger_modele(cle: str, progression=None) -> Path:
+    """Télécharge UN modèle de voix, à la demande, sans rien lancer d'autre.
+
+    Les modèles ne sont pas dans le paquet : l'application installée les prend un à un,
+    quand on les choisit. `progression(octets_reçus, octets_total)` suit l'avancement."""
+    emp = PAR_CLE[cle]
+    dst = MODELS_DIR / emp.fichier
+    if not dst.exists():
+        _download(EMB_BASE + emp.fichier, dst, "empreintes vocales", progression)
+    return dst
 
 
 def models_ready() -> bool:
